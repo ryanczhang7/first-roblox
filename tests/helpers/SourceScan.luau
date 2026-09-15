@@ -43,6 +43,15 @@ export type Finding = {
 	kind: string,
 }
 
+-- A reference to some symbol, with no rule attached. `Finding` is a `Hit` plus
+-- the AC-5 rule it broke; ROUND-003's Roblox-runtime guard wants the hits
+-- without the ownership vocabulary, and both go through the same matcher.
+export type Hit = {
+	path: string,
+	line: number,
+	symbol: string,
+}
+
 -- AC-5's two lists, verbatim. `owner` is the one module allowed to say it.
 local RULES: { Rule } = {
 	{ symbol = "os.clock", owner = "src/shared/Clock.luau", kind = "time" },
@@ -87,16 +96,28 @@ function SourceScan.refresh()
 	cache = {}
 end
 
-function SourceScan.classifierList(category: string): { string }
-	local cached = cache[category]
+--[[
+	`pathspec` narrows the QUESTION, never the ANSWER: it is handed straight to
+	`classify.sh`, which hands it to `git ls-files`, and the classification of
+	every path that comes back is still the harness's. ROUND-003 asks for
+	`src/server/round` so that its Roblox-runtime guard scans that story's
+	modules; filtering the `src` answer with a pattern of my own would be the
+	private-glob defect this whole module exists to avoid. A pathspec matching
+	nothing is not an error - it returns an empty list, and a guard over an empty
+	list passes, which is why every caller asserts the files it expects are in it.
+]]
+function SourceScan.classifierList(category: string, pathspec: string?): { string }
+	local within = pathspec or "src"
+	local key = `{category} {within}`
+	local cached = cache[key]
 	if cached ~= nil then
 		return table.clone(cached)
 	end
 
-	local result = process.exec("bash", { "scripts/classify.sh", "--list", category, "src" })
+	local result = process.exec("bash", { "scripts/classify.sh", "--list", category, within })
 	if not result.ok then
 		error(
-			`scripts/classify.sh --list {category} src exited {result.code}\n`
+			`scripts/classify.sh --list {category} {within} exited {result.code}\n`
 				.. `stdout: {result.stdout}\nstderr: {result.stderr}`
 		)
 	end
@@ -109,7 +130,7 @@ function SourceScan.classifierList(category: string): { string }
 		end
 	end
 
-	cache[category] = paths
+	cache[key] = paths
 	return table.clone(paths)
 end
 
@@ -126,6 +147,25 @@ end
 -- Contract asks for.
 function SourceScan.nonSourceFilesUnderSrc(): { string }
 	return SourceScan.classifierList("test")
+end
+
+-- Every source module under one subtree, for a guard that is about one story's
+-- modules rather than about the whole tree. The classification is still the
+-- harness's; only the question is narrower.
+function SourceScan.sourceFilesIn(pathspec: string): { string }
+	return SourceScan.classifierList("source", pathspec)
+end
+
+-- Every reference to `symbols` across `paths`, accumulated and asserted once by
+-- the caller.
+function SourceScan.scanFor(paths: { string }, symbols: { string }): { Hit }
+	local hits: { Hit } = {}
+	for _, path in paths do
+		for _, hit in SourceScan.hitsIn(path, fs.readFile(path), symbols) do
+			table.insert(hits, hit)
+		end
+	end
+	return hits
 end
 
 -- The first character at or after `idx` that is not a space or a tab.
@@ -344,25 +384,27 @@ function SourceScan.codeOnly(text: string): string
 end
 
 --[[
-	Every AC-5 violation in `text`, attributed to `path`.
+	Every place one of `symbols` is REFERENCED AS CODE in `text`.
 
-	`path` decides ownership: the two adapters are allowed to say their own
-	symbols and nobody else is. A symbol only counts when it stands alone -
-	`ticket` is not `tick`, `self.tick` is a field rather than the global, and
-	`math.randomseed` is not a `math.random` hit.
+	This is the matcher `findingsIn` was built out of, lifted so that a second
+	guard can use it without carrying a second copy of the word-boundary rules -
+	the same argument `.claude/harness/rules.md` makes about the file list, one
+	level down. A symbol only counts when it stands alone: `ticket` is not
+	`tick`, `self.tick` is a field rather than the global, `{ tick = 2 }` is a
+	table key, and `math.randomseed` is not a `math.random` hit.
+
+	Comments and string literals are already gone: the text goes through
+	`codeOnly` first.
 ]]
-function SourceScan.findingsIn(path: string, text: string): { Finding }
-	local findings: { Finding } = {}
+function SourceScan.hitsIn(path: string, text: string, symbols: { string }): { Hit }
+	local hits: { Hit } = {}
 	local lines = string.split(SourceScan.codeOnly(text), "\n")
 
 	for lineNumber, line in lines do
-		for _, rule in RULES do
-			if rule.owner == path then
-				continue
-			end
+		for _, symbol in symbols do
 			local from = 1
 			while true do
-				local s, e = string.find(line, rule.symbol, from, true)
+				local s, e = string.find(line, symbol, from, true)
 				if s == nil then
 					break
 				end
@@ -380,20 +422,60 @@ function SourceScan.findingsIn(path: string, text: string): { Finding }
 				local isAssignedTo = trailing == "=" and string.sub(line, at + 1, at + 1) ~= "="
 				local okAfter = not isIdentByte(string.byte(line, finish + 1)) and not isAssignedTo
 				if okBefore and okAfter then
-					table.insert(findings, {
-						path = path,
-						line = lineNumber,
-						symbol = rule.symbol,
-						owner = rule.owner,
-						kind = rule.kind,
-					})
+					table.insert(hits, { path = path, line = lineNumber, symbol = symbol })
 				end
 				from = finish + 1
 			end
 		end
 	end
 
+	return hits
+end
+
+--[[
+	Every AC-5 violation in `text`, attributed to `path`.
+
+	`path` decides ownership: the two adapters are allowed to say their own
+	symbols and nobody else is. The matching itself is `hitsIn`, so there is one
+	implementation of "this line references that symbol" and not two.
+]]
+function SourceScan.findingsIn(path: string, text: string): { Finding }
+	local wanted: { string } = {}
+	local ruleFor: { [string]: Rule } = {}
+	for _, rule in RULES do
+		ruleFor[rule.symbol] = rule
+		if rule.owner ~= path then
+			table.insert(wanted, rule.symbol)
+		end
+	end
+
+	local findings: { Finding } = {}
+	for _, hit in SourceScan.hitsIn(path, text, wanted) do
+		local rule = ruleFor[hit.symbol]
+		table.insert(findings, {
+			path = hit.path,
+			line = hit.line,
+			symbol = hit.symbol,
+			owner = rule.owner,
+			kind = rule.kind,
+		})
+	end
+
 	return findings
+end
+
+-- The failure message for a plain hit list, path first, for the same reason
+-- `describe` puts it there: a guard that cannot name the offending file is a
+-- guard somebody deletes.
+function SourceScan.describeHits(hits: { Hit }): string
+	if #hits == 0 then
+		return "(no references)"
+	end
+	local lines: { string } = {}
+	for _, hit in hits do
+		table.insert(lines, `{hit.path}:{hit.line} references {hit.symbol}`)
+	end
+	return table.concat(lines, "\n")
 end
 
 -- Every violation across `paths`. Violations are accumulated and asserted once

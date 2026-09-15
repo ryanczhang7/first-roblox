@@ -78,6 +78,47 @@ does not import this" is the *only* mechanism that keeps server logic off the
 client, and it is enforced by the Rojo project file's instance mapping plus a
 guard test over the import graph.
 
+
+### How a module in `src/` requires another module in `src/`
+
+**Alias, never a relative path across a layer.** Written down here because
+`ROUND-003` was the first story to need a cross-layer require and the obvious
+spelling fails a required gate:
+
+    local Rng = require("@shared/Rng")        -- crossing from server to shared
+    local RoundConfig = require("./RoundConfig")  -- same directory: relative is fine
+
+The alias lives in `.luaurc`:
+
+    "aliases": { "shared": "src/shared" }
+
+**Why the relative form cannot work.** `luau-lsp` resolves a relative string
+require *through the sourcemap*, in the Roblox instance tree — not in the
+directory tree. `src/shared` maps to `game/ReplicatedStorage/Shared` while
+`src/server/round` maps to `game/ServerScriptService/Server/round`, so
+`require("../../shared/Rng")` asks for `game/ServerScriptService/shared/Rng`,
+which does not exist. Measured on this machine, 2026-09-15, reproduced by the
+Lead PO through `scripts/mutate.sh` against the shipped module:
+
+    src/server/round/PhaseMachine.luau [game/ServerScriptService/Server/round/PhaseMachine](65,13):
+        TypeError: Unknown require: game/ServerScriptService/shared/Rng
+
+There is no relative spelling that both `luau-lsp` and Lune accept across that
+boundary, which is what makes this a convention rather than a preference.
+
+**The limit, recorded rather than left in a comment.** Two of the three things
+that read a require have been measured — `luau-lsp analyze` exits 0 and
+`lune run test` resolves the alias — and the third has not: **nothing in this
+repository executes a module inside a Roblox runtime**, `.luaurc` is not synced
+by `default.project.json`, and the `build` gate proves only that the place file
+builds. So alias resolution *in a real place* is untested as of `ROUND-003`. The
+first story that runs a module in a place — the `RoundService` driver, or the
+first `src/net/` story with a live remote — verifies it, and if it does not hold
+the fix is a Rojo-side instance require behind a Lune-side shim, not a return to
+relative paths.
+
+Note that this does not weaken §1's dependency rule: an alias for `shared` is
+the only one, so a `client` module cannot spell a require for `server` at all.
 ### The pure core
 
 Every rule in `src/server/` and `src/net/` is written as a **pure function of

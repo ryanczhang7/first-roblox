@@ -3,5 +3,8 @@
   "lint": {
     "*": true
   },
-  "globals": []
+  "globals": [],
+  "aliases": {
+    "shared": "src/shared"
+  }
 }
