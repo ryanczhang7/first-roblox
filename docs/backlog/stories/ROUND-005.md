@@ -112,8 +112,13 @@ decision: the trace is M3, and a flag with no consumer is a field that rots.
 
 ## Deferred verifications
 
-None. Simultaneity is producible in RED by constructing the state directly — that
-is the payoff of a pure `step` that takes `now` as an argument.
+<!-- Nothing is deferred. The template requires this section only when a
+     verification provably cannot run in the phase that wants it, and says
+     to omit it otherwise - so the word "None" in prose here reads to
+     check-boundaries.sh as a deferred entry with no owner and no result,
+     which is the same defect as a WAIVED with no reason.
+     Planned text was: None. Simultaneity is producible in RED by constructing the state directly — that is the payoff of a pure `step` that takes `now` as an argument.
+-->
 
 ## Model guidance
 

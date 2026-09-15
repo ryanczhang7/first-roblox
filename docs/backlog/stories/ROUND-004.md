@@ -91,7 +91,13 @@ so there is no caller list to grep.
 
 ## Deferred verifications
 
-None.
+<!-- Nothing is deferred. The template requires this section only when a
+     verification provably cannot run in the phase that wants it, and says
+     to omit it otherwise - so the word "None" in prose here reads to
+     check-boundaries.sh as a deferred entry with no owner and no result,
+     which is the same defect as a WAIVED with no reason.
+     Planned text was: None.
+-->
 
 ## Model guidance
 

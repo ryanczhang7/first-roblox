@@ -4,8 +4,8 @@ title: Clock and randomness are injected, and nothing else may read them
 slug: clock-and-randomness-are-injected-and-no
 epic: EPIC-01
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/ROUND-001-clock-and-randomness-are-injected-and-no
 depends_on: [BOOT-001]
 required_gates: []
