@@ -4,8 +4,8 @@ title: Session and round-timing constants match their specification
 slug: session-and-round-timing-constants-match
 epic: EPIC-01
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/ROUND-002-session-and-round-timing-constants-match
 depends_on: [BOOT-001]
 required_gates: []
