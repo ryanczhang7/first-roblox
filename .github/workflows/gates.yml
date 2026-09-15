@@ -1,0 +1,73 @@
+name: gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The harness itself needs nothing but bash. Add the toolchain your
+      # project.conf gate commands actually invoke - the bootstrap story should
+      # add the setup step for the chosen stack here.
+      #
+      # - uses: actions/setup-python@v7
+      #   with: { python-version: "3.12" }
+      # - uses: astral-sh/setup-uv@v10
+      #
+      # - uses: pnpm/action-setup@v6
+      # - uses: actions/setup-node@v7
+      #   with: { node-version: "22", cache: pnpm }
+
+      # The harness's own tests. They need nothing but bash and git, and they
+      # guard the machinery every other check in this workflow depends on: the
+      # phase lock, the path classifier, the quote-aware command parsing.
+      #
+      # IT LIVES HERE BECAUSE THIS JOB IS THE CHEAP, BASH-ONLY ONE. That is a
+      # property of this workflow, not a rule about this file, and it stops
+      # being true the moment a project changes `runs-on`. Measured, same suites,
+      # same commit:
+      #
+      #   ubuntu-latest      31 s
+      #   windows-latest     21-27 min      about 40x
+      #
+      # It is almost entirely process spawn, which is what Windows is slow at,
+      # and this suite spawns a subshell per assertion. A real project whose
+      # gates job is `windows-latest` (for WebView2, for a Tauri bundle) measured
+      # its gate run at 17m57s against `timeout-minutes: 45`; adding the
+      # self-test there would have put the first run at ~39/45, 87% of the cap,
+      # on the one thing in the repository guaranteed to grow. The failure mode
+      # is not "CI is slower", it is a job that starts timing out a few stories
+      # later for a reason nobody connects to this line.
+      #
+      # So: put this step in whichever job is cheapest and needs only bash and
+      # git. If that is not this one, move it - boundaries.yml is usually the
+      # right home, since it is already `on: pull_request` and already required.
+      # Nothing downstream cares which file it is in: doctor.sh accepts any
+      # workflow, and ci-local.sh globs *.yml.
+      - name: Harness self-test
+        run: bash scripts/selftest.sh
+
+      - name: Show configured gates
+        run: bash scripts/gates.sh --list
+
+      # Catches a gate whose command was emptied, whose cwd was moved away, or
+      # whose evidence line was dropped - none of which the gate run itself can
+      # report, because a gate that no longer does anything still exits 0.
+      - name: Audit the gate manifest
+        run: bash scripts/gates.sh --audit
+
+      - name: Run gates
+        run: bash scripts/gates.sh
+
+      - name: Upload gate logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gate-logs
+          path: .claude/state/gate-logs/
+          if-no-files-found: ignore
