@@ -9,10 +9,11 @@ record against the tree.
 
 | Agent | Writes | Never writes |
 |---|---|---|
-| **Lead PO** | `docs/wiki/**`, `docs/backlog/**`, `.claude/harness/project.conf` | any source or test file |
+| **Lead PO** | `docs/wiki/**`, `docs/backlog/**`, `.claude/harness/project.conf`, `.claude/harness/paths.conf` | any source or test file |
 | **Test Developer** | test paths (see `paths.conf`), the story's `## Test plan`, `## Handoff` and `## Regressions` | production source, config |
 | **Feature Developer** | source and config paths, the story's `## Gate probes` (`## Gate results` is written by `gates.sh`, by nobody else) | any test file |
 | **Lead Designer** | `docs/wiki/design/**`, the story's `## Design notes` | source, tests, config |
+| **Game Designer** | `docs/wiki/game/**`, the story's `## Game design` | source, tests, config - including the tuning-constants module, which it specifies in `docs/wiki/game/tuning.md` and the Feature Developer implements |
 | **Mutation Tester** | `docs/wiki/audits/**`, new story files | source, tests, config |
 
 **The bootstrap exception.** A `bootstrap` story - and a `chore` that uses
@@ -84,7 +85,7 @@ other way.
 
 Every definition in `.claude/agents/` declares `model:`, so which model a role
 runs on is a fact of the harness rather than of whoever's session dispatched it.
-All five say `opus` today, and that is a decision rather than a default: the one
+All six say `opus` today, and that is a decision rather than a default: the one
 place model choice has been measured against a controlled alternative, the
 *brief* out-performed the model - a partitioned RED brief on the weaker model
 produced sharper negative controls than the stronger model without it - while the
