@@ -4,8 +4,8 @@ title: Roblox toolchain, gates and an empty place that builds
 slug: roblox-toolchain-gates-and-an-empty-plac
 epic: EPIC-00
 type: bootstrap
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/BOOT-001-roblox-toolchain-gates-and-an-empty-plac
 depends_on: []
 required_gates: []
