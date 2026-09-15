@@ -364,6 +364,27 @@ cannot run this - there is no encoder to mutate yet. **Owner: GATES.**
 EOF
 run_boundaries
 assert_contains "an explicit Owner: satisfies it" "ok    ## Deferred verifications names the phase" "$out"
+
+# SCAFFOLD is an owner. It is a real phase in phases.conf and the ONLY legal
+# owner for a bootstrap story's deferred verification - the one phase where
+# source is writable at all. The accepted list omitted it, so BOOT-001, whose
+# type-error probe provably cannot run before the story creates src/ and
+# configures the analyzer, had no true owner to declare and the check pushed it
+# toward writing a false one. A check satisfiable only by a lie is worse than no
+# check; found by running this script against a real bootstrap story.
+story_on_branch <<'EOF'
+## Deferred verifications
+
+A deliberate type error must fail the typecheck gate. There is no src/ and no
+configured analyzer until this story creates both. **Owner: SCAFFOLD.**
+
+```
+Scaffold.luau(36,2): TypeError: Expected this to be 'string', but got 'number'
+FAIL         typecheck (3s, exit 1)
+```
+EOF
+run_boundaries
+assert_contains "SCAFFOLD is an owner, for a bootstrap story" "ok    ## Deferred verifications names the phase" "$out"
 # Naming the phase is half of it. A block that names GATES and reaches the PR
 # with nothing recorded is the failure K6 describes exactly: a commitment that
 # outlived the phase that owed it.

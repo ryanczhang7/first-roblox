@@ -10,18 +10,57 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Every gate counts its inputs with `git ls-files`, and with a story
+          # active gates.sh diffs the story's changed source paths against main
+          # for the `covers` check. Both want real history, not a depth-1
+          # checkout.
+          fetch-depth: 0
 
-      # The harness itself needs nothing but bash. Add the toolchain your
-      # project.conf gate commands actually invoke - the bootstrap story should
-      # add the setup step for the chosen stack here.
+      # --- The toolchain, added by BOOT-001 -------------------------------
       #
-      # - uses: actions/setup-python@v7
-      #   with: { python-version: "3.12" }
-      # - uses: astral-sh/setup-uv@v10
-      #
-      # - uses: pnpm/action-setup@v6
-      # - uses: actions/setup-node@v7
-      #   with: { node-version: "22", cache: pnpm }
+      # Rokit is the only machine-level install; rokit.toml pins the other six
+      # at exact versions, so this runner and a developer's machine agree by
+      # construction. Nothing below needs a Roblox account, Roblox Studio or
+      # any credential - that is the defining property of this stack
+      # (docs/wiki/stack.md section 1) and no gate may ever erode it. Studio has
+      # no Linux build, so a gate that needed it could not run here at all.
+      # Every `run:` below is ONE line on purpose. scripts/ci-local.sh reads
+      # these steps out of this file and `eval`s them locally, expanding a
+      # `run: |` block into its individual lines, so a step that only makes
+      # sense on a runner has to be written to be a harmless no-op off one.
+      # That is why the install is guarded by `command -v` and why GITHUB_PATH
+      # falls back to /dev/null: `bash scripts/ci-local.sh` on a developer
+      # machine must not reinstall Rokit or append to a file named "".
+      - name: Install Rokit
+        env:
+          GITHUB_PAT: ${{ github.token }}
+        run: command -v rokit > /dev/null || curl -fsSL https://raw.githubusercontent.com/rojo-rbx/rokit/main/scripts/install.sh | bash
+
+      - name: Put Rokit on PATH
+        run: echo "$HOME/.rokit/bin" >> "${GITHUB_PATH:-/dev/null}"
+
+      # Rokit downloads six release assets through the GitHub API, which is rate
+      # limited per IP and unauthenticated by default on a shared runner.
+      # `|| true` because the only consequence of this failing is the
+      # unauthenticated path we would otherwise have taken, and a rate limit
+      # surfaces loudly in the next step rather than quietly here. UNVERIFIED on
+      # a runner as of BOOT-001 - the first CI run is what confirms it.
+      - name: Authenticate Rokit with GitHub (best effort)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: test -z "${GH_TOKEN:-}" || rokit authenticate github --token "$GH_TOKEN" || true
+
+      # `task install` is the same command a developer runs from a clean
+      # checkout: rokit install, wally install, and the globalTypes.d.luau type
+      # dump pinned to the luau-lsp version in rokit.toml. Running it here
+      # rather than inlining the steps is what stops CI and the documented
+      # setup drifting apart.
+      - name: Install the pinned toolchain and the Roblox type definitions
+        run: bash scripts/task.sh install
+
+      - name: Show tool versions
+        run: rokit --version && rojo --version && lune --version && selene --version && stylua --version && luau-lsp --version && wally --version
 
       # The harness's own tests. They need nothing but bash and git, and they
       # guard the machinery every other check in this workflow depends on: the

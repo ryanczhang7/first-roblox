@@ -1,0 +1,7 @@
+# VERIFIED 2026-09-15, selene 0.31.0: the `roblox` standard library is BUILT IN
+# to this build - no `selene generate-roblox-std`, no generated `roblox.toml`, no
+# network. Measured both ways: `game`, `workspace` and `Instance.new` resolve
+# clean, and an undefined global still raises `error[undefined_variable]`. So the
+# `lint` gate resolves Roblox globals offline, which is what keeps
+# docs/wiki/stack.md section 1's "no gate needs network access at run time" true.
+std = "roblox"

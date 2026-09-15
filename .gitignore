@@ -62,6 +62,19 @@ target/
 .godot/
 *.import
 
+# Roblox / Luau  (added by BOOT-001)
+# `wally install` output.
+Packages/
+ServerPackages/
+DevPackages/
+# Generated, never authored. `rojo sourcemap` writes the first; the second is the
+# Roblox API type dump fetched by `bash scripts/task.sh install`, pinned to the
+# luau-lsp version in rokit.toml. Both are also listed as `vendor` in
+# paths.conf - either alone would do, both is deliberate, because a generated
+# file misread as source is frozen during RED and typecheck then cannot run.
+sourcemap.json
+globalTypes.d.luau
+
 # Build output and coverage
 dist/
 build/
