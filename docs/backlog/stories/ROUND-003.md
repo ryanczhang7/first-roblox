@@ -620,6 +620,32 @@ in this story's recorded gate run. Without it the same two paths would still hav
 been "exercised by a required gate" — `lint`, `typecheck` and `build` all read
 `src/**` — and the claim would have been carried entirely by static analysis with
 no test gate declaring it read the phase machine.
+
+### CI on PR #5, read for timings and not only for green
+
+https://github.com/ryanczhang7/first-roblox/pull/5 — `boundaries` pass (5s),
+`gates` pass (46s). Run 35036797532:
+
+    PASS         format (0s, observed 30)
+    PASS         lint (0s, observed 30, floor 1)
+    PASS         typecheck (2s, observed 7)
+    PASS         unit (1s, observed 137, floor 137)
+    PASS         build (0s, observed 15638)
+
+Two things worth reading rather than glancing at:
+
+- **The counts moved as GREEN predicted.** `format`/`lint` 21 -> 30 and
+  `typecheck` 5 -> 7, because both counts come from `git ls-files` and this
+  story's files were untracked during the local run. The prediction was written
+  down before the commit, which is what makes it a check rather than a
+  rationalisation.
+- **No margin is thin.** The whole `gates` job is 42 s of step time; the slowest
+  step is the harness self-test at 25 s, and `unit` is **1 s on CI against 15 s
+  on this Windows machine** — the ratio runs the safe way, because the local cost
+  is `bash`/`classify.sh` subprocess launches, which Linux does cheaply. There is
+  no per-test timeout in this runner and nothing sits near a limit, so there is
+  no pending-failure shape here of the kind a green run three seconds under a
+  30 s hook default would have.
 ### Dispatch model, resolved
 
 `feature-developer`, declared `model: opus` in
