@@ -1,0 +1,16 @@
+[package]
+name = "ryanczhang7/first-roblox"
+version = "0.1.0"
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+license = "MIT"
+
+# Deliberately empty. M0-M2 needs no package: the phase machine, the seat ring,
+# the validation wrappers and the telemetry envelope are all pure Luau.
+# Product-brief B1 #5 makes a new dependency an operator decision.
+[dependencies]
+
+# RED may add a test-only package here and nowhere else. paths.conf classifies
+# wally.toml as `manifest` for exactly this reason, and check-boundaries.sh
+# reads the diff of every RED commit to enforce it.
+[dev-dependencies]
