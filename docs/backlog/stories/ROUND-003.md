@@ -165,9 +165,13 @@ None.
 
 ## Deferred verifications
 
-None. Every criterion here can be exercised in RED against a machine that does not
-yet exist, and the two controls (AC-7's raising implementation, AC-6's mutating
-one) can be demonstrated against a hand-written stub.
+<!-- Nothing is deferred. The template requires this section only when a
+     verification provably cannot run in the phase that wants it, and says
+     to omit it otherwise - so the word "None" in prose here reads to
+     check-boundaries.sh as a deferred entry with no owner and no result,
+     which is the same defect as a WAIVED with no reason.
+     Planned text was: None. Every criterion here can be exercised in RED against a machine that does not yet exist, and the two controls (AC-7's raising implementation, AC-6's mutating one) can be demonstrated against a hand-written stub.
+-->
 
 ## Model guidance
 
