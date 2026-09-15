@@ -156,6 +156,15 @@ cat >> "$file" <<'TEMPLATE'
 <!-- Filled by the Lead Designer for user-facing stories: layout, states,
      tokens, accessibility requirements. Omit for non-UI stories. -->
 
+## Game design
+
+<!-- Filled by the Game Designer for game stories: which mechanic this
+     implements and where it comes from in docs/wiki/game/mechanics.md, which
+     tuning constants it introduces or changes (value + derived/taste/
+     placeholder), the decision each criterion protects, and the edge cases the
+     rules produce - ties, a lone survivor, a disconnect mid-vote. Omit for
+     non-game stories. -->
+
 ## Test plan
 
 <!-- Filled by the Test Developer during RED: which tests, at which level,

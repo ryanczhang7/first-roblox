@@ -4,7 +4,8 @@ argument-hint: [optional focus or constraint]
 ---
 
 Delegate to the **lead-po** subagent, consulting the **lead-designer** subagent
-for anything user-facing. Extra guidance from the user: $ARGUMENTS
+for anything user-facing and the **game-designer** subagent for any game. Extra
+guidance from the user: $ARGUMENTS
 
 Read `docs/wiki/product-brief.md` first. If it does not exist, stop and tell the
 user to run `/create-product`.
@@ -35,18 +36,32 @@ Produce, in this order:
    context and will otherwise treat a plausible command line as a working one —
    which is how a wrong gate command survives to story 30 instead of story 1.
 
-2. **`docs/wiki/architecture.md`** — components and their responsibilities, the
+2. **`docs/wiki/game/`** — via the Game Designer, for any game, using
+   `/design-game`. Skip entirely for products that are not games.
+
+   This comes **before** the architecture, and the order is load-bearing: a
+   game's architecture *is* its mechanics wearing engineering clothes. The phase
+   machine is the round structure, the authority boundary is decided by what a
+   client is allowed to know, and the data model is whatever the rules operate
+   on. Architecture written first invents a plausible shape and the mechanics
+   are then bent to fit it.
+
+   If the Game Designer reports that the brief cannot answer its five questions,
+   **stop and tell the user** rather than proceeding. An architecture derived
+   from a game nobody has specified is a guess with a diagram.
+
+3. **`docs/wiki/architecture.md`** — components and their responsibilities, the
    data model in outline, how the pieces talk to each other, where state lives,
    and the deployment shape. Record decisions with their alternatives and why
    they lost. Keep it at the altitude where it stays true for months.
 
-3. **`docs/wiki/design/`** — via the Lead Designer, for any product with a user
+4. **`docs/wiki/design/`** — via the Lead Designer, for any product with a user
    interface: the token set, the component inventory, and the accessibility
    floor. Skip for headless projects.
 
-4. **`docs/backlog/epics/*.md`** — coherent slices of user value, ordered.
+5. **`docs/backlog/epics/*.md`** — coherent slices of user value, ordered.
 
-5. **`docs/backlog/stories/*.md`** — via `bash scripts/new-story.sh`. Load the
+6. **`docs/backlog/stories/*.md`** — via `bash scripts/new-story.sh`. Load the
    `story-authoring` skill for format and sizing. The **first** story is always
    a `bootstrap` story that turns this repository into the chosen stack's real
    layout and fills in every gate command in `.claude/harness/project.conf`.
