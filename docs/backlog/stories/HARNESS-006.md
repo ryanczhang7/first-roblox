@@ -2028,3 +2028,52 @@ goal paragraph is the argument for this story: on this stack *"exit 0 is not pro
 of work - it is the absence of a complaint, and a tool with nothing to do does not
 complain."* Three of the four counters that exist to answer that were not
 answering it.
+
+---
+
+## REVIEW: the PR, and its CI
+
+**PR:** https://github.com/ryanczhang7/first-roblox/pull/8
+**Commit:** `dc56a74`. Both required checks pass.
+
+    boundaries   pass   7s      actions/runs/35139688203
+    gates        pass   1m14s   actions/runs/35139688204
+
+### The portability claim, settled on Linux rather than asserted
+
+This is the check that mattered, and it is the reason the anchor is
+`^debug: formatted ` rather than a path shape. `stylua -v` prints
+`src\shared\Clock.luau` on Windows and `src/shared/Clock.luau` on Linux; every
+count in this story was measured on Windows. From the CI log:
+
+    [13/15] project-counters ok (13s)
+    project-counters: 40 passed, 0 failed
+    15 harness suite(s) passed in 48s.
+    PASS         format (0s, observed 38)
+    PASS         lint (0s, observed 38, floor 1)
+    PASS         typecheck (3s, observed 7)
+
+**38 / 38 / 7 on `ubuntu-24.04`, identical to the Windows measurements**, with all
+40 assertions green. A counter built on `stylua`'s own output could have been a
+Windows-only fact; it is not.
+
+### The new toolchain dependency, exercised
+
+`scripts/selftest.sh` needed only bash and git until this story. The CI run above
+is the first in which it shells out to `stylua`, `selene`, `rojo` and `luau-lsp`,
+and it passed because the `Harness self-test` step follows the toolchain install
+in `gates.yml`. That ordering is now a hard requirement rather than a
+convenience, and the comment in that workflow says so — corrected in this same
+commit, because the moment the dependency is created is the only moment anyone
+will connect the two.
+
+The whole harness suite runs in **48 s** on CI against 491 s locally, so the new
+suite costs CI almost nothing: 13 s of it.
+
+### Timings
+
+`project-counters` is 13 s on CI and 12.9 s locally — the one suite whose cost is
+dominated by real tool invocations rather than by bash, and therefore the one
+that does not benefit from the runner being faster. No `ci-factor` line is
+warranted: `coverage`, the gate that usually motivates one, is unconfigured on
+this stack, and nothing here is near a timeout.
