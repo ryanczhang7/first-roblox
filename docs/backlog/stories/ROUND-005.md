@@ -4,8 +4,8 @@ title: A round ends on outcome, clock or quorum with a deterministic reason
 slug: a-round-ends-on-outcome-clock-or-quorum
 epic: EPIC-01
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/ROUND-005-a-round-ends-on-outcome-clock-or-quorum
 depends_on: [ROUND-003, ROUND-004]
 required_gates: []
@@ -1223,22 +1223,19 @@ ROUND-003 shapes.
 
 <!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
 
-    run:    2026-09-16T16:01:18Z
-    commit: 848e807
+    run:    2026-09-16T16:23:51Z
+    commit: 39c2dc9
     tree:   4710c8000685815d3efcb642582e01f1b5899b9e
     result: pass (5 ran, 3 unconfigured, 0 known)
 
-    PASS         format (0s, observed 38)
-    PASS         lint (0s, observed 38, floor 1)
+    PASS         format (1s, observed 38)
+    PASS         lint (1s, observed 38, floor 1)
     PASS         typecheck (3s, observed 7)
     PASS         unit (6s, observed 175, floor 175)
     UNCONFIGURED coverage
     UNCONFIGURED integration
     PASS         build (0s, observed 20721)
     UNCONFIGURED mutation
-
-
----
 
 ## REVIEW: the PR, and its CI
 
