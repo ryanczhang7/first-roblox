@@ -62,9 +62,19 @@ jobs:
       - name: Show tool versions
         run: rokit --version && rojo --version && lune --version && selene --version && stylua --version && luau-lsp --version && wally --version
 
-      # The harness's own tests. They need nothing but bash and git, and they
-      # guard the machinery every other check in this workflow depends on: the
-      # phase lock, the path classifier, the quote-aware command parsing.
+      # The harness's own tests. They guard the machinery every other check in
+      # this workflow depends on: the phase lock, the path classifier, the
+      # quote-aware command parsing.
+      #
+      # SINCE HARNESS-006 THEY ALSO NEED THE TOOLCHAIN, not just bash and git.
+      # .claude/tests/project-counters.test.sh runs this project's real format,
+      # lint and typecheck gate commands out of .claude/harness/project.conf
+      # against the real tree, so it shells out to stylua, selene, rojo and
+      # luau-lsp - which is the only way to pin "the count is what the tool
+      # read". It is deliberately NOT skippable when a tool is missing: a
+      # skipped counter test is the vacuous pass that story exists to abolish.
+      # That is why this step sits AFTER "Install the pinned toolchain" above,
+      # and it is a hard ordering, not a convenience.
       #
       # IT LIVES HERE BECAUSE THIS JOB IS THE CHEAP, BASH-ONLY ONE. That is a
       # property of this workflow, not a rule about this file, and it stops
@@ -83,11 +93,17 @@ jobs:
       # is not "CI is slower", it is a job that starts timing out a few stories
       # later for a reason nobody connects to this line.
       #
-      # So: put this step in whichever job is cheapest and needs only bash and
-      # git. If that is not this one, move it - boundaries.yml is usually the
-      # right home, since it is already `on: pull_request` and already required.
-      # Nothing downstream cares which file it is in: doctor.sh accepts any
-      # workflow, and ci-local.sh globs *.yml.
+      # So: put this step in whichever job is cheapest AND INSTALLS THE
+      # TOOLCHAIN. Until HARNESS-006 this paragraph said "needs only bash and
+      # git" and named boundaries.yml as the usual right home, since it is
+      # already `on: pull_request` and already required. THAT IS NO LONGER
+      # TRUE and acting on it would break the suite: boundaries.yml installs
+      # no toolchain at all - it runs check-boundaries.sh and nothing else -
+      # so project-counters would fail there on a missing stylua, and the
+      # failure would read as a broken gate rather than as a misplaced step.
+      # Move this step only to a job that runs `bash scripts/task.sh install`
+      # first. Nothing downstream cares which file it is in: doctor.sh accepts
+      # any workflow, and ci-local.sh globs *.yml.
       - name: Harness self-test
         run: bash scripts/selftest.sh
 
