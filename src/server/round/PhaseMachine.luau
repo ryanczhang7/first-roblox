@@ -24,13 +24,22 @@
 	    from: it is DERIVED from this round's seed through `Rng`, never drawn
 	    from a real random source, which would take purity with it.
 
-	WHERE THE DURATIONS ARE EVALUATED, and it is deliberate. A phase's duration is
-	checked inside the branch for an event the phase RECOGNISES - in practice
-	`Tick` - and never at the top of `step`. AC-7 says an unrecognised event
-	returns the state unchanged, with no exception for a duration that has already
-	come due, and a duplicate `SeatsAssigned` that quietly ends the lobby is the
-	same class of defect as one that throws, only quieter. Recorded in the story's
-	`## Contract` amendment 4 and ruled on by the Lead PO.
+	WHERE THE DURATIONS AND THE COUNT ARE EVALUATED, and it is deliberate. A
+	phase's duration is checked inside the branch for an event the phase
+	RECOGNISES - the clock on `Tick` and on `Tick` only - and never at the top of
+	`step`. AC-7 says an unrecognised event returns the state unchanged, with no
+	exception for a duration that has already come due, and a duplicate
+	`SeatsAssigned` that quietly ends the lobby is the same class of defect as one
+	that throws, only quieter. Recorded in the story's `## Contract` amendment 4
+	and ruled on by the Lead PO.
+
+	The round's QUORUM is half of the same rule and is consulted in exactly two
+	branches: `Tick`, and `PlayerLeft` - the only event that can change the count
+	(ROUND-005 Contract pin 2). A `RematchAccepted` or an off-union kind arriving
+	at a `Round` already below quorum is still ignored in full; the next `Tick`
+	is what ends it. And a `PlayerLeft` step evaluates quorum and NEVER the
+	clock (pin 6), or AC-7's "the round continues" would become conditional on
+	how much time had passed and a departure would be reported as a timeout.
 
 	THE COMPARISON IS `now - phaseEnteredAt >= duration`, inclusive at the
 	boundary, and `phaseEnteredAt` is the `now` of the step that ENTERED the
@@ -60,12 +69,49 @@
 	resetting: neither a join nor a leave ever rewrites `phaseEnteredAt`, so the
 	time already served survives a late fourth player.
 
-	OUT OF SCOPE HERE, so that nothing untested ships: the clock and quorum ways
-	a round can end, including what a departure means once the round is under way
-	(ROUND-005), and the driver that owns the real clock and performs the effects
-	(`RoundService`). `PlayerLeft` outside the Lobby and `RematchAccepted`
-	everywhere are in the event vocabulary and are ignored, which is exactly what
-	`step` being total means.
+	HOW A ROUND ENDS, AND IN WHAT ORDER (ROUND-005). Within a single `step` on a
+	`Round` state, three terminal conditions are evaluated in a FIXED order and
+	the first that holds wins (`architecture.md` section 3, where the list is
+	stated once):
+
+	  1. `RoundResolved` - an event carrying an outcome; recorded verbatim
+	  2. `below_quorum`  - `#players < minPlayersToContinue`; `no_contest`
+	  3. `clock`         - `now - phaseEnteredAt >= roundSeconds`; `lost`
+
+	The order is the contract rather than an implementation detail: the trace
+	reports the reason, so a reason that depends on evaluation order is a bug
+	report nobody can reproduce. A round nobody can play did not run out of time,
+	and an event describing something that happened INSIDE the round outranks the
+	round running out around it. Here that order is structural - `RoundResolved`
+	is a different event from `Tick`, so it never reaches the clock - and it is
+	an ordering of two `if`s only in the one branch where both can hold.
+
+	A QUORUM FAILURE IS NOT A LOSS. It is `no_contest`, so no loss is recorded
+	and season progress is unaffected: the group did not fail, the lobby did
+	(`mechanics.md` section 8). Recording it as `lost` would punish three people
+	for a fourth person's connection, in a game whose whole retention thesis is
+	that the same four people keep playing together.
+
+	THE COMPARISON IS `#players < minPlayersToContinue`, STRICT. Three is a ring
+	(`roles.md` section 6, `tuning.md` section 1), so a round that has fallen
+	exactly TO the threshold continues; `<=` would end every three-player round
+	silently.
+
+	THE ENDING STEP EMITS NOTHING. The single `ComputeTrace` a round produces is
+	still emitted by `Resolution -> Post`, so a machine that also emitted one on
+	the way out of `Round` would emit two for every round that ended.
+
+	A RESOLVED ROUND IS NOT RE-RESOLVED. `outcome` is written once, by the step
+	that ended the round; in `Resolution` and `Post` neither the clock nor the
+	count is consulted again, however far `now` has travelled.
+
+	OUT OF SCOPE HERE, so that nothing untested ships: the degraded-round flag a
+	round continuing at exactly `minPlayersToContinue` deserves in its trace
+	(`roles.md` section 6) - deferred deliberately, because the trace is M3 and a
+	field with no consumer rots - and the driver that owns the real clock and
+	performs the effects (`RoundService`). `PlayerLeft` in `Assignment`,
+	`Resolution` and `Post`, and `RematchAccepted` everywhere, are in the event
+	vocabulary and are ignored, which is exactly what `step` being total means.
 ]]
 
 local Rng = require("@shared/Rng")
@@ -161,6 +207,48 @@ local function isSeated(state: RoundState, playerId: PlayerId): boolean
 end
 
 --[[
+	The two outcomes this module OWNS, each built fresh on every call.
+
+	A shared constant would hand the SAME table to every round that ended the
+	same way, and one consumer writing into it would rewrite the outcome of every
+	other - the aliasing defect `copyOf` exists to prevent, one field lower down.
+	Every other `reason` is M3's, arrives inside a `RoundResolved` and is stored
+	without being read: a machine that had to know why a round ended in order to
+	route it would be routing on the wrong thing.
+]]
+local function clockOutcome(): Outcome
+	return { result = "lost", reason = "clock" }
+end
+
+local function quorumOutcome(): Outcome
+	return { result = "no_contest", reason = "below_quorum" }
+end
+
+-- `#players < minPlayersToContinue`, strict. Three is a ring: see the header.
+local function isBelowQuorum(state: RoundState): boolean
+	return #state.players < state.config.minPlayersToContinue
+end
+
+--[[
+	The `Resolution` a terminal condition produces: the outcome recorded once, by
+	this step, and NO effects.
+
+	The empty effect list is Contract pin 3 and it is the whole of AC-6. The one
+	`ComputeTrace` a round produces belongs to `Resolution -> Post`; emitting one
+	here as well would emit two, which is what "the round does not continue to
+	accumulate effects after ending" is there to catch.
+]]
+local function resolvedAs(
+	state: RoundState,
+	outcome: Outcome,
+	now: number
+): (RoundState, { Effect })
+	local resolution = entering(state, "Resolution", now)
+	resolution.outcome = outcome
+	return resolution, {}
+end
+
+--[[
 	A fresh Lobby, seating nobody, entered at 0.
 
 	`initial` takes no `now`, so 0 is the only self-consistent answer: every
@@ -217,8 +305,34 @@ local function onTick(state: RoundState, now: number): (RoundState, { Effect })
 			{ { kind = "AssignSeats", seed = state.seed, players = table.clone(state.players) } }
 	end
 
+	--[[
+		The two terminal conditions a `Tick` can see, IN THE CONTRACT'S ORDER:
+		quorum, then the clock. `RoundResolved` outranks both by arriving in its
+		own branch, which never reaches here.
+
+		The order is visible as the order of these two `if`s on purpose. A round
+		nobody can play did not run out of time, so a step on which both hold
+		records `below_quorum` - and it records it on every run, because nothing
+		here depends on anything but `(state, event, now)`.
+	]]
+	if state.phase == "Round" and isBelowQuorum(state) then
+		return resolvedAs(state, quorumOutcome(), now)
+	end
+
+	if state.phase == "Round" and elapsedIn(state, now) >= state.config.roundSeconds then
+		--[[
+			`elapsedIn` measures from the step that ENTERED `Round`, not from 0
+			and not from the step that noticed, so a driver ticking irregularly
+			can neither stretch the round nor cut it short. The comparison is
+			inclusive at the boundary, exactly as the lobby's is.
+		]]
+		return resolvedAs(state, clockOutcome(), now)
+	end
+
 	if state.phase == "Resolution" then
-		-- No duration: the clock may stand exactly where it did on entry.
+		-- No duration: the clock may stand exactly where it did on entry. A
+		-- round that has resolved is never re-resolved - neither the count nor
+		-- the round clock is consulted in this phase or in `Post`.
 		return entering(state, "Post", now), { { kind = "ComputeTrace", roundId = state.roundId } }
 	end
 
@@ -281,25 +395,44 @@ function PhaseMachine.step(state: RoundState, event: Event, now: number): (Round
 
 	if event.kind == "PlayerLeft" then
 		--[[
-			A departure unseats in the LOBBY and nowhere else (ROUND-004
-			Contract pin 2). What a mid-round departure means - the quorum
-			against `minPlayersToContinue` - is ROUND-005's, and unseating here
-			would silently change the seated list AFTER `AssignSeats` has
-			already carried it, which is the ring SEAT-001 deals.
+			A departure unseats in TWO phases and nowhere else: the `Lobby`
+			(ROUND-004 Contract pin 2) and `Round` (ROUND-005 Contract pin 1).
+			In `Assignment`, `Resolution` and `Post` it is ignored in full -
+			unseating in `Assignment` would silently change the seated list
+			AFTER `AssignSeats` has already carried it, which is the ring
+			SEAT-001 deals, and a resolved round is not re-resolved.
 
 			`table.remove` on the COPY, closing the hole rather than copying the
 			last element over it: seat order is join order, so the seated list
 			is always a subsequence of it, and a swap-with-the-last is a correct
 			SET removal that scrambles the ring (AC-6). A leave naming somebody
-			who is not seated is an ordinary ignored event, and `phaseEnteredAt`
-			survives a leave for the same reason it survives a join.
+			who is not seated is an ordinary ignored event - in `Round` too, so
+			it is not a departure and quorum is not evaluated for it - and
+			`phaseEnteredAt` survives a leave for the same reason it survives a
+			join.
 		]]
-		local seat = if state.phase == "Lobby" then seatOf(state, event.playerId) else nil
+		local unseats = state.phase == "Lobby" or state.phase == "Round"
+		local seat = if unseats then seatOf(state, event.playerId) else nil
 		if seat == nil then
 			return state, {}
 		end
 		local remaining = copyOf(state)
 		table.remove(remaining.players, seat)
+
+		--[[
+			Quorum is evaluated on THIS step, against the count left after the
+			departure: the round ends on the step that took it below the
+			threshold rather than on the tick that noticed afterwards.
+
+			The clock is deliberately not consulted here (Contract pin 6). AC-7
+			says a round that falls exactly to `minPlayersToContinue` continues,
+			full stop - a machine that also checked the clock would end that
+			round `lost(clock)` whenever the departure happened to land late, and
+			would report a departure to players as a timeout.
+		]]
+		if remaining.phase == "Round" and isBelowQuorum(remaining) then
+			return resolvedAs(remaining, quorumOutcome(), now)
+		end
 		return remaining, {}
 	end
 

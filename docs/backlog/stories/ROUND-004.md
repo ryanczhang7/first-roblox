@@ -4,8 +4,8 @@ title: The lobby holds below the minimum and admits no more than the maximum
 slug: the-lobby-holds-below-the-minimum-and-ad
 epic: EPIC-01
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/ROUND-004-the-lobby-holds-below-the-minimum-and-ad
 depends_on: [ROUND-003]
 required_gates: []

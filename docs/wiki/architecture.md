@@ -230,6 +230,25 @@ recorded reason is the one earlier in a fixed precedence list, because the trace
 reports the reason and a nondeterministic reason is a bug report nobody can
 reproduce.
 
+**The list, stated once** (`ROUND-005`). Within a single `step` on a `Round`
+state, terminal conditions are evaluated in this fixed order and the first that
+holds wins:
+
+    1. RoundResolved  — an event carrying an outcome; the machine records it verbatim
+    2. below_quorum   — `#players < min_players_to_continue`; `no_contest`, never `lost`
+    3. clock          — `now - phaseEnteredAt >= round_seconds`; `lost`, reason `clock`
+
+A round nobody can play did not run out of time, and an event describing
+something that happened inside the round outranks the round running out around
+it. This ordering is the contract: a later story may not reorder it without an
+`## Amendments` entry on the story that does, because `mechanics.md` §7 reports
+the reason to players and `TEL-002` emits it as telemetry.
+
+The clock is consulted only for an event the phase recognises — in practice
+`Tick` — never at the top of `step`; quorum is consulted on `Tick` and on
+`PlayerLeft`, which is the only event that can change the count. An event the
+phase does not recognise is still ignored in full, whatever the clock says.
+
 ### Effects
 
     type Effect =
