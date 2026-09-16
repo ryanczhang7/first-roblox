@@ -4,8 +4,8 @@ title: A gate's file count is what the tool read, not a list beside it
 slug: a-gate-s-file-count-is-what-the-tool-rea
 epic: 
 type: chore
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-006-a-gate-s-file-count-is-what-the-tool-rea
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -1740,15 +1740,15 @@ against the new commands is GATES' job.
 
 <!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
 
-    run:    2026-09-16T19:15:18Z
-    commit: f534492 (working tree had uncommitted changes)
+    run:    2026-09-16T19:48:27Z
+    commit: 347c9d2
     tree:   ca85af7340427e61410c31eefcb1d5fe047649db
     result: pass (5 ran, 3 unconfigured, 0 known)
 
     PASS         format (0s, observed 38)
     PASS         lint (0s, observed 38, floor 1)
     PASS         typecheck (2s, observed 7)
-    PASS         unit (6s, observed 175, floor 175)
+    PASS         unit (7s, observed 175, floor 175)
     UNCONFIGURED coverage
     UNCONFIGURED integration
     PASS         build (0s, observed 20721)
