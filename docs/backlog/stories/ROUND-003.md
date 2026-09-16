@@ -4,8 +4,8 @@ title: A round advances through all five phases on an injected clock
 slug: a-round-advances-through-all-five-phases
 epic: EPIC-01
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/ROUND-003-a-round-advances-through-all-five-phases
 depends_on: [ROUND-001, ROUND-002]
 required_gates: []
