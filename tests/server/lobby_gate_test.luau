@@ -184,24 +184,35 @@ return {
 
 	--[[
 		Contract pin 2, and a non-goal pinned because it is cheap: `PlayerLeft`
-		unseats in the Lobby and NOWHERE ELSE. What a mid-round departure means
-		is ROUND-005's story - it is the one that needs the count against
-		`min_players_to_continue` - and unseating here would silently change the
-		seated list AFTER `AssignSeats` has already carried it, which is the ring
-		SEAT-001 deals.
+		unseats in the Lobby and NOWHERE ELSE. Unseating in `Assignment`,
+		`Resolution` or `Post` would silently change the seated list AFTER
+		`AssignSeats` has already carried it, which is the ring SEAT-001 deals.
+
+		`Round` MOVED TO ROUND-005 AND IS NO LONGER ITERATED HERE. This test
+		pinned not-yet-implemented behaviour and handed the case forward by name:
+		what a mid-round departure means is the story that needs the count
+		against `min_players_to_continue`, and ROUND-005's AC-2, AC-5 and AC-7
+		say the departure unseats and then evaluates quorum on that same step. No
+		ROUND-004 criterion moves - AC-3 and AC-6 are about the Lobby, and this
+		non-goal stays pinned in all three phases where it still holds. The
+		`Round` case is not deleted: it is replaced by assertions about what that
+		step DOES, in `tests/server/round_ending_test.luau`. Ruled on by the Lead
+		PO in ROUND-005's `## PO decisions at PLANNED -> RED`, decision 4.
 
 		GREEN ON ARRIVAL: today `PlayerLeft` is ignored in every phase including
 		the Lobby, so this passes for the wrong reason. Earned by the fourth
 		probe in the story's `## Regressions`, which gives the machine an
 		unconditional unseating `PlayerLeft` branch and watches this go red while
-		the Lobby tests stay red for their own reasons.
+		the Lobby tests stay red for their own reasons - and re-earned the same
+		way by ROUND-005's probe 1 after the narrowing.
 	]]
 	["Contract pin 2: a PlayerLeft outside the Lobby is ignored - a mid-round departure is ROUND-005"] = function()
 		local reached = journeyPastTheLobby()
 		local offending: { string } = {}
 		local first = ""
 
-		for phase, state in reached do
+		for _, phase in { "Assignment", "Resolution", "Post" } do
+			local state = reached[phase]
 			local ok, err = pcall(Contract.eventIsIgnored, Machine, {
 				label = `a PlayerLeft naming the seated player p2, in {phase}`,
 				state = state,
