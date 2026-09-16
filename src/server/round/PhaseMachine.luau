@@ -54,12 +54,18 @@
 	no Roblox runtime: no `Instance`, no service, no scheduler, nothing but
 	arithmetic over tables.
 
-	OUT OF SCOPE HERE, so that nothing untested ships: the lobby's `players_min`
-	gate (ROUND-004), the clock and quorum ways a round can end (ROUND-005), what
-	unseats a player who leaves (ROUND-004/ROUND-005), and the driver that owns
-	the real clock and performs the effects (`RoundService`). `PlayerLeft` and
-	`RematchAccepted` are in the event vocabulary and are ignored by every phase
-	here, which is exactly what `step` being total means.
+	THE LOBBY GATES ON A COUNT AS WELL AS A CLOCK (ROUND-004). It starts a round
+	only at or above `playersMin`, seats at most `playersMax`, and unseats a
+	player who leaves THE LOBBY. Below the minimum the lobby HOLDS rather than
+	resetting: neither a join nor a leave ever rewrites `phaseEnteredAt`, so the
+	time already served survives a late fourth player.
+
+	OUT OF SCOPE HERE, so that nothing untested ships: the clock and quorum ways
+	a round can end, including what a departure means once the round is under way
+	(ROUND-005), and the driver that owns the real clock and performs the effects
+	(`RoundService`). `PlayerLeft` outside the Lobby and `RematchAccepted`
+	everywhere are in the event vocabulary and are ignored, which is exactly what
+	`step` being total means.
 ]]
 
 local Rng = require("@shared/Rng")
@@ -140,13 +146,18 @@ local function elapsedIn(state: RoundState, now: number): number
 	return now - state.phaseEnteredAt
 end
 
-local function isSeated(state: RoundState, playerId: PlayerId): boolean
-	for _, id in state.players do
+-- The seat `playerId` occupies, or `nil` if they are not seated.
+local function seatOf(state: RoundState, playerId: PlayerId): number?
+	for index, id in state.players do
 		if id == playerId then
-			return true
+			return index
 		end
 	end
-	return false
+	return nil
+end
+
+local function isSeated(state: RoundState, playerId: PlayerId): boolean
+	return seatOf(state, playerId) ~= nil
 end
 
 --[[
@@ -182,7 +193,23 @@ end
 	adds the ways a round can end.
 ]]
 local function onTick(state: RoundState, now: number): (RoundState, { Effect })
-	if state.phase == "Lobby" and elapsedIn(state, now) >= state.config.lobbySeconds then
+	--[[
+		BOTH halves are re-tested on every tick, and the count gate is NOT
+		LATCHED: the machine keeps no memory of a tick that found the time due
+		while the lobby was short, so the round starts on the first tick after
+		the count is reached (ROUND-004 AC-2, AC-3). The clock is a FLOOR on
+		lobby dwell time, not the only condition for starting a round.
+
+		It lives HERE, inside the `Tick` branch, rather than at the top of
+		`step`: a duration is only ever consulted for an event the phase
+		recognises (the header, and ROUND-003's Contract amendment 4), and the
+		lobby's count is half of the same condition.
+	]]
+	if
+		state.phase == "Lobby"
+		and elapsedIn(state, now) >= state.config.lobbySeconds
+		and #state.players >= state.config.playersMin
+	then
 		-- Emitted by the step that ENTERS Assignment, once - not once per step
 		-- while the machine sits in it.
 		local assignment = entering(state, "Assignment", now)
@@ -227,14 +254,53 @@ function PhaseMachine.step(state: RoundState, event: Event, now: number): (Round
 	end
 
 	if event.kind == "PlayerJoined" then
-		-- A duplicate join is an unrecognised event in AC-7's sense: seating one
-		-- player twice would put them in two seats of the same ring.
-		if state.phase ~= "Lobby" or isSeated(state, event.playerId) then
+		--[[
+			Three ways a join is refused, and a refusal is an unrecognised event
+			in AC-7's sense - the same state back, an empty effect list, nothing
+			raised and nothing mutated. Seating one player twice would put them
+			in two seats of the same ring, and rejecting the surplus join at the
+			door is this machine's job rather than the driver's: a driver that
+			filters is a driver that can forget (ROUND-004 AC-4, AC-5).
+
+			`phaseEnteredAt` is deliberately untouched on the path that DOES
+			seat somebody. That one absence is the hold: the lobby time already
+			served is never discarded by a join, or a lobby that gains and loses
+			a player every thirty seconds never starts (M6).
+		]]
+		if
+			state.phase ~= "Lobby"
+			or isSeated(state, event.playerId)
+			or #state.players >= state.config.playersMax
+		then
 			return state, {}
 		end
 		local seated = copyOf(state)
 		table.insert(seated.players, event.playerId)
 		return seated, {}
+	end
+
+	if event.kind == "PlayerLeft" then
+		--[[
+			A departure unseats in the LOBBY and nowhere else (ROUND-004
+			Contract pin 2). What a mid-round departure means - the quorum
+			against `minPlayersToContinue` - is ROUND-005's, and unseating here
+			would silently change the seated list AFTER `AssignSeats` has
+			already carried it, which is the ring SEAT-001 deals.
+
+			`table.remove` on the COPY, closing the hole rather than copying the
+			last element over it: seat order is join order, so the seated list
+			is always a subsequence of it, and a swap-with-the-last is a correct
+			SET removal that scrambles the ring (AC-6). A leave naming somebody
+			who is not seated is an ordinary ignored event, and `phaseEnteredAt`
+			survives a leave for the same reason it survives a join.
+		]]
+		local seat = if state.phase == "Lobby" then seatOf(state, event.playerId) else nil
+		if seat == nil then
+			return state, {}
+		end
+		local remaining = copyOf(state)
+		table.remove(remaining.players, seat)
+		return remaining, {}
 	end
 
 	if event.kind == "SeatsAssigned" then
@@ -255,8 +321,8 @@ function PhaseMachine.step(state: RoundState, event: Event, now: number): (Round
 		return resolution, {}
 	end
 
-	-- Everything else, including `PlayerLeft`, `RematchAccepted` and any kind the
-	-- union does not contain: the state is a value and it comes back untouched.
+	-- Everything else, including `RematchAccepted` and any kind the union does
+	-- not contain: the state is a value and it comes back untouched.
 	return state, {}
 end
 

@@ -222,6 +222,37 @@ line applies — and that is precisely where a vanished suite would read as gree
 
 ---
 
+
+### An `assert` message is truncated at 512 characters, and the evidence goes with it
+
+Found by `ROUND-004`'s RED when a failure message was cut mid-trail, and measured
+by the Lead PO on a different input rather than taken on report. Lune 0.10.5,
+this machine, 2026-09-16 — a message of `string.rep("A", n)` through
+`pcall(function() assert(false, msg) end)`:
+
+    message   400 chars -> err   444 chars,   401 A's kept
+    message   480 chars -> err   524 chars,   481 A's kept
+    message   500 chars -> err   544 chars,   501 A's kept
+    message   520 chars -> err   555 chars,   512 A's kept
+    message   600 chars -> err   555 chars,   512 A's kept
+    message  2000 chars -> err   555 chars,   512 A's kept
+
+**512 characters of message, exactly** — a fixed buffer, not a soft limit — plus
+the `path:line:` prefix the runner adds, which is another 40-75 characters and is
+*not* counted against the 512.
+
+This matters here more than it would in most repositories. This project has no
+coverage gate (§4), so a failing assertion's **message** is a large part of how a
+defect gets diagnosed, and the house style writes long ones that name the
+criterion, quote the expected and actual values and explain why the rule exists.
+A message that puts the values last loses exactly the part worth reading.
+
+So: **put the numbers first and the essay second.** Lead with the criterion, the
+measured value and the wanted value; put the rationale after them, where losing
+it costs nothing. Where a list has to be shown in full - a seat order, an effect
+sequence - render it before the prose, and prefer a count plus the first
+divergence over dumping both lists when either could be long.
+
 ## 4. Coverage: deliberately unconfigured, and what replaces it
 
 **Decision (product brief §0b, amendment 5): the `coverage` gate is left with no
