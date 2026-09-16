@@ -346,6 +346,27 @@ baseline). The predictions in the handoff supersede the ones in `## Notes`. The
 orchestrator runs one at acceptance and compares against the handoff's list, not
 the count alone.
 
+
+### CI on PR #6, read for timings and not only for green
+
+https://github.com/ryanczhang7/first-roblox/pull/6 — `boundaries` pass (7s),
+`gates` pass (56s). Run 35044755869:
+
+    PASS         format (0s, observed 34)
+    PASS         lint (0s, observed 34, floor 1)
+    PASS         typecheck (3s, observed 7)
+    PASS         unit (1s, observed 154, floor 154)
+    PASS         build (0s, observed 17308)
+
+- **The counts moved as predicted.** `format`/`lint` 30 -> 34, because the count
+  is `git ls-files` and this story's four test files were untracked during the
+  local run. `typecheck` stays at 7: this story added no source file, only a
+  hundred lines inside one that already existed.
+- **No margin is thin.** 46 s of step time, of which the harness self-test is 30 s;
+  `unit` is **1 s on CI against 26 s on this Windows machine**, and that ratio runs
+  the safe way — the local cost is `bash`/`classify.sh` subprocess launches, which
+  Linux does cheaply. Nothing sits near a limit and this runner has no per-test
+  timeout.
 ### Dispatch model, resolved
 
 `test-developer`, declared `model: opus` in `.claude/agents/test-developer.md`,
