@@ -5,9 +5,9 @@
 > additionally been observed to **fail on its vacuous case**. The failing and
 > restored outputs are in `docs/backlog/stories/BOOT-001.md`, `## Gate probes`.
 >
-> Two things are still unverified and are marked inline where they appear:
-> **Linux** (this machine is Windows; the first CI run is what confirms it) and
-> the **macOS/Linux Rokit install line**.
+> One thing is still unverified and is marked inline where it appears: the
+> **macOS** Rokit install line. Linux was settled by CI on 2026-09-16 and the
+> evidence is in §4.
 
 What the banner used to say was that nothing in this file had been executed.
 Running it changed six things, and they are recorded in place rather than in a
@@ -79,11 +79,15 @@ this harness and the thing most likely to be eroded by a well-meaning story:
   `task install` (Rokit, Wally, the type dump) and by nothing under
   `scripts/gates.sh`. Selene's Roblox standard library is built in, so even the
   linter is offline (§6).
-- Every gate runs on `ubuntu-latest`. **UNVERIFIED** — every measurement in this
-  file is Windows 11 / Git Bash. `.github/workflows/gates.yml` installs the
-  toolchain and runs the suite there, and the first CI run on `BOOT-001`'s pull
-  request is what settles it. The one known Windows-only hazard is already fixed:
-  the `stylua` alias, below.
+- Every gate runs on `ubuntu-latest`. **VERIFIED 2026-09-16** — settled by CI, as
+  this line said it would be. `.github/workflows/gates.yml` runs on
+  `ubuntu-24.04`, installs Rokit through the `curl` line, and `rokit install`
+  resolves the same pinned versions the Windows measurements were taken against:
+  Rokit 1.2.0, Rojo 7.7.0, Lune 0.10.5, Selene 0.31.0, StyLua 2.5.2, luau-lsp
+  1.69.0, Wally 0.3.2. All five configured gates pass there. The one known
+  Windows-only hazard was already fixed before the first run: the `stylua` alias,
+  below. Every *measurement* in this file is still Windows 11 / Git Bash — timings
+  differ, and `unit` is faster on the runner than locally (`ROUND-005`).
 
 **If a gate ever needs Studio, it is not a gate.** It is a playtest step, and it
 belongs in `docs/wiki/game/playtest.md`, not in `project.conf`.

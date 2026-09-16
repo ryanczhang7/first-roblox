@@ -10,7 +10,8 @@ Roblox credentials and no GUI.
 > **Verified 2026-09-15**, on Windows 11 / Git Bash, against Rokit 1.2.0,
 > Rojo 7.7.0, Wally 0.3.2, Lune 0.10.5, Selene 0.31.0, StyLua 2.5.2 and
 > luau-lsp 1.69.0. Every command below has been run, and every gate has been
-> observed to fail on its vacuous case. **Not yet verified on Linux or macOS**;
+> observed to fail on its vacuous case. **Linux verified 2026-09-16** by CI on
+> `ubuntu-24.04`, at the same seven versions; **macOS is still unverified**, and
 > the lines that depend on the platform say so where they appear.
 >
 > Do not copy the version numbers. They are here to say what was measured, not
@@ -427,7 +428,8 @@ install.
 
     # Windows — VERIFIED 2026-09-15: `winget search Rojo.Rokit` returns Rokit 1.2.0
     winget install --id Rojo.Rokit
-    # macOS / Linux — UNVERIFIED
+    # Linux — VERIFIED 2026-09-16: this line installs rokit-1.2.0-linux-x86_64
+    # on ubuntu-24.04 in .github/workflows/gates.yml. macOS still UNVERIFIED.
     curl -fsSL https://raw.githubusercontent.com/rojo-rbx/rokit/main/scripts/install.sh | bash
 
 Verify: `rokit --version`.
