@@ -9,6 +9,15 @@ trap 'rm -rf "$FIX"' EXIT
 
 doctor() { ( cd "$FIX" && bash scripts/doctor.sh 2>&1 ); }
 
+# run_doctor sets BOTH $out and $rc. The CI block below counts into `missing`,
+# which is doctor's EXIT STATUS and the only part of it a caller can act on -
+# a script, a setup step, a person typing `&&`. Deleting that one line left the
+# block printing its complaint and doctor exiting 0, and every assertion here
+# stayed green, because all of them read the text. A check whose verdict no
+# caller can observe is the exact shape this block was added to detect, and it
+# had arrived in the detector.
+run_doctor() { out="$( cd "$FIX" && bash scripts/doctor.sh 2>&1 )"; rc=$?; }
+
 describe "discovery: the runner is asked what it can see"
 
 write_conf "$FIX" <<'EOF'
@@ -127,9 +136,50 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: bash scripts/gates.sh
 YML
-out="$(doctor)"
+run_doctor
 assert_contains "a workflow that never runs the harness tests is named" "selftest.sh" "$out"
 assert_contains "and says what it costs" "never run" "$out"
+# THE HALF A CALLER CAN ACT ON. Everything else in this block is a string.
+assert_eq "and doctor exits non-zero, not merely complains" 1 "$rc"
+
+# The want-list is three entries and each has to be its own. Dropping `gates.sh`
+# from it left every assertion here green: the two below it were still missing,
+# so the block still complained, still counted, still exited 1 - and the gate
+# runner had quietly stopped being required.
+cat > "$FIX/.github/workflows/gates.yml" <<'YML'
+name: gates
+on: [pull_request]
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bash scripts/selftest.sh
+      - run: bash scripts/check-boundaries.sh origin/main
+YML
+run_doctor
+assert_contains "a workflow missing only gates.sh is still incomplete" "gates.sh" "$out"
+assert_eq "and still exits non-zero" 1 "$rc"
+
+# MENTIONING is not RUNNING. The match is `scripts/<name>` rather than the bare
+# name for this reason: weakened to a substring, a workflow that merely names
+# selftest.sh in a comment - or in a job title, or in an `echo` - satisfies a
+# check about whether CI executes it.
+cat > "$FIX/.github/workflows/gates.yml" <<'YML'
+name: gates
+on: [pull_request]
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      # TODO: wire up selftest.sh and check-boundaries.sh here
+      - name: notes about gates.sh
+        run: echo "we should run selftest.sh one day"
+      - run: bash scripts/gates.sh
+YML
+run_doctor
+assert_contains "a workflow that only MENTIONS the scripts is still missing them" \
+  "no workflow runs scripts/selftest.sh" "$out"
+assert_eq "and exits non-zero on the mention" 1 "$rc"
 
 # The boundaries half too: gates.sh judges the code, check-boundaries.sh judges
 # the commit, and CI running only the first is the state that let a story reach
@@ -158,12 +208,15 @@ jobs:
       - run: bash scripts/selftest.sh
       - run: bash scripts/gates.sh
 YML
-out="$(doctor)"
+run_doctor
 assert_contains "a complete pair reports ok" "ok       ci" "$out"
 case "$out" in
   *"never run"*) _bad "and says nothing is missing" "still complaining: $out" ;;
   *) _ok "and says nothing is missing" ;;
 esac
+# The control for the three exit assertions above: without it, "always exit 1"
+# passes every one of them.
+assert_eq "and a complete pair exits 0" 0 "$rc"
 
 # No workflows at all is not a failure - a project may not use CI, and doctor
 # must not invent a requirement. It says so and moves on.

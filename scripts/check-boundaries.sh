@@ -372,19 +372,11 @@ if printf '%s\n' "$dv" | has_content; then
   # very sentence the template prompts ("RED cannot run this") satisfied the
   # check with no owner named. A check that its own boilerplate discharges is
   # not a check.
-  #
-  # SCAFFOLD is in the list because it is a real phase in phases.conf and it is
-  # the ONLY legal owner for a bootstrap story's deferred verification - the one
-  # phase where source is writable at all. Without it a bootstrap story whose
-  # verification genuinely cannot run before the scaffold exists ("there is no
-  # src/ and no configured analyzer until this story creates both") had no true
-  # owner to declare, and the check pushed it toward writing a false one. A
-  # check that can only be satisfied by a lie is worse than no check.
   if printf '%s\n' "$dv" | strip_comments \
-       | grep -qiE '(^|[^a-z])owner[^a-z]*:?[^a-z]*(RED|GREEN|GATES|REVIEW|SCAFFOLD|DONE)\b'; then
+       | grep -qiE '(^|[^a-z])owner[^a-z]*:?[^a-z]*(RED|GREEN|GATES|REVIEW|DONE)\b'; then
     ok "## Deferred verifications names the phase that owns each entry"
   else
-    problem "story $sid: ## Deferred verifications does not declare an owner. Write 'Owner: GATES' (or RED, GREEN, REVIEW, SCAFFOLD) beside what it verifies. A phase merely NAMED in the prose is not an owner - the template asks you to say why the phase that wants it cannot run it, so 'RED cannot run this' would otherwise discharge this check while naming nobody."
+    problem "story $sid: ## Deferred verifications does not declare an owner. Write 'Owner: GATES' (or RED, GREEN, REVIEW) beside what it verifies. A phase merely NAMED in the prose is not an owner - the template asks you to say why the phase that wants it cannot run it, so 'RED cannot run this' would otherwise discharge this check while naming nobody."
   fi
   if printf '%s\n' "$dv" | has_pasted_output; then
     ok "## Deferred verifications carries its result"

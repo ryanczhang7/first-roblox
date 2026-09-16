@@ -88,6 +88,21 @@ assert_contains "Write tool is blocked in RED" "category: source" "$r"
 r="$(guard "$FIX" Edit file_path "$FIX/src/main.ts")"
 assert_contains "Edit tool is blocked on an absolute path" "category: source" "$r"
 
+# The other two tool names CLAUDE.md promises the lock covers. Neither string
+# appeared anywhere in this suite, so narrowing the case to `Write|Edit)` -
+# which switches the lock OFF for both - passed 145 of 145. MultiEdit is the
+# ordinary tool for a multi-hunk edit, so that is not the lock failing on an
+# exotic path; it is the lock failing on the routine one.
+r="$(guard "$FIX" MultiEdit file_path src/main.ts)"
+assert_contains "MultiEdit is blocked in RED" "category: source" "$r"
+assert_contains "and names the path it refused" "path:     src/main.ts" "$r"
+
+# NotebookEdit names its target in `notebook_path`, never in `file_path`, so it
+# needs its own check_path call - and deleting that call passed 145 of 145 too.
+r="$(guard "$FIX" NotebookEdit notebook_path src/analysis.ipynb)"
+assert_contains "NotebookEdit is blocked on notebook_path" "category: source" "$r"
+assert_contains "and names the notebook" "path:     src/analysis.ipynb" "$r"
+
 
 # ---------------------------------------------------------------------------
 
@@ -493,6 +508,17 @@ assert_blocked "$FIX" 'echo x > tests/main.test.ts' tests/main.test.ts 'writing 
 r="$(guard "$FIX" Write file_path tests/main.test.ts)"
 assert_contains "Write to a test is blocked in GREEN" "category: test" "$r"
 
+# The control for the two assertions added in RED above, and it has to run in
+# BOTH directions to be worth anything. "Deny whenever the tool is MultiEdit"
+# satisfies a denial-only test perfectly well; what distinguishes a real lock is
+# that the same tool in the same phase gets opposite verdicts from the CATEGORY.
+r="$(guard "$FIX" MultiEdit file_path tests/main.test.ts)"
+assert_contains "MultiEdit to a test is blocked in GREEN" "category: test" "$r"
+r="$(guard "$FIX" MultiEdit file_path src/main.ts)"
+assert_eq "but MultiEdit to source is allowed in GREEN" "" "$r"
+r="$(guard "$FIX" NotebookEdit notebook_path tests/explore.ipynb)"
+assert_contains "NotebookEdit to a test notebook is blocked in GREEN" "category: test" "$r"
+
 # ---------------------------------------------------------------------------
 describe "Generated output is not source"
 set_phase "$FIX" RED
@@ -518,5 +544,182 @@ set_phase "$FIX" ""
 assert_allowed "$FIX" 'echo x > src/main.ts' 'writing source with no story'
 r="$(guard "$FIX" Write file_path src/main.ts)"
 assert_eq "Write tool with no story" "" "$r"
+
+# ---------------------------------------------------------------------------
+describe "a phase the table does not list is refused, not waved through"
+
+# phase_allows used to end `# Unknown phase: don't block. return 0`, and that
+# fallback is a lock that opens on a typo. Measured on the real hook before this
+# was written: PHASE=RED refused a source write; GREE, ZZZ, GREEN. and empty all
+# ALLOWED it. `phase.sh set` validates its argument, so the state file should
+# never carry one of these - but "should never" is the whole of the defence, and
+# the state file is a file: hand-edited, half-written, restored from a stale
+# copy, or produced by a phase.sh whose own validation regressed.
+#
+# `no active story` is a DIFFERENT condition and still means no lock: the guard
+# exits on PHASE=IDLE before reaching here, and IDLE is a row in phases.conf.
+# An unrecognised phase is not an absent one.
+unknown_phase() { # <phase>
+  printf 'STORY_ID=T-1\nSTORY_SLUG=fixture\nSTORY_TYPE=feature\nPHASE=%s\nBRANCH=story/T-1-fixture\n' \
+    "$1" > "$FIX/.claude/state/current-story.env"
+}
+
+for ph in GREE ZZZ 'GREEN.'; do
+  unknown_phase "$ph"
+  r="$(guard "$FIX" Write file_path src/main.ts)"
+  if [ -z "$r" ]; then
+    _bad "PHASE=$ph refuses a source write" "it was allowed - the lock is off on a typo"
+  else
+    case "$r" in
+      *"$ph"*) _ok "PHASE=$ph refuses a source write" ;;
+      *) _bad "PHASE=$ph refuses a source write" "refused, but the reason never names the phase: $r" ;;
+    esac
+  fi
+done
+
+# Empty is its own case: it is what a truncated or half-written state file
+# leaves behind, and it is not IDLE.
+printf 'STORY_ID=T-1\nSTORY_SLUG=fixture\nSTORY_TYPE=feature\nPHASE=\nBRANCH=story/T-1-fixture\n' \
+  > "$FIX/.claude/state/current-story.env"
+r="$(guard "$FIX" Write file_path src/main.ts)"
+if [ -z "$r" ]; then
+  _bad "an empty PHASE refuses a source write" "it was allowed"
+else
+  _ok "an empty PHASE refuses a source write"
+fi
+
+# THE CONTROL. Without it, "refuse everything" passes all four above and the
+# fix has simply frozen the tree.
+set_phase "$FIX" GREEN
+r="$(guard "$FIX" Write file_path src/main.ts)"
+assert_eq "while a phase the table DOES list still allows it" "" "$r"
+set_phase "$FIX" ""
+# The lock protects a cycle in flight; it is not a general permission system,
+# and that has to hold for every tool it covers rather than for the two that
+# happened to be tested.
+r="$(guard "$FIX" MultiEdit file_path src/main.ts)"
+assert_eq "MultiEdit with no story" "" "$r"
+r="$(guard "$FIX" NotebookEdit notebook_path src/analysis.ipynb)"
+assert_eq "NotebookEdit with no story" "" "$r"
+
+# ---------------------------------------------------------------------------
+describe "WORLD-080: a filename containing -i is not the sed -i option"
+
+# The report: `sed -n '1,5p' tests/guards/layer-imports.test.ts` - a pure read
+# that writes nothing - refused with a message about frozen production code.
+# The extractor matched `-i` as a BARE SUBSTRING anywhere after the word `sed`,
+# the substring occurs inside `layer-imports`, and `awk '{print $NF}'` then took
+# the file being READ as the write target. Sibling files in the same directory
+# were allowed because their names contain no `-i`. The file's CONTENTS are
+# irrelevant - the guard never opens it.
+#
+# The phase of each case is chosen from the category it has to freeze, which is
+# the trap the original report fell into: `test` is WRITABLE in RED, so a
+# misparsed read of a test path cannot block in RED however badly it is parsed.
+# AC-1 therefore runs in DONE.
+
+# The controls first, because they are what stops every "must be permitted"
+# case below from passing vacuously. If notes-inline.txt classified as docs, or
+# src/lib/layer-imports.ts as test, those reads would be permitted for a reason
+# with nothing to do with this defect.
+set_phase "$FIX" RED
+assert_blocked "$FIX" 'echo x > src/lib/layer-imports.ts' src/lib/layer-imports.ts \
+  'control: the -i bearing SOURCE path is frozen in RED'
+assert_blocked "$FIX" 'echo x > notes-inline.txt' notes-inline.txt \
+  'control: the -i bearing ROOT path is frozen in RED, via the paths.conf fallback'
+set_phase "$FIX" DONE
+assert_blocked "$FIX" 'echo x > tests/guards/layer-imports.test.ts' tests/guards/layer-imports.test.ts \
+  'control: the -i bearing TEST path is frozen in DONE'
+
+# AC-1. The literal command from the report, in a phase that freezes `test`.
+assert_allowed "$FIX" "sed -n '1,5p' tests/guards/layer-imports.test.ts" \
+  'AC-1: sed -n read of an -i bearing test path, in DONE'
+
+set_phase "$FIX" RED
+# AC-2. The same misparse on a source path, in the phase that freezes source.
+assert_allowed "$FIX" "sed -n '1,5p' src/lib/layer-imports.ts" \
+  'AC-2: sed -n read of an -i bearing source path, in RED'
+
+# AC-3. Unquoted, so masking cannot help: there is nothing quoted to mask.
+assert_allowed "$FIX" 'sed -n 1,5p notes-inline.txt' \
+  'AC-3: an unquoted -i bearing token in a sed read'
+
+# AC-4. Other short options, none of them i.
+assert_allowed "$FIX" "sed -En '1,5p' src/main.ts" \
+  'AC-4: sed -En read of frozen source'
+
+# Three shapes beyond the enumerated criteria, found by probing the guard
+# rather than by reading it.
+#
+# A read naming TWO input files, the first -i bearing. `$NF` is the second, so
+# the guard refused this on src/main.ts - a real file it only reads, which is
+# the most convincing kind of wrong denial. A fix that merely exempts the word
+# containing `-i` still fails here.
+assert_allowed "$FIX" "sed -n '1,5p' src/lib/layer-imports.ts src/main.ts" \
+  'a two-file sed read whose first file is -i bearing'
+
+# A read whose sed SCRIPT contains the literal text `-i` - which is what an
+# agent auditing this very defect types. Masking does not save it: the masker
+# rewrites operators and whitespace inside quotes, not letters, so a quoted
+# `-i` reaches the extractor intact.
+assert_allowed "$FIX" "sed -n '/sed -i/p' src/main.ts" \
+  'a sed read whose script mentions -i'
+
+# A long option that merely CONTAINS the letter i and is not --in-place.
+# `--silent` is GNU sed's long form of -n, so this writes nothing; the obvious
+# wrong fix - "a word starting with - and containing i" - refuses it.
+assert_allowed "$FIX" "sed --silent '1,5p' src/main.ts" \
+  'sed --silent, a long option containing i that is not --in-place'
+
+# --- and the writes that must STILL be refused ------------------------------
+# These matter more than everything above. Deleting the rule cures every false
+# positive and removes the only thing stopping an agent from editing frozen
+# source with sed -i. AC-5 (the / and | delimiters) and AC-9 (a target held in
+# a variable) are asserted where they have always been - at the top of this
+# file and under "RED: a path in a variable is still a path" - and are
+# deliberately not repeated here.
+
+# AC-6. A backup suffix attached to the option.
+assert_blocked "$FIX" "sed -i.bak 's/a/b/' src/main.ts" src/main.ts \
+  'AC-6: sed -i.bak writing frozen source'
+
+# AC-7. The long option, bare and with a suffix.
+assert_blocked "$FIX" "sed --in-place 's/a/b/' src/main.ts" src/main.ts \
+  'AC-7: sed --in-place writing frozen source'
+assert_blocked "$FIX" "sed --in-place=.bak 's/a/b/' src/main.ts" src/main.ts \
+  'AC-7: sed --in-place=.bak writing frozen source'
+
+# AC-8. A bundled short-option cluster whose letters include i. These were NOT
+# already caught: `-ni` and `-Ei` contain no `-i` substring, so the extractor
+# never matched them, and both of these in-place writes to frozen source were
+# PERMITTED before this story. The false positive and a live hole are the same
+# bug read from two ends.
+assert_blocked "$FIX" "sed -ni 's/a/b/' src/main.ts" src/main.ts \
+  'AC-8: sed -ni writing frozen source'
+assert_blocked "$FIX" "sed -Ei 's/a/b/' src/main.ts" src/main.ts \
+  'AC-8: sed -Ei writing frozen source'
+
+# GNU getopt_long accepts any unambiguous abbreviation, and --in-place is the
+# only long option of GNU sed 4.9 that begins `--i`: `sed --i 's/a/b/' f`
+# rewrites f in place, verified against the sed this harness runs on. The
+# current extractor catches it only by accident, because `--i` happens to
+# contain the substring `-i`. A fix matching the literal `--in-place` cures the
+# false positives and opens this hole.
+assert_blocked "$FIX" "sed --i 's/a/b/' src/main.ts" src/main.ts \
+  'sed --i, an abbreviated --in-place, writing frozen source'
+
+# And the pair that guards the fix's own mechanism: an -i bearing filename is
+# not exempt from being written. "Skip candidates whose name contains -i"
+# satisfies every must-permit case above and deletes the protection for these.
+assert_blocked "$FIX" "sed -i 's/a/b/' src/lib/layer-imports.ts" src/lib/layer-imports.ts \
+  'a real sed -i onto the -i bearing source path is still refused'
+assert_blocked "$FIX" "sed -i 's/a/b/' notes-inline.txt" notes-inline.txt \
+  'a real sed -i onto the -i bearing root path is still refused'
+
+# AC-11. The redirect scanner is a different rule and this story must not
+# disturb it.
+assert_blocked "$FIX" 'echo x > src/main.ts' src/main.ts \
+  'AC-11: a redirect into frozen source is untouched by this fix'
+
 
 summary "phase-guard"

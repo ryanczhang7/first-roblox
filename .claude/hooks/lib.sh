@@ -739,7 +739,16 @@ load_state() {
       BRANCH)     BRANCH="$v" ;;
     esac
   done < "$STATE_FILE"
-  [ -z "$PHASE" ] && PHASE="IDLE"
+  # An empty PHASE means one of two different things, and collapsing them to
+  # IDLE turned the second into "no lock". With no STORY_ID either, the file
+  # declares no story and IDLE is right. With a STORY_ID, a story IS active and
+  # only its phase is missing - a truncated write, a hand-edit, a stale copy -
+  # and that is a corrupt state rather than an idle one. It gets a name that
+  # matches no row in phases.conf, so phase_allows refuses it and the denial
+  # says what it could not read.
+  if [ -z "$PHASE" ]; then
+    if [ -n "$STORY_ID" ]; then PHASE="<unset>"; else PHASE="IDLE"; fi
+  fi
   return 0
 }
 
@@ -757,8 +766,20 @@ phase_allows() {
     case ",$cats," in *",$want,"*) return 0 ;; esac
     return 1
   done < "$HARNESS_DIR/phases.conf"
-  # Unknown phase: don't block.
-  return 0
+  # A phase this table does not list. REFUSE, rather than the `return 0` that
+  # stood here: a lock whose failure mode is opening is not a lock, and the
+  # condition that reaches this line is a state file carrying something no
+  # phase.sh would write - a typo, a truncated write, a stale copy restored by
+  # hand. Measured before the change: PHASE=RED refused a source write while
+  # GREE, ZZZ, GREEN. and empty all allowed it, so `phase.sh set`'s validation
+  # was the only thing between a mistyped phase and a silently disabled lock.
+  # `GREEN.` is not hypothetical - it is the production defect the comment above
+  # valid_phase records.
+  #
+  # NOT the same as "no active story", which still means no lock: the guard
+  # exits on PHASE=IDLE before it ever calls this, and IDLE is a row in
+  # phases.conf. An unrecognised phase is not an absent one.
+  return 1
 }
 
 # phase_categories   The categories the current phase may write - field 2 of

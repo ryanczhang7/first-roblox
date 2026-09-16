@@ -43,8 +43,14 @@ while IFS= read -r cmd; do
   case "$cmd" in *'${{'*) continue ;; esac
   printf '%s\n' "$dry" | grep -qF -- "$cmd" || missing="$missing
   $cmd"
-done <<< "$(grep -hE '^[[:space:]]*run:' "$WF"/gates.yml "$WF"/boundaries.yml \
-             | sed -E 's/^[[:space:]]*run:[[:space:]]*//')"
+# Both spellings. This derivation reads THIS repository's workflows, and every
+# one of them happens to use the two-line `name:` / `run:` form - so a grep for
+# `^run:` derived a complete list here and would have under-derived in any
+# project writing the compact `- run: cmd`. The script had the identical blind
+# spot in its own parser, which is why neither side caught it: the test and the
+# code were wrong in the same direction.
+done <<< "$(grep -hE '^[[:space:]]*(-[[:space:]]+)?run:' "$WF"/gates.yml "$WF"/boundaries.yml \
+             | sed -E 's/^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*//')"
 assert_eq "every workflow step appears in the script" "" "$missing"
 
 # ---------------------------------------------------------------------------
@@ -176,5 +182,89 @@ fi
 # The failing step's own output has to survive. A wrapper that swallows it and
 # prints its own verdict makes every failure a second command to reproduce.
 assert_contains "the failing step's output is shown" "stub selftest: red" "$out"
+
+# ---------------------------------------------------------------------------
+describe "the branches that decide WHAT runs, and in WHICH order"
+
+OFIX="$(make_project_fixture)"
+mkdir -p "$OFIX/.github/workflows"
+
+# Skipping is the honest answer for an expression this cannot resolve, and the
+# two halves are separate claims: it must SAY so, and it must carry on with the
+# steps it can run. Deleting the `continue` left both untested - the step would
+# have been run with `${{ matrix.os }}` still in it, which is a command CI never
+# ran.
+cat > "$OFIX/.github/workflows/gates.yml" <<'YML'
+name: gates
+on: [pull_request]
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bash scripts/setup-${{ matrix.os }}.sh
+      - run: bash scripts/gates.sh
+YML
+oerr="$( cd "$OFIX" && bash scripts/ci-local.sh --dry-run 2>&1 >/dev/null )"
+oout="$( cd "$OFIX" && bash scripts/ci-local.sh --dry-run 2>/dev/null )"
+assert_contains "an unresolvable expression is skipped OUT LOUD" "skipping a gates step" "$oerr"
+assert_contains "and the note quotes what it could not resolve" 'matrix.os' "$oerr"
+assert_contains "while the steps it CAN resolve still run" "bash scripts/gates.sh" "$oout"
+case "$oout" in
+  *'${{'*) _bad "and the unresolved step is not emitted" "it was: $oout" ;;
+  *) _ok "and the unresolved step is not emitted" ;;
+esac
+
+# A folded scalar is the other block form. `run: >` joins its lines into one
+# command; `run: |` keeps them separate. Narrowing the match to `|` alone left
+# every assertion green and silently dropped every folded step a project wrote.
+cat > "$OFIX/.github/workflows/gates.yml" <<'YML'
+name: gates
+on: [pull_request]
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - run: >
+          bash scripts/gates.sh
+          --gate unit
+YML
+oout="$( cd "$OFIX" && bash scripts/ci-local.sh --dry-run 2>/dev/null )"
+assert_contains "a folded scalar's body is emitted" "bash scripts/gates.sh" "$oout"
+assert_contains "and so is its continuation" "--gate unit" "$oout"
+
+# ORDER, not presence. gates.yml goes first because it carries the selftest and
+# the fast checks, and there is no sense discovering a broken harness after a
+# full build. Asserted by comparing the two line numbers rather than by grepping
+# for gates.yml at all: the obvious mutation - dropping the line that emits it
+# first - removes gates.yml from the list ENTIRELY, so a presence check would
+# report the ordering broken for the wrong reason and pass a real reordering.
+cat > "$OFIX/.github/workflows/gates.yml" <<'YML'
+name: gates
+on: [pull_request]
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bash scripts/selftest.sh
+YML
+cat > "$OFIX/.github/workflows/aaa-first-alphabetically.yml" <<'YML'
+name: aaa
+on: [pull_request]
+jobs:
+  aaa:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bash scripts/check-boundaries.sh origin/main
+YML
+oout="$( cd "$OFIX" && bash scripts/ci-local.sh --dry-run 2>/dev/null )"
+g_at="$(printf '%s\n' "$oout" | grep -n 'scripts/selftest.sh'        | head -1 | cut -d: -f1)"
+b_at="$(printf '%s\n' "$oout" | grep -n 'scripts/check-boundaries.sh' | head -1 | cut -d: -f1)"
+if [ -n "$g_at" ] && [ -n "$b_at" ] && [ "$g_at" -lt "$b_at" ]; then
+  _ok "gates.yml runs first even when another workflow sorts before it"
+else
+  _bad "gates.yml runs first even when another workflow sorts before it" \
+    "gates at line ${g_at:-none}, the other at ${b_at:-none}: $oout"
+fi
+rm -rf "$OFIX"
 
 summary "ci-local"

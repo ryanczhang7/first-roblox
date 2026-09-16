@@ -25,12 +25,6 @@ Cover, asking follow-ups until each is genuinely answered:
    deadline, anything the user already has strong opinions about.
 7. **Success** — how we will know it worked, in observable terms.
 8. **Look and feel** — tone, references, anything the Lead Designer needs.
-9. **If it is a game** — what the player actually *does*, second to second; what
-   a good session looks like when they describe it out loud; reference games,
-   and specifically what those got right and wrong. Ask what makes a round
-   *tense*, and what would make one boring. This is what the Game Designer has
-   to work from, and a brief that captures a genre and a loop without it will
-   fail the five questions in the `game-design` skill.
 
 Do not invent answers. If the user says "you decide", say what you would decide
 and why, and get their agreement before writing it down as fact.

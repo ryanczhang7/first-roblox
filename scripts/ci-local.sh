@@ -96,7 +96,7 @@ workflow_files() {
 workflow_steps() { # <workflow file>
   awk '
     function flush(  i) { for (i = 1; i <= n; i++) print buf[i]; n = 0 }
-    /^[[:space:]]*run:[[:space:]]*[|>]/ { flush(); inblock = 1; ind = -1; next }
+    /^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*[|>]/ { flush(); inblock = 1; ind = -1; next }
     inblock {
       if ($0 ~ /^[[:space:]]*$/) next
       match($0, /^[[:space:]]*/); this = RLENGTH
@@ -104,9 +104,9 @@ workflow_steps() { # <workflow file>
       if (this < ind) { inblock = 0 }
       else { line = $0; sub(/^[[:space:]]+/, "", line); buf[++n] = line; next }
     }
-    /^[[:space:]]*run:[[:space:]]*[^|>[:space:]]/ {
+    /^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*[^|>[:space:]]/ {
       flush(); line = $0
-      sub(/^[[:space:]]*run:[[:space:]]*/, "", line)
+      sub(/^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*/, "", line)
       buf[++n] = line
       next
     }

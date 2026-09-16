@@ -79,6 +79,49 @@ assert_eq "frontmatter phase"  "RED"         "$(frontmatter_value "$(sfile T-11)
 assert_eq "frontmatter status" "in-progress" "$(frontmatter_value "$(sfile T-11)" status)"
 assert_contains "and the hooks can see it" "PHASE=RED" "$(cat "$FIX/.claude/state/current-story.env")"
 
+# `GREEN.` is KEPT, and it is also not the input that discriminates. As an awk
+# regex it requires a sixth character, so it fails to match the row `GREEN`
+# under `~` exactly as it does under `==` - the control for the defect cannot
+# tell the fixed implementation from the broken one. A test named for the
+# property it checks, using an input that cannot fail, is what this replaces.
+#
+# The inputs that DO discriminate are the ones where the typo is a prefix or a
+# substring of a real phase. `cmd_set` uppercases its argument, so a fat-fingered
+# `gree` arrives here as `GREE`.
+for bad in GREE RE D; do
+  out="$(phase set T-11 "$bad")"
+  assert_contains "a phase name that is a prefix of a real one is refused: $bad" "unknown phase" "$out"
+done
+# And the metacharacter that matches every row at once.
+out="$(phase set T-11 '.')"
+assert_contains "so is a regex metacharacter matching any row" "unknown phase" "$out"
+
+# Refusing is only half of it: nothing may have moved. A refusal that had
+# already written the state file would leave the guard reading a phase the
+# story does not claim.
+assert_eq "and after all of them the story is still RED" "RED" "$(frontmatter_value "$(sfile T-11)" phase)"
+assert_contains "and so is the state the hooks read" "PHASE=RED" "$(cat "$FIX/.claude/state/current-story.env")"
+
+# --- the branch frontmatter, which is what check-boundaries reads ------------
+#
+# `check-boundaries.sh` finds the story that CLAIMS a branch by reading this
+# key; with no claimant it skips eight checks and says so. new-story.sh writes
+# it too, so on the common path this write is redundant - it is load-bearing for
+# a story file written or edited by hand, and for one whose branch changed,
+# which is exactly the file this fixture builds.
+git -C "$FIX" checkout -q -b story/T-12-nobranch 2>/dev/null
+mkdir -p "$FIX/docs/backlog/stories"
+{
+  printf -- '---\nid: T-12\ntitle: No branch key\nslug: nobranch\ntype: feature\nstatus: todo\nphase: PLANNED\n---\n\n'
+  printf -- '## Acceptance criteria\n\n- **AC-1** - it works.\n'
+} > "$FIX/docs/backlog/stories/T-12.md"
+out="$(phase set T-12 RED)"
+assert_contains "a story file with no branch: key still moves" "T-12 -> RED" "$out"
+fm_branch="$(frontmatter_value "$FIX/docs/backlog/stories/T-12.md" branch)"
+state_branch="$(sed -nE 's/^BRANCH=//p' "$FIX/.claude/state/current-story.env" | head -1)"
+assert_eq "and the branch key is written into the frontmatter" "story/T-12-nobranch" "$fm_branch"
+assert_eq "matching the branch the hooks were told about" "$state_branch" "$fm_branch"
+
 # ---------------------------------------------------------------------------
 describe "phase.sh set: dependencies have to be DONE"
 

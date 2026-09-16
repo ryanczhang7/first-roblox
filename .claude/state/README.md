@@ -11,6 +11,8 @@ in here is ever committed; only this file and `.gitkeep` are tracked.
 | `mutations/*.bak` | `scripts/mutate.sh` | `scripts/mutate.sh`, to restore the file | yes |
 | `mutations/log` | `scripts/mutate.sh` | you, and the story that quotes it | yes |
 | `phase-guard-declined.log` | `.claude/hooks/phase-guard.sh` | you, when the guard looks noisy | yes |
+| `refresh-self.<pid>.sh` | `scripts/refresh-harness.sh` | `bash`, as the script it is running | yes |
+| `plan-write.<pid>.md` | `scripts/plan.sh write` | `awk`, while it splices the section | yes |
 
 ## The `Hand-editable` column is enforced
 
@@ -61,3 +63,18 @@ single-occurrence match. **A `.bak` left behind means a restore failed.**
 `mutate.sh` exits 90 and says so when that happens; on every other path it cleans
 up after itself. Put the file back from the backup, check it with `cmp`, then
 delete the backup.
+
+`plan-write.<pid>.md` holds the rendered `## Model guidance` block for the moment
+it takes `awk` to splice it into the story, and is removed straight after. Same
+reason as the two below for the explicit path rather than `$TMPDIR`. One left
+behind means `plan.sh write` died between rendering and splicing; the story file
+is untouched in that case, and re-running it is safe.
+
+`refresh-self.<pid>.sh` exists only while a refresh is running, and for the same
+reason `mutations/` has an explicit path rather than `$TMPDIR`. `refresh-harness.sh`
+replaces `scripts/*.sh`, which includes itself, and bash reads a script by byte
+offset as it executes it: overwrite the file underneath and execution resumes at
+the old offset in the new bytes, mid-line. So the script copies itself here and
+re-execs, and the file being read is then never a file the copy loop writes. An
+`EXIT` trap removes it. One left behind means a refresh died outright rather than
+finishing, and it is safe to delete.
