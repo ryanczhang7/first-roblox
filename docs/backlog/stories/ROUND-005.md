@@ -1223,17 +1223,85 @@ ROUND-003 shapes.
 
 <!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
 
-    run:    2026-09-16T15:46:50Z
-    commit: a292a88 (working tree had uncommitted changes)
+    run:    2026-09-16T16:01:18Z
+    commit: 848e807
     tree:   4710c8000685815d3efcb642582e01f1b5899b9e
     result: pass (5 ran, 3 unconfigured, 0 known)
 
-    PASS         format (1s, observed 34)
-    PASS         lint (0s, observed 34, floor 1)
-    PASS         typecheck (2s, observed 7)
-    PASS         unit (7s, observed 175, floor 175)
+    PASS         format (0s, observed 38)
+    PASS         lint (0s, observed 38, floor 1)
+    PASS         typecheck (3s, observed 7)
+    PASS         unit (6s, observed 175, floor 175)
     UNCONFIGURED coverage
     UNCONFIGURED integration
     PASS         build (0s, observed 20721)
     UNCONFIGURED mutation
 
+
+---
+
+## REVIEW: the PR, and its CI
+
+**PR:** https://github.com/ryanczhang7/first-roblox/pull/7
+**Commit:** `848e807`, on `story/ROUND-005-a-round-ends-on-outcome-clock-or-quorum`.
+
+Both required checks pass.
+
+    boundaries   pass   5s    actions/runs/35119010151
+    gates        pass   44s   actions/runs/35119010087
+
+The `gates` job's own summary, quoted from the CI log rather than from a local
+run:
+
+    --- gate summary ---
+    PASS         format (0s, observed 38)
+    PASS         lint (0s, observed 38, floor 1)
+    PASS         typecheck (2s, observed 7)
+    PASS         unit (1s, observed 175, floor 175)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 20721)
+    UNCONFIGURED mutation
+    All required gates passed (5 ran, 3 unconfigured, 0 known).
+
+### `bash scripts/ci-local.sh`, and why `## Gate results` moved
+
+It was run after the commit and **passed every step** — `selftest`, `--list`,
+`--audit`, the full `gates.sh`, and `check-boundaries.sh` against `origin/main`:
+
+    ok    gate record matches commit 848e807 (tree 4710c8000685815d3efcb642582e01f1b5899b9e)
+    ...
+    ci-local: every step CI runs passed locally, against base origin/main at commit 848e807.
+
+It took over twenty minutes on this machine and wrote nothing until it finished,
+which looked like a hang and was not one. Worth knowing before somebody kills it:
+on this stack it buffers.
+
+Its `gates.sh` step re-recorded `## Gate results`, which is why that block is
+stamped `commit: 848e807` with no *"working tree had uncommitted changes"*
+caveat, where the GATES-phase run was stamped `a292a88` with one. **The tree hash
+did not move** — `4710c800…` in both — so it is the same code judged twice, the
+second time from a clean tree. The later stamp is the stronger record and it is
+the one kept.
+
+### Two differences between the local runs and CI, both explained
+
+**`unit` at 1 s on CI against 6–7 s locally.** The gate is *faster* on the
+runner, not slower, so the timeout risk `--fast` exists to catch does not arise
+here. Every test in this story is arithmetic over small tables against a
+simulated clock; none has a timeout of its own and none needs one. No
+`ci-factor` line is warranted on this evidence — one needs a per-test measurement
+under the same gate, and `coverage`, the gate that usually motivates one, is
+unconfigured on this stack.
+
+**`format` and `lint` observed 34 at GATES and 38 afterwards.** Not a difference
+in what the tools checked: `stylua` and `selene` walk the directory and read all
+38 files in every one of those runs. The `n=` counter in the evidence command is
+`git ls-files -- src tests lune`, which lists **tracked** files only, and this
+story's four new test files were still untracked when the GATES-phase run was
+recorded. ROUND-004 shows the same lag (`observed 30` locally, 34 on CI) for the
+same reason: the counter trails by exactly the story's own new files until the
+commit lands. Nothing is masked — the floor is 1 and both numbers are far above
+it — but the counter is a weaker liveness assertion than it looks, because the
+number it reports is not the number of files the tool read. That is a harness
+defect worth a story of its own, not this one's to fix.
