@@ -1436,3 +1436,38 @@ counter under test and so is not self-referential - and (b) leaving them settled
 but putting the harness suites into the fast loop so a stale literal is caught in
 RED rather than in CI. Recorded here so the next planner has it; nothing in this
 story acts on it.
+
+---
+
+## REVIEW: the PR, and its CI
+
+**PR:** https://github.com/ryanczhang7/first-roblox/pull/10
+**Commit:** `0bce924`. Both required checks pass.
+
+    boundaries   pass   5s      actions/runs/35184630897
+    gates        pass   1m12s   actions/runs/35184630842
+
+From the CI log, the part that matters - the suite that failed the first run:
+
+    project-counters: 40 passed, 0 failed
+    16 harness suite(s) passed.
+    197 passed, 0 failed
+    PASS         format (0s, observed 43)
+    PASS         lint (0s, observed 43, floor 1)
+    PASS         typecheck (2s, observed 8)
+    PASS         unit (1s, observed 197, floor 197)
+    PASS         build (0s, observed 25103)
+
+The first run of this PR (`actions/runs/35179368944`) failed with
+`project-counters: 29 passed, 11 failed`, and that run is the evidence for the
+return to RED recorded above. It is left in the PR's history rather than
+force-pushed away: it is the only artefact showing that the detection gap is
+real rather than argued.
+
+### Timings
+
+`gates` 1m12s, `boundaries` 5s, no `timeout-minutes` declared. `unit` is **1 s**
+on CI against 16 s locally, and the whole harness self-test is well inside the
+job. AC-5's 10,000-seed tally - the one plausible timeout risk in this story -
+does not register at CI's resolution. No `slow` line and no `ci-factor` line is
+warranted.
