@@ -2004,6 +2004,21 @@ on the substance - four quiet readings, worst 22 s, budget 30 s - and I am
 The next story to lean on that 10 % should tighten the wording rather than
 inherit it as written.
 
-**3. CI cross-check:** owed at DONE, against `HARNESS-006`'s 13 s for the same
-suite on CI. Recorded there, not here.
+**3. CI cross-check: satisfied.** From the PR's first CI run,
+[actions/runs/35242620924](https://github.com/ryanczhang7/first-roblox/actions/runs/35242620924):
+
+    Run gates    PASS         harness (13s, observed 40)
+                 All required gates passed (6 ran, 3 unconfigured, 0 known).
+    Harness self-test   harness-gate: 29 passed, 0 failed
+                        project-counters: 40 passed, 0 failed
+                        17 harness suite(s) passed.
+
+**13 s on CI**, against `HARNESS-006`'s 13 s for the same suite a day earlier -
+the new gate costs CI exactly what the suite always cost it, and the local
+17-22 s is the laptop, not the gate. All three parts of AC-6 are now evidenced.
+
+**Margins, checked rather than assumed** (a pass within 10 % of a limit is a
+pending failure): the `gates` job is **2 m 10 s** and `boundaries` **6 s**, both
+far from any timeout; the new suite is 41 s of the self-test on CI. Nothing here
+is near an edge.
 
