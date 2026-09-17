@@ -175,6 +175,40 @@ agreement in shape; the profile uses `<dirs>` placeholders and prose, and a
 byte comparison would fail on the first legitimate divergence and be deleted by
 the next person.
 
+### This story must bump `.claude/harness/VERSION`, and that is not cosmetic
+
+Added at PLANNED, after the harness refresh to 30. `check-boundaries.sh` now
+carries a check this story did not exist under when it was written:
+
+    if [ "${touched_harness:-0}" -gt 0 ]; then
+      ... problem "this changes the harness ($touched_harness file(s) under
+      .claude/, scripts/ or .github/) and does not bump
+      .claude/harness/VERSION."
+
+This story changes **two** files under `.claude/` - the profile and a new test
+suite - so it trips it, and CI refuses the PR. The bump goes in the same commit
+as the change.
+
+**The wrinkle, recorded rather than discovered in GATES.** `VERSION` is
+upstream-owned: `refresh-harness.sh` lists it as REPLACED, so the next refresh
+overwrites whatever this story writes. That does not make the bump pointless -
+between now and that refresh it is the only thing telling a reader this tree is
+not stock harness 30 - but it does mean the number is a **local** claim, not a
+claim about upstream. GREEN writes it as such rather than inventing an upstream
+release that does not exist:
+
+    31 (2026-09-16, local: HARNESS-007)
+
+**This is not a new acceptance criterion** and no AC changes - the criteria are
+about what the profile teaches, and a version stamp is a property of the commit,
+not of the artifact. It is a Contract pin because it is a thing GREEN must do and
+would otherwise meet as a CI refusal.
+
+**It affects every future harness-touching story in this repository**, not just
+this one. `HARNESS-006` did not trip it only because it merged under harness 19,
+before the check existed. Worth a line in `CLAUDE.md` eventually; not this
+story's to add.
+
 ### Oracle partition
 
 | AC | Kind | Instruction to RED |
