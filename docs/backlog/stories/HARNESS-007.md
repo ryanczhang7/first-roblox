@@ -4,8 +4,8 @@ title: The roblox-luau profile still teaches the counter HARNESS-006 removed
 slug: the-roblox-luau-profile-still-teaches-th
 epic: 
 type: chore
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/HARNESS-007-the-roblox-luau-profile-still-teaches-th
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -339,8 +339,8 @@ the same way — assert the *claims are present*, not their wording.
 | PLANNED | lead-po | opus | **`claude-opus-5`** | as planned |
 | RED | test-developer | fable | **`claude-opus-5`** | the `except \| RED \| unenforced` row applies; `plan.sh` did not fire it. See PO decision 4. Confirmed at dispatch by the agent: `bash scripts/phase.sh show` printed `Model for RED: fable` and the dispatch resolved to `claude-opus-5`, so this was an override, as decision 4 intended. |
 | GREEN | feature-developer | opus | **`claude-opus-5`** | as planned. No exception applies: the `unenforced` row is RED-only, and GREEN never moves by policy. |
-| GATES | feature-developer | opus | _(record at dispatch)_ | |
-| REVIEW | lead-po | opus | _(record at dispatch)_ | |
+| GATES | feature-developer | opus | **`claude-opus-5`** (orchestrator-run; no dispatch needed — no gate failed) | as planned |
+| REVIEW | lead-po | opus | **`claude-opus-5`** | as planned |
 
 Two things to brief carefully.
 
@@ -1017,10 +1017,22 @@ removed and the probe re-run; it is M7 in the table above and is red.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-17T19:34:59Z
+    commit: d635f94
+    tree:   7dd91365d27ad2d22361372720a82fa17e7d788f
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 43)
+    PASS         lint (0s, observed 43, floor 1)
+    PASS         typecheck (3s, observed 8)
+    PASS         unit (29s, observed 197, floor 197)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 25103)
+    PASS         harness (21s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -1431,3 +1443,44 @@ that granularity, and it is a mutation rather than an assertion.
 Not a return to RED: no assertion is vacuous, nothing is weakened, and the
 property AC-7 names is verified. Recorded so the next person reading
 `REGRESSED_FIXTURE` knows its resolution is one string, not four.
+
+### GATES (2026-09-17)
+
+**No deferred verifications to run.** The block is empty by design — every
+control was producible in RED because the artifact already existed and was
+already wrong. Fifteen `mutate.sh` runs across RED and GREEN are what stands in
+for it, and `## Regressions` carries their output.
+
+**No `## Gate probes` entry, because this story adds and changes no gate.** It
+adds a *suite*, which `scripts/selftest.sh` discovers. The section is left as its
+template comment rather than deleted so the harness's section readers still find
+it.
+
+**`bash scripts/gates.sh`: all 6 required gates pass, 3 unconfigured, 0 known, 0
+blocked.** Recorded by the script into `## Gate results` above, stamped at commit
+`d635f94`, tree `7dd91365`.
+
+**Read that record with Contract (a) in hand.** It says *"All required gates
+passed"*, and **no gate in it read this story's artifact.** The `harness` gate
+runs `project-counters.test.sh` only; `profile-counters.test.sh` is named by no
+`gate` line. That is the accepted design, not an oversight — the guard is
+toolchain-free by requirement and reaches CI through `selftest.sh` in the required
+`gates` job — but it is precisely the shape `/advance-story` warns about, so it is
+written down rather than left for someone to infer from a green summary. What
+actually verifies the artifact on this branch:
+
+    $ bash .claude/tests/profile-counters.test.sh
+    profile-counters: 40 passed, 0 failed
+    $ bash scripts/selftest.sh profile-counters
+    profile-counters: 40 passed, 0 failed
+    1 harness suite(s) passed.
+
+**The gate record survives committing the story, verified rather than assumed.**
+`gate_tree_hash` (`.claude/hooks/lib.sh:650`) filters the listing through
+`classify_stdin | gated_stdin`, so only gated paths are hashed and `docs/**` is
+not among them. Recomputed with the story file dirty:
+
+    7dd91365d27ad2d22361372720a82fa17e7d788f   recomputed, story file modified
+    7dd91365d27ad2d22361372720a82fa17e7d788f   recorded in ## Gate results
+
+Identical, so the REVIEW commit that carries this record cannot invalidate it.
