@@ -65,12 +65,24 @@ that turns the empty repository into the chosen stack's real layout and fills in
 `.claude/harness/project.conf`.
 
 Before RED, partition each story's criteria by whether an oracle exists and
-say which is which in the story (`story-authoring`, "Brief RED by oracle"). If
-a phase is worth running on a model other than the default, say so in
-`## Model guidance` *before* it starts, with a success condition that could come
-out either way, and record the verdict when the phase ends. A model choice with
-no recorded verdict is folklore. The one verdict recorded so far points at the
-brief, not the model; the skill has the numbers.
+say which is which in the story (`story-authoring`, "Brief RED by oracle").
+
+Then, as the last step of PLANNED — after the contract is written, because the
+plan depends on it — run `bash scripts/plan.sh write <id>`. That renders the
+per-phase model plan from `.claude/harness/models.conf` into `## Model
+guidance`, with the reason for each row. **Do not decide this fresh per story
+and do not ask the user.** The policy encodes the one measurement this harness
+has, and a question re-asked every story stops being answered and becomes habit.
+
+Depart from the plan only when this story gives you a reason to, and then write
+the reason and a success condition that could come out either way in the same
+section. A model choice with no recorded verdict is folklore. The one verdict
+recorded so far points at the brief, not the model; the skill has the numbers.
+
+Which command drives the story is the same kind of question, with the same
+answer: `bash scripts/plan.sh <id>` recommends `advance-story` or
+`complete-story` and says why. `phase.sh board` carries the recommendation for
+every story at once. Take it unless you can say what it missed.
 
 ## Orchestrating
 

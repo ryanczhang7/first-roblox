@@ -43,7 +43,7 @@ for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
     -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    -*) printf 'ci-local: unknown option %s\n' "$a" >&2; exit 2 ;;
+    -*) printf '[ci-local] unknown option %s\n' "$a" >&2; exit 2 ;;
     *) BASE="$a" ;;
   esac
 done
@@ -96,7 +96,7 @@ workflow_files() {
 workflow_steps() { # <workflow file>
   awk '
     function flush(  i) { for (i = 1; i <= n; i++) print buf[i]; n = 0 }
-    /^[[:space:]]*run:[[:space:]]*[|>]/ { flush(); inblock = 1; ind = -1; next }
+    /^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*[|>]/ { flush(); inblock = 1; ind = -1; next }
     inblock {
       if ($0 ~ /^[[:space:]]*$/) next
       match($0, /^[[:space:]]*/); this = RLENGTH
@@ -104,9 +104,9 @@ workflow_steps() { # <workflow file>
       if (this < ind) { inblock = 0 }
       else { line = $0; sub(/^[[:space:]]+/, "", line); buf[++n] = line; next }
     }
-    /^[[:space:]]*run:[[:space:]]*[^|>[:space:]]/ {
+    /^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*[^|>[:space:]]/ {
       flush(); line = $0
-      sub(/^[[:space:]]*run:[[:space:]]*/, "", line)
+      sub(/^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*/, "", line)
       buf[++n] = line
       next
     }
@@ -134,7 +134,7 @@ while IFS= read -r wf; do
 done <<< "$(workflow_files)"
 
 if [ "${#steps[@]}" -eq 0 ]; then
-  printf 'ci-local: no run: steps found in %s - nothing CI does can be reproduced here.\n' "$WFDIR" >&2
+  printf '[ci-local] no run: steps found in %s - nothing CI does can be reproduced here.\n' "$WFDIR" >&2
   exit 2
 fi
 
@@ -143,8 +143,32 @@ if [ "$DRY" = 1 ]; then
   exit 0
 fi
 
+# SAID FIRST, and under the same `ci-local:` prefix as the verdict.
+#
+# check-boundaries.sh judges the COMMIT, so a run started before committing
+# returns a perfectly green verdict about the PREVIOUS commit - a right answer
+# to a question nobody asked. That happened three times in one day, and the
+# information was not missing: the note below already named HEAD whenever the
+# tree was dirty. It was read past twice, because the verdict line began
+# `ci-local:` and that is what a reader greps, while the note did not and only
+# appeared when the tree happened to be dirty.
+#
+# So the subject goes first, unconditionally, in the verdict's own shape - and
+# the note joins it, because it is also about what is being judged.
+#
+# AND THE VOICE IS `[ci-local]`, NOT `ci-local:`. The old prefix was not this
+# script's alone: `summary <name>` gives every suite a line of the form
+# `<name>: N passed, M failed`, and one of those suites is this script's own. So
+# `selftest.sh` - a STEP of this very run - emitted `ci-local: 26 passed,
+# 0 failed` into the middle of the report, and a waiting loop written against
+# `^ci-local:` matched the SUITE's line and called a run finished that had
+# barely started. That is not a coincidence to route around: the two things
+# genuinely share a name. `[ci-local]` is a shape no `summary` can produce, so
+# the script's own voice is now its own.
+printf '[ci-local] judging commit %s against base %s\n' "${PR_HEAD_SHA:0:7}" "$BASE"
 dirty="$(git status --porcelain 2>/dev/null | grep -vE '^\?\?' | head -1)"
-[ -n "$dirty" ] && printf 'note: uncommitted changes are staged out of the boundaries check, which judges HEAD (%s) as CI does\n\n' "${PR_HEAD_SHA:0:7}"
+[ -n "$dirty" ] && printf '[ci-local] uncommitted changes are staged out of the boundaries check, which judges HEAD (%s) as CI does\n' "${PR_HEAD_SHA:0:7}"
+printf '\n'
 
 # Fail fast, exactly as a runner does. A wrapper that runs every step and
 # summarises at the end can print four passes under a failure, and a CI
@@ -163,5 +187,5 @@ for s in "${steps[@]}"; do
   printf '\n'
 done
 
-printf 'ci-local: every step CI runs passed locally, against base %s at commit %s.\n' "$BASE" "${PR_HEAD_SHA:0:7}"
+printf '[ci-local] every step CI runs passed locally, against base %s at commit %s.\n' "$BASE" "${PR_HEAD_SHA:0:7}"
 printf 'This is one machine and one moment. It is not the PR check, and it cannot be a required one.\n'

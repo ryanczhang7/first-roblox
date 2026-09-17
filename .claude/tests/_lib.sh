@@ -57,15 +57,29 @@ actual:               $3" ;;
 make_fixture() {
   local d
   d="$(mktemp -d 2>/dev/null || mktemp -d -t harness.XXXXXX)"
-  mkdir -p "$d/.claude/harness" "$d/.claude/state" "$d/src" "$d/tests" "$d/docs/backlog/stories"
+  mkdir -p "$d/.claude/harness" "$d/.claude/state" "$d/src" "$d/src/lib" \
+           "$d/tests" "$d/tests/guards" "$d/docs/backlog/stories"
   cp "$REPO_ROOT/.claude/harness/paths.conf"  "$d/.claude/harness/paths.conf"
   cp "$REPO_ROOT/.claude/harness/phases.conf" "$d/.claude/harness/phases.conf"
+  cp "$REPO_ROOT/.claude/harness/models.conf" "$d/.claude/harness/models.conf" 2>/dev/null
   # The real stamp, for the same reason the confs are the real ones: a fixture
   # carrying a made-up version would let doctor.sh print anything and pass.
   cp "$REPO_ROOT/.claude/harness/VERSION"     "$d/.claude/harness/VERSION" 2>/dev/null
   printf 'export const x = 1\n' > "$d/src/main.ts"
   printf 'test("x", () => {})\n' > "$d/tests/main.test.ts"
   printf '# notes\n' > "$d/docs/notes.md"
+  # Paths whose NAME contains the two-character sequence `-i`. WORLD-080: the
+  # guard's `sed -i` extractor matched that substring anywhere after the word
+  # `sed`, so `sed -n '1,5p' tests/guards/layer-imports.test.ts` - a pure read -
+  # was refused as an in-place write, on the file it was reading. No path in
+  # this fixture contained `-i`, which is the whole reason the suite passed
+  # over the defect. One per category the classifier can reach:
+  #   src/lib/layer-imports.ts        -> source
+  #   tests/guards/layer-imports.test.ts -> test  (frozen in DONE, NOT in RED)
+  #   notes-inline.txt                -> source, via the paths.conf fallback
+  printf 'export const y = 2\n'  > "$d/src/lib/layer-imports.ts"
+  printf 'test("y", () => {})\n' > "$d/tests/guards/layer-imports.test.ts"
+  printf 'inline notes\n'        > "$d/notes-inline.txt"
   cat > "$d/.gitignore" <<'EOF'
 node_modules/
 dist/

@@ -280,6 +280,40 @@ narrow one: run every old variant against the new shared one over the live tree
 and compare the file lists. Byte-identical, or you have quietly stopped checking
 something.
 
+## The needle is part of the assertion
+
+Rule 1 refuses a test that cannot fail. Read it one level down, at the string:
+**a needle that cannot fail is a test that cannot fail**, and this kind does not
+announce itself. The assertion has a sharp name, it runs, it passes, and what it
+matched is not what it says.
+
+Four cases, one day, two repositories:
+
+| The needle | What also satisfies it |
+|---|---|
+| absence of `"outside the test-dependency block"` | the same file refused with a *different* message |
+| `"bash scripts/check-boundaries.sh origin/"` | the skip note **announcing that resolution failed**, which quotes the unresolved command |
+| `"PLAUSIBLE: sed -i option"` | `"IMPLAUSIBLE: sed -i option"` — the string that means the opposite |
+| `grep '^ci-local:'` | `ci-local: 15 passed, 0 failed` — that *suite's* line inside the run, not the *script's* verdict |
+
+Three defences, cheapest first:
+
+1. **Anchor it.** `grep -cx`, `^…$`, a full-line compare. A floating substring
+   is a claim about containment, and containment is rarely what you mean.
+2. **Prefer a needle whose negation is not also a match.** If asserting `X`
+   would also pass on `not X`, or on `X failed`, the needle is carrying no
+   information. Rewrite it before reaching for a cleverer regex.
+3. **Probe it.** Mutate the thing the assertion claims to pin and watch *that
+   assertion* go red. Only this catches row three, where anchoring is no help
+   and the negation is a longer string containing the needle.
+
+**This does not respect the boundary between the code under test and the
+instrument reading it.** Row four was one line of shell in a waiting loop —
+no phase, no probe, no reviewer — and its failure mode was to report a run
+green. The instrument is the side with no discipline pointed at it, and a
+one-line `grep` standing between you and "is it green?" is load-bearing
+whether or not it looks it.
+
 ## Code no machine you have can execute: grep for the shape
 
 Rule 1 refuses a test that cannot fail. That refusal has a consequence people

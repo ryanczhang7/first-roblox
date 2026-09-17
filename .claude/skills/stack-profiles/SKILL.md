@@ -1,6 +1,6 @@
 ---
 name: stack-profiles
-description: Canonical gate commands, test layout and conventions for the ecosystems this harness knows - Python, TypeScript/Node, Rust, Godot, Roblox/Luau and static web - plus how to write a profile for a stack it does not. Use when choosing a stack during planning, writing the bootstrap story, or filling in project.conf.
+description: Canonical gate commands, test layout and conventions for the ecosystems this harness knows - Python, TypeScript/Node, Rust, Godot and static web - plus how to write a profile for a stack it does not. Use when choosing a stack during planning, writing the bootstrap story, or filling in project.conf.
 ---
 
 # Stack profiles
@@ -17,7 +17,6 @@ commands are, where tests live, and what the bootstrap story must produce.
 | `node-typescript` | React, Node APIs, anything on pnpm | `reference/node-typescript.md` |
 | `rust-cargo` | Rust binaries, libraries, WASM | `reference/rust-cargo.md` |
 | `godot` | 2D/3D games and interactive tools in Godot 4 | `reference/godot.md` |
-| `roblox-luau` | Roblox experiences in Luau, tested headlessly with Lune | `reference/roblox-luau.md` |
 | `web-static` | No-build or minimal-build browser projects | `reference/web-static.md` |
 
 `reference/environments.md` covers where dependencies actually live, why

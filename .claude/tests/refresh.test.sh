@@ -198,4 +198,117 @@ assert_eq "--dry-run works on a dirty tree" 0 "$rc"
 assert_contains "while still naming what it would keep" "tauri-react-webgl.md" "$out"
 assert_contains "and the version it would move to" "2026-09-17" "$out"
 
+# ---------------------------------------------------------------------------
+describe "the procedure belongs to the release being installed"
+
+# A refresh is normally driven by the project's OWN copy of this script, and
+# that copy is one release behind BY CONSTRUCTION: a change to *what* gets
+# copied only takes effect on the refresh AFTER the one that delivers it.
+#
+# Not hypothetical. `models.conf` joined the single-file list in release 23, so
+# a project on 22 running its own script received `scripts/plan.sh` without the
+# policy file plan.sh reads - a script delivered without the thing it depends
+# on, and nothing said a word. Every future addition to that list has the same
+# one-release delay, and "remember to run upstream's copy" is not a mechanism.
+new_project
+# A project copy that differs from upstream's, which is what being a release
+# behind looks like from here.
+{ printf '#!/usr/bin/env bash\n# An older release of this script.\n'
+  tail -n +2 "$REPO_ROOT/scripts/refresh-harness.sh"; } > "$PROJ/scripts/refresh-harness.sh"
+( cd "$PROJ" && git add -A >/dev/null 2>&1 \
+    && git -c user.email=t@t -c user.name=t commit -qm "the harness it already has" >/dev/null 2>&1 )
+out="$( cd "$PROJ" && bash scripts/refresh-harness.sh "$UP" 2>&1 )"; rc=$?
+assert_eq "an older project copy hands over to upstream's" 0 "$rc"
+assert_contains "and says that it did" "upstream ships a different" "$out"
+# It has to actually finish the work, not merely announce the handover - and
+# exactly once, because a handover that re-entered the script would double it.
+assert_eq "and does the refresh once" 1 \
+  "$(printf '%s\n' "$out" | grep -c 'REPLACED  .claude/settings.json')"
+assert_eq "having replaced the scripts" "echo new" "$(cat "$PROJ/scripts/brand-new.sh" 2>/dev/null)"
+
+# THE CONTROL, and the thing that stops this becoming an infinite hand-over:
+# when the two copies agree there is nothing to hand over to, and upstream's own
+# script - which is what runs after a hand-over - must take this branch.
+new_project
+cp "$REPO_ROOT/scripts/refresh-harness.sh" "$PROJ/scripts/refresh-harness.sh"
+( cd "$PROJ" && git add -A >/dev/null 2>&1 \
+    && git -c user.email=t@t -c user.name=t commit -qm same >/dev/null 2>&1 )
+out="$( cd "$PROJ" && bash scripts/refresh-harness.sh "$UP" 2>&1 )"; rc=$?
+assert_eq "an identical copy just runs" 0 "$rc"
+case "$out" in
+  *"upstream ships a different"*) _bad "and hands over to nobody" "it handed over anyway: $out" ;;
+  *) _ok "and hands over to nobody" ;;
+esac
+
+# The hand-over happens BEFORE the dirty-tree and mid-cycle refusals, so the
+# process that refuses is the one handed TO rather than the one invoked. Same
+# answer, different process - and worth its own case, because "it refuses" and
+# "it still refuses after handing over" are different claims and every existing
+# refusal test runs on a project whose script matches upstream's, so none of
+# them reaches this path.
+new_project
+{ printf '#!/usr/bin/env bash\n# An older release of this script.\n'
+  tail -n +2 "$REPO_ROOT/scripts/refresh-harness.sh"; } > "$PROJ/scripts/refresh-harness.sh"
+( cd "$PROJ" && git add -A >/dev/null 2>&1 \
+    && git -c user.email=t@t -c user.name=t commit -qm "an older harness" >/dev/null 2>&1 )
+printf 'STORY_ID=W-1\nPHASE=GATES\n' > "$PROJ/.claude/state/current-story.env"
+out="$( cd "$PROJ" && bash scripts/refresh-harness.sh "$UP" 2>&1 )"; rc=$?
+assert_eq "a mid-cycle tree is refused THROUGH the hand-over" 2 "$rc"
+assert_contains "and the refusal still names the phase" "GATES" "$out"
+rm -f "$PROJ/.claude/state/current-story.env"
+
+# ---------------------------------------------------------------------------
+describe "it survives replacing the file it is being read from"
+
+# Every case above runs $REPO_ROOT's copy of the script against a project that
+# happens to hold another copy - two different files - so the suite never once
+# exercised the arrangement EVERY real refresh uses. The header says to run it
+# as `bash scripts/refresh-harness.sh` from inside the project, and
+# `scripts/*.sh` is one of the things it replaces. The file being read is the
+# file being written.
+#
+# Bash reads a script by byte offset as it executes. Overwrite it underneath and
+# execution resumes at the old offset in the NEW bytes - mid-line, mid-block,
+# with whatever that parses as. The first real refresh to hit this printed
+#   refresh-harness.sh: line 151: ------------: command not found
+# and ran its single-file block twice. The tree came out correct ONLY because
+# the re-entered block was idempotent `cp` calls; a few hundred bytes either way
+# is the `rm -rf` loop re-entered with different state, in the one script whose
+# whole job is not silently destroying a project's files.
+#
+# The project's copy is padded so its byte offsets differ from upstream's, which
+# is the real situation - an older release is always a different length - and
+# without which overwriting a file with its own bytes changes nothing and the
+# bug does not reproduce.
+new_project
+{ printf '#!/usr/bin/env bash\n'
+  printf '# An older release of this script. The padding is the point: it puts\n'
+  printf '# every byte offset in this file somewhere else than the new one has\n'
+  printf '# them, which is what an older release does for free.\n'
+  printf '#\n%s' "$(for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+      printf '# offset padding line %s, carrying no meaning whatsoever\n' "$i"; done)"
+  tail -n +2 "$REPO_ROOT/scripts/refresh-harness.sh"
+} > "$PROJ/scripts/refresh-harness.sh"
+( cd "$PROJ" && git add -A >/dev/null 2>&1 \
+    && git -c user.email=t@t -c user.name=t commit -qm "the harness it already has" >/dev/null 2>&1 )
+
+out="$( cd "$PROJ" && bash scripts/refresh-harness.sh "$UP" 2>&1 )"; rc=$?
+assert_eq "run the documented way, it still exits 0" 0 "$rc"
+case "$out" in
+  *"command not found"*|*"syntax error"*|*"unexpected"*)
+    _bad "and bash never resumes inside the new bytes" "it did: $out" ;;
+  *) _ok "and bash never resumes inside the new bytes" ;;
+esac
+# Once each. Re-entering the file mid-block printed the single-file section a
+# second time, which is the only reason anybody noticed.
+assert_eq "and reports each replacement once" 1 \
+  "$(printf '%s\n' "$out" | grep -c 'REPLACED  .claude/settings.json')"
+# And it still did the work: the point of the fix is that the copy loop runs to
+# completion, not that the script exits quietly before reaching it.
+assert_eq "having actually replaced the scripts" "echo new" \
+  "$(cat "$PROJ/scripts/brand-new.sh" 2>/dev/null)"
+assert_eq "and itself, with the new release" \
+  "$(cat "$REPO_ROOT/scripts/refresh-harness.sh")" \
+  "$(cat "$PROJ/scripts/refresh-harness.sh" 2>/dev/null)"
+
 summary "refresh"

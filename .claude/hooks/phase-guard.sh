@@ -104,7 +104,46 @@ case "$TOOL" in
       {
         printf '%s\n' "$MASKED"  | grep -oE '>(>|\|)?[[:space:]]*[^|&;><()[:space:]]+'  | sed -E 's/^>(>|\|)?[[:space:]]*//'
         printf '%s\n' "$NOREDIR" | grep -oE '\btee\b([[:space:]]+-a)?[[:space:]]+[^|&;><()[:space:]]+' | awk '{print $NF}'
-        printf '%s\n' "$NOREDIR" | grep -oE '\bsed\b[^|&;()]*-i[^|&;()]*'              | awk '{print $NF}'
+        # `sed -i`, decided PER WORD. A word is an option only if it starts with
+        # `-`, and that one predicate is the whole of the eleventh shape of this
+        # false-positive family. This line used to read
+        # `\bsed\b[^|&;()]*-i[^|&;()]*`, which matched `-i` as a bare SUBSTRING
+        # anywhere after the word `sed`: `sed -n '1,5p'
+        # tests/guards/layer-imports.test.ts` - a pure read - was refused on the
+        # file it was READING, because `layer-imports` contains `-i`, while
+        # sibling files in the same directory were allowed. A filename is not an
+        # option, and the file's contents were never looked at.
+        #
+        # The substring test was also a HOLE from the other end: `-ni` and `-Ei`
+        # contain no `-i` - there is no `-` immediately before the `i` - so a
+        # bundled cluster derived NO target at all and `sed -ni 's/a/b/'
+        # src/main.ts` rewrote frozen source unchallenged. The false positive
+        # and the open hole are the same bug read from two ends. Hence: a
+        # single-dash word is in-place when the run of letters after its `-`
+        # includes an `i` (`-i`, `-i.bak`, `-ni`, `-Ei`, `-rin`).
+        #
+        # And the long option is a PREFIX test, never the literal `--in-place`.
+        # GNU getopt_long honours any unambiguous abbreviation and `--in-place`
+        # is the only long option of GNU sed 4.9 beginning `--i`, so `sed --i`
+        # and `sed --in-pl` genuinely write in place (checked against the sed
+        # this harness runs on). Matching the literal string would have cured
+        # every false positive above and opened a fresh hole in the same commit.
+        # It is a prefix rather than a search for the letter because `--silent`
+        # - GNU's long form of `-n` - contains an `i` and writes nothing.
+        printf '%s\n' "$NOREDIR" | grep -oE '\bsed\b[^|&;()]*' \
+          | awk '{ inplace = 0
+                   for (i = 1; i <= NF; i++) {
+                     w = $i
+                     if (w !~ /^-/) continue
+                     if (w ~ /^--/) {
+                       o = w; sub(/=.*$/, "", o); sub(/^--/, "", o)
+                       if (o != "" && index("in-place", o) == 1) inplace = 1
+                       continue
+                     }
+                     c = w; sub(/^-/, "", c)
+                     if (match(c, /^[A-Za-z]+/) && substr(c, 1, RLENGTH) ~ /i/) inplace = 1
+                   }
+                   if (inplace) print $NF }'
         printf '%s\n' "$NOREDIR" | grep -oE '\b(cp|mv)\b[[:space:]]+[^|&;()]+'         | awk '{print $NF}'
         # Words, minus the command, minus options - and minus the ARGUMENT of an
         # option that takes one. That last clause is the tenth shape of the

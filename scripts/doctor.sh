@@ -52,7 +52,7 @@ for f in phase-guard.sh inject-state.sh gate-reminder.sh statusline.sh lib.sh; d
     printf '  MISSING  %s\n' ".claude/hooks/$f"; missing=$((missing+1))
   fi
 done
-for f in paths.conf phases.conf project.conf; do
+for f in paths.conf phases.conf models.conf project.conf; do
   [ -f "$ROOT/.claude/harness/$f" ] \
     && printf '  ok       %s\n' ".claude/harness/$f" \
     || { printf '  MISSING  %s\n' ".claude/harness/$f"; missing=$((missing+1)); }

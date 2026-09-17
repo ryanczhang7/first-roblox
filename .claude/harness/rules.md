@@ -100,6 +100,17 @@ compared "the default model" against a stronger one, and neither could say what
 against itself. Hence the other half of the rule: **`lead-po` records the
 resolved model of every dispatch, by name, in the story.**
 
+**The per-phase plan is `.claude/harness/models.conf`, not a judgement made
+fresh each story.** `bash scripts/plan.sh write <id>` renders it into the
+story's `## Model guidance` at the end of PLANNED, once the contract exists. Its
+rows follow the measurement above rather than taste: RED moves to the weaker
+model **when the brief it depends on exists**, because the brief is what was
+measured; GREEN and GATES never move, because a weaker model's failure there is
+reaching green by weakening a test. A story that wants a different answer says
+so in its own `## Model guidance` with a success condition that could come out
+either way - it does not edit the policy file. And the plan is still not the
+record: what each dispatch RESOLVED to goes in underneath it, by name.
+
 # Phase permissions
 
 | Phase | May write | Meaning |
@@ -186,6 +197,30 @@ inspect.
   or changes one, break what it guards, watch it fail, and record that in the
   story's `## Gate probes`. Exit 0 means only that the tool did not complain,
   and a tool with nothing to do does not complain.
+- **An assertion's needle is part of the assertion, and a needle that cannot
+  fail is a test that cannot fail.** The corollary of the first rule at the
+  level of the string, and it does not announce itself: the assertion has a
+  sharp name, runs, and passes, and what it matched is not what it claims.
+  Four in one day, across two repositories:
+  - `"a lockfile is permitted unchecked"` asserted the **absence** of one
+    message, so a lockfile refused with a *different* message satisfied it.
+  - `"the base ref expression is resolved"` was satisfied by the skip note
+    **announcing that resolution had failed** - the note quotes the unresolved
+    command, so the needle appeared precisely because the substitution broke.
+  - a needle of `PLAUSIBLE: sed -i option` is satisfied by
+    `IMPLAUSIBLE: sed -i option` - the string that means the opposite.
+  - `grep '^ci-local:'`, used to detect a CI run finishing, matched
+    `ci-local: 15 passed, 0 failed` - that **suite's** result inside the run,
+    not the **script's** verdict. It was one line of shell in a waiting loop
+    and its failure mode was to report a run green.
+  Three defences, cheapest first: anchor the match (`grep -cx`, `^…$`) rather
+  than letting it float; prefer a needle whose negation is not also a match;
+  and where neither is available, probe it by mutating the thing it claims to
+  pin. Only the third catches the third case.
+  **This does not respect the boundary between the code under test and the
+  instrument reading it** - and the instrument is the side with no discipline
+  pointed at it. A one-line `grep` standing between you and "is it green?" is
+  load-bearing whether or not it looks it.
 - Do not weaken an assertion, add a `skip`, widen a tolerance, or delete a case
   to reach green. Any of these means going back to RED. The same applies to a
   gate: do not delete an `evidence` line, drop `--workspace`, or add

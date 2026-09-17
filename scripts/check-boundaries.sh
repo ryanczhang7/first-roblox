@@ -51,14 +51,87 @@ strip_comments() {
 
 # has_content   True if stdin holds anything besides whitespace and HTML
 # comments - i.e. somebody wrote something beyond the template.
-has_content() { strip_comments | grep -q '[^[:space:]]'; }
+#
+# ONE awk, not `strip_comments | grep -q`. That pipeline had an awk which buffers
+# the whole input and writes it in a single printf at END, feeding a grep which
+# exits at its FIRST match: the writer died of SIGPIPE, `set -uo pipefail`
+# promoted 141 to the pipeline's status, and the predicate returned FALSE for a
+# section that plainly had content. Measured here at 1,000 and 50,000 bytes
+# passing, 200,000 and 1,500,000 failing - and the threshold is a race on the
+# pipe buffer rather than a constant, so the reporting project saw the same shape
+# pass on Windows and fail on ubuntu-latest.
+#
+# It failed CLOSED, which is the better direction, and it refused good PRs from
+# exactly the stories that had written the most.
+#
+# THE PIPE GOES, NOT `pipefail`. Dropping pipefail would have gone green
+# instantly and masked every other instance of the shape in this file - and
+# there were two more.
+has_content() {
+  awk '{ s = s $0 "\n" }
+       END {
+         while ((i = index(s, "<!--")) > 0) {
+           r = substr(s, i); j = index(r, "-->")
+           if (j == 0) { s = substr(s, 1, i - 1); break }
+           s = substr(s, 1, i - 1) substr(r, j + 3)
+         }
+         exit (s ~ /[^[:space:]]/) ? 0 : 1
+       }'
+}
 
 # has_pasted_output   True if stdin contains a fenced or indented block, which
 # is what a pasted command output looks like in a story file. It cannot tell
 # real output from prose in a fence, and does not try: it separates "here is
 # what happened" from "trust me, it happened", which is the distinction the
 # non-negotiables are actually about.
-has_pasted_output() { strip_comments | grep -qE '^[[:space:]]*(```|~~~)|^    [^[:space:]]'; }
+# has_waiver   True if stdin, comments removed, says the word "waived". The
+# third instance of the same pipeline, and the one that would have been missed
+# by fixing only the two named helpers - `printf | strip_comments | grep -qiE`,
+# with the same buffering writer and the same early-exiting reader.
+has_waiver() {
+  awk '{ s = s $0 "\n" }
+       END {
+         while ((i = index(s, "<!--")) > 0) {
+           r = substr(s, i); j = index(r, "-->")
+           if (j == 0) { s = substr(s, 1, i - 1); break }
+           s = substr(s, 1, i - 1) substr(r, j + 3)
+         }
+         exit (tolower(s) ~ /(^|[^a-z])waived([^a-z]|$)/) ? 0 : 1
+       }'
+}
+
+# has_owner   True if stdin, comments removed, declares `Owner: <PHASE>`. The
+# FOURTH instance of the pipeline, and the one that makes the case for removing
+# the pipe rather than `pipefail`: it is not one of the named helpers, so fixing
+# only those would have left a large ## Deferred verifications refused for
+# naming no owner while naming one in its first line.
+has_owner() {
+  awk '{ s = s $0 "\n" }
+       END {
+         while ((i = index(s, "<!--")) > 0) {
+           r = substr(s, i); j = index(r, "-->")
+           if (j == 0) { s = substr(s, 1, i - 1); break }
+           s = substr(s, 1, i - 1) substr(r, j + 3)
+         }
+         exit (tolower(s) ~ /(^|[^a-z])owner[^a-z]*:?[^a-z]*(red|green|gates|review|done)([^a-z]|$)/) ? 0 : 1
+       }'
+}
+
+# One awk, for the reason spelled out on has_content above.
+has_pasted_output() {
+  awk '{ s = s $0 "\n" }
+       END {
+         while ((i = index(s, "<!--")) > 0) {
+           r = substr(s, i); j = index(r, "-->")
+           if (j == 0) { s = substr(s, 1, i - 1); break }
+           s = substr(s, 1, i - 1) substr(r, j + 3)
+         }
+         n = split(s, lines, "\n")
+         for (k = 1; k <= n; k++)
+           if (lines[k] ~ /^[[:space:]]*(```|~~~)/ || lines[k] ~ /^    [^[:space:]]/) exit 0
+         exit 1
+       }'
+}
 
 # story_field <file|-> <key>   A frontmatter value.
 story_field() { frontmatter_value "$1" "$2"; }   # lib.sh
@@ -372,23 +445,14 @@ if printf '%s\n' "$dv" | has_content; then
   # very sentence the template prompts ("RED cannot run this") satisfied the
   # check with no owner named. A check that its own boilerplate discharges is
   # not a check.
-  #
-  # SCAFFOLD is in the list because it is a real phase in phases.conf and it is
-  # the ONLY legal owner for a bootstrap story's deferred verification - the one
-  # phase where source is writable at all. Without it a bootstrap story whose
-  # verification genuinely cannot run before the scaffold exists ("there is no
-  # src/ and no configured analyzer until this story creates both") had no true
-  # owner to declare, and the check pushed it toward writing a false one. A
-  # check that can only be satisfied by a lie is worse than no check.
-  if printf '%s\n' "$dv" | strip_comments \
-       | grep -qiE '(^|[^a-z])owner[^a-z]*:?[^a-z]*(RED|GREEN|GATES|REVIEW|SCAFFOLD|DONE)\b'; then
+  if printf '%s\n' "$dv" | has_owner; then
     ok "## Deferred verifications names the phase that owns each entry"
   else
-    problem "story $sid: ## Deferred verifications does not declare an owner. Write 'Owner: GATES' (or RED, GREEN, REVIEW, SCAFFOLD) beside what it verifies. A phase merely NAMED in the prose is not an owner - the template asks you to say why the phase that wants it cannot run it, so 'RED cannot run this' would otherwise discharge this check while naming nobody."
+    problem "story $sid: ## Deferred verifications does not declare an owner. Write 'Owner: GATES' (or RED, GREEN, REVIEW) beside what it verifies. A phase merely NAMED in the prose is not an owner - the template asks you to say why the phase that wants it cannot run it, so 'RED cannot run this' would otherwise discharge this check while naming nobody."
   fi
   if printf '%s\n' "$dv" | has_pasted_output; then
     ok "## Deferred verifications carries its result"
-  elif printf '%s\n' "$dv" | strip_comments | grep -qiE '\bwaived\b'; then
+  elif printf '%s\n' "$dv" | has_waiver; then
     ok "## Deferred verifications carries an explicit waiver"
   else
     problem "story $sid: ## Deferred verifications has no result and no waiver. The phase that owned it has passed and nothing says what happened. Run it and paste the output - what was mutated and what failed - or write WAIVED with the reason. This is the control that makes a threshold or a round trip mean anything; skipping it silently is the failure it was filed against."

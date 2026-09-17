@@ -125,9 +125,19 @@ cat >> "$file" <<'TEMPLATE'
 
 ## Model guidance
 
-<!-- Optional, written by the Lead PO BEFORE the phase it applies to. Use it
-     when a phase of this story is worth running on a different model from the
-     default, and make it falsifiable rather than folklore:
+<!-- FILLED BY A TOOL, not by hand: `bash scripts/plan.sh write <id>`, as the
+     last step of PLANNED once the ## Contract exists. It renders the per-phase
+     plan from .claude/harness/models.conf with the reason for each row. Run it
+     again after amending the contract; it replaces the section rather than
+     appending to it.
+
+     Not at story creation: the plan depends on the contract, and the "no
+     contract, so RED stays on the stronger model" exception would be baked in
+     before anybody had a chance to write one.
+
+     What you add BY HAND is the other half - a departure from the plan, and
+     the model each dispatch RESOLVED to. Make a departure falsifiable rather
+     than folklore:
        * which phase, which model, and why that phase specifically
        * THE RESOLVED MODEL ACTUALLY DISPATCHED, by name - never the word
          "default". An agent definition's `model:` field, or the session's
@@ -155,15 +165,6 @@ cat >> "$file" <<'TEMPLATE'
 
 <!-- Filled by the Lead Designer for user-facing stories: layout, states,
      tokens, accessibility requirements. Omit for non-UI stories. -->
-
-## Game design
-
-<!-- Filled by the Game Designer for game stories: which mechanic this
-     implements and where it comes from in docs/wiki/game/mechanics.md, which
-     tuning constants it introduces or changes (value + derived/taste/
-     placeholder), the decision each criterion protects, and the edge cases the
-     rules produce - ties, a lone survivor, a disconnect mid-vote. Omit for
-     non-game stories. -->
 
 ## Test plan
 

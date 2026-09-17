@@ -30,6 +30,40 @@
 #             copied - paths.conf and CLAUDE.md
 
 set -uo pipefail
+
+# This script replaces scripts/*.sh, and one of those is this file.
+#
+# Bash reads a script by byte offset as it executes it. Overwrite the file
+# underneath and execution resumes at the old offset in the NEW bytes: mid-line,
+# mid-block, as whatever that happens to parse as. The first real refresh to hit
+# this printed `line 151: ------------: command not found` and ran its
+# single-file block a second time; the fixture in refresh.test.sh, with
+# different padding, gets a syntax error and dies half way through instead. The
+# tree came out correct that once only because the re-entered block was
+# idempotent `cp` calls. A few hundred bytes the other way is the `rm -rf` loop
+# re-entered with different state, in the one script whose whole purpose is not
+# destroying a project's files without saying so.
+#
+# So run from a private copy. Then the file being READ is never the file being
+# WRITTEN, whatever the copy loop does to scripts/. `$0` stays a file with
+# identical content, so `--help` still reads its own header out of it.
+# The copy goes to a path this script NAMES, under the machine-local state
+# directory the harness already owns - not to $TMPDIR and not through mktemp.
+# That variable is unset in some of the shells this runs in, and the one place
+# it mattered, a mutation backup, lost its backup to exactly that. lib.test.sh
+# enforces the rule; .claude/state/README.md carries the row.
+if [ -z "${REFRESH_SELF_COPY:-}" ]; then
+  _self="$(pwd)/.claude/state/refresh-self.$$.sh"
+  if mkdir -p "$(pwd)/.claude/state" 2>/dev/null && cp "$0" "$_self" 2>/dev/null; then
+    REFRESH_SELF_COPY="$_self" exec bash "$_self" "$@"
+  fi
+  # Could not make the copy. Carry on in place rather than refusing: a refresh
+  # that runs with this hazard beats one that cannot run at all, and the hazard
+  # is only reachable once the copy loop is already underway.
+  rm -f "$_self" 2>/dev/null
+fi
+[ -n "${REFRESH_SELF_COPY:-}" ] && trap 'rm -f "$REFRESH_SELF_COPY"' EXIT
+
 PROJ="$(pwd)"
 DRY=0
 UP=""
@@ -47,6 +81,41 @@ die() { printf 'refresh-harness: %s\n' "$1" >&2; exit 2; }
 [ -n "$UP" ] || die "give me the path to a harness checkout: refresh-harness.sh ../agentic-dev-harness"
 [ -d "$UP/.claude/hooks" ] && [ -d "$UP/scripts" ] \
   || die "'$UP' does not look like a harness checkout (no .claude/hooks, no scripts)"
+
+# THE PROCEDURE BELONGS TO THE RELEASE BEING INSTALLED, not to the one you are
+# leaving. A refresh is normally driven by the project's own copy of this
+# script, and that copy is one release behind BY CONSTRUCTION: a change to
+# *what* gets copied only takes effect on the refresh AFTER the one that
+# delivers it.
+#
+# Not hypothetical. `.claude/harness/models.conf` joined the single-file list in
+# release 23, so a project on 22 running its own script received
+# `scripts/plan.sh` without the policy file plan.sh reads - a script delivered
+# without the thing it depends on, silently. Every future addition to that list
+# has the same one-release delay, and "remember to run upstream's copy" is not a
+# mechanism; it is a thing to forget.
+#
+# So hand over. Upstream's copy knows what upstream ships.
+#
+# IT TERMINATES ON THE COMPARISON ALONE, and there is deliberately no second
+# guard. The script handed to reads `$0` as upstream's file - or as a self-copy
+# of it - so `cmp` finds them identical and it takes the other branch. An
+# environment flag was here first, and removing it left all 49 assertions green:
+# a line nothing can fail is a line whose behaviour nobody has checked, and
+# belt-and-braces that cannot be falsified is just braces nobody has looked at.
+# What holds this up is the control in refresh.test.sh - identical copies hand
+# over to nobody - which is the assertion that goes red if this comparison
+# breaks.
+#
+# REFRESH_SELF_COPY is cleared so the new process makes its own, which matters
+# only in the degenerate case where UP and PROJ are the same tree.
+UP_SELF="$UP/scripts/refresh-harness.sh"
+if [ -f "$UP_SELF" ] && ! cmp -s "$UP_SELF" "$0"; then
+  printf 'refresh-harness: upstream ships a different refresh-harness.sh; running that one.\n'
+  printf '  A change to WHAT this copies would otherwise take effect one release late.\n\n'
+  [ -n "${REFRESH_SELF_COPY:-}" ] && rm -f "$REFRESH_SELF_COPY"
+  REFRESH_SELF_COPY= exec bash "$UP_SELF" "$@"
+fi
 
 # Refusing rather than warning, on both counts below. A warning at the top of a
 # wall of output is a warning nobody reads, and both of these end with a tree
@@ -146,7 +215,8 @@ fi
 for d in $replaced_dirs; do say "  REPLACED  .claude/$d/"; done
 
 # --- single files upstream owns ---------------------------------------------
-for f in .claude/harness/phases.conf .claude/harness/rules.md .claude/harness/VERSION \
+for f in .claude/harness/phases.conf .claude/harness/models.conf \
+         .claude/harness/rules.md .claude/harness/VERSION \
          .claude/settings.json .claude/state/README.md; do
   [ -f "$UP/$f" ] || continue
   act "mkdir -p \"$PROJ/$(dirname "$f")\" && cp \"$UP/$f\" \"$PROJ/$f\""

@@ -72,6 +72,37 @@ case "$got" in
   *) _ok "--list source excludes other categories" ;;
 esac
 
+# INSTALLED DEPENDENCIES ARE NOT THE TREE. The enumeration is
+# `git ls-files --cached --others --exclude-standard`, and that last flag is the
+# only thing keeping untracked-but-ignored files out of it. Dropping it left
+# every assertion in this suite green while `--list` began handing callers
+# `node_modules` - which is precisely the "a guard scanning the wrong file set"
+# failure classify.sh exists to prevent, arriving through the tool built to
+# prevent it.
+#
+# ASSERTED ON `--list vendor`, and the reason is the trap. A `node_modules`
+# path classifies as `vendor`, never as `source`, so `--list source` cannot
+# return one whether the flag is there or not - an assertion written against
+# `source` passes for a reason that has nothing to do with what it claims, and
+# survives the mutation it was written to kill. Measured before being believed:
+#   classify node_modules/left-pad/index.js  -> vendor
+#   --list vendor, with the flag             -> nothing
+#   --list vendor, without it                -> node_modules/left-pad/index.js
+mkdir -p "$FIX/node_modules/left-pad"
+printf 'module.exports = 1\n' > "$FIX/node_modules/left-pad/index.js"
+printf 'export const z = 3\n'  > "$FIX/src/fresh.ts"
+case "$(cls --list vendor)" in
+  *node_modules*) _bad "--list never returns an ignored dependency tree" "node_modules came back" ;;
+  *) _ok "--list never returns an ignored dependency tree" ;;
+esac
+got="$(cls --list source)"
+# THE CONTROL, and the reason the fix cannot be "skip untracked files": a module
+# written five minutes ago and not yet committed is still source, and a scanner
+# that quietly stopped seeing new modules would be the same defect pointing the
+# other way.
+assert_contains "while an untracked, non-ignored module still is" "src/fresh.ts" "$got"
+rm -rf "$FIX/node_modules" "$FIX/src/fresh.ts"
+
 # ---------------------------------------------------------------------------
 describe "a probe artifact is not a source module"
 
