@@ -30,17 +30,63 @@ nothing to do:
 | a directory that **exists and is empty** | exit 0, `0 errors` | exit 0, silent | exit 1, `error: no files provided` |
 | a directory that **does not exist** | exit 1, `os error 2` | exit 0, silent | exit 1, `path does not exist` |
 
-So the silent-zero is real, and this ecosystem has no `cargo`-style "Checked 47
-files" line to lean on.
+So the silent-zero is real, and no tool here prints a `cargo`-style "Checked 47
+files" summary *by default*. That makes `evidence` harder in this ecosystem than
+in any other profile.
 
-That makes `evidence` harder here than in any other profile, and it is solved
-the same way each time: **make the gate command count its own inputs.** Do not
-try to extract a number from a tool that does not print one. The verified form:
+The rule, and it is the whole of it: **ask the tool first. Prefer the tool's own
+count of the files it read, and derive a count yourself only where the tool
+has none.** A derived count is a second opinion about what the tool just did,
+and a second opinion can disagree with it: a counter that names its own target
+can report 38 files while the tool was pointed at 7, exit 0, and satisfy the
+evidence regex. That is what `HARNESS-006` was filed for. Measured, for this
+stack's three checkers:
 
-    gate | lint | required | . | selene src tests lune && n=$(git ls-files -- src tests lune | while IFS= read -r f; do case "$f" in *.luau) if [ -e "$f" ]; then echo x; fi ;; esac; done | wc -l) && echo "selene over $n files"
+| tool | per-file output of its own? | so the count is |
+|---|---|---|
+| `stylua --check -v` | **yes** — `debug: formatted <path> in <time>`, one line per file it read, on stderr | **the tool's own** |
+| `selene --display-style Json2` | no — one `Summary` object plus one diagnostic per finding, nothing per file | derived |
+| `luau-lsp analyze` | no — no per-file line at all | derived |
 
-That is uglier than it looks like it needs to be, and every part of it earns its
-place. The obvious version -
+**So `format` reads its number out of the run that gated**, and asks `stylua`
+rather than `git`:
+
+    gate | format    | optional | . | stylua --check -v src tests lune 2>&1 | awk '/^debug: formatted /{n++; next} skip{if ($0 == "}") skip=0; next} /^debug: .*\{$/{skip=1; next} /^debug: /{next} {print} END{print "stylua over " n+0 " files"}'; test "${PIPESTATUS[0]}" -eq 0
+
+Four parts of that line are load-bearing. `-v` prints those lines on **stderr**,
+hence the `2>&1`. The anchor is the **prefix**
+`^debug: formatted ` and not a path shape, because Windows prints
+`src\shared\x.luau` where Linux prints `src/shared/x.luau` and both must count
+the same. The `awk` pass **prints every non-`debug:` line through unchanged**,
+so a real `Diff in ...` still reaches the log; its `skip` arm eats `-v`'s
+multi-line `Opt {` / `Config {` dumps by brace tracking. The exit status is
+**stylua's**, taken from `${PIPESTATUS[0]}`, because a pipeline's status is its
+last element's — `gates.sh` happens to run gate commands under `pipefail`, but a
+gate whose correctness is borrowed from the runner's shell options passes on
+unformatted code the moment `doctor.sh`, `bash -c` or a human runs it. And on a
+target with no `.luau` files it prints `stylua over 0 files` and exits 0, which
+the `evidence` regex refuses — "ran but produced no evidence of work" rather
+than an opaque `exit 1`.
+
+**`lint` and `typecheck` have no such line, so their counts stay derived** — but
+derived from the same target the tool was handed, **named once**, in a variable
+that the tool and the counter both read:
+
+    gate | lint      | required | . | selene ${GATE_LINT_TARGET:=src tests lune} && n=$(git ls-files --cached --others --exclude-standard -- $GATE_LINT_TARGET | while IFS= read -r f; do case "$f" in *.luau) if [ -e "$f" ]; then echo x; fi ;; esac; done | wc -l) && echo "selene over $n files"
+
+`${GATE_LINT_TARGET:=...}` assigns on first use and word-splits unquoted, so
+narrowing the tool's target narrows the counter's **by construction**. Writing
+the path list twice — once for `selene`, once for the pipeline — is the defect
+this shape exists to make unrepresentable, not a style preference.
+`--cached --others --exclude-standard` is tracked *and*
+untracked-but-not-ignored, which is what `selene` itself walks. A bare
+`git ls-files` misses a story's own new files until they are committed, and
+`find` sweeps in gitignored build output — `HARNESS-006` measured 39 from `find`
+against the tools' 38. Verified there, too: this pathspec's set was identical,
+file for file, to the 38 files `stylua` reported that day.
+
+That line is uglier than it looks like it needs to be, and every remaining part
+of it earns its place. The obvious version -
 `n=$(git ls-files 'src/**/*.luau' | wc -l); echo ...; selene src tests` - was
 what this profile used to recommend, and it is wrong in four separate ways:
 
@@ -58,25 +104,36 @@ what this profile used to recommend, and it is wrong in four separate ways:
   printed** - so the gate fails on an opaque `exit 1` instead of "ran but
   produced no evidence of work". Same reason the body is `if [ -e ]; then ... fi`
   rather than `[ -e ] && ...`, whose false branch makes the `while` loop exit 1.
-  Every stage of the count must exit 0 over an empty tree.
+  Every stage of the count must exit 0 over an empty tree. `grep -c` is the same
+  trap from the other side - it exits 1 when the count it just printed is zero -
+  which is why the `format` gate counts in `awk` instead.
 - **The `echo` goes AFTER the tool, not before.** `scripts/doctor.sh` takes the
   first token of each gate command as the executable to look for on PATH, so a
   command beginning `n=$(git ...` makes doctor report a permanently missing tool
-  called `n=$(git`. Ordering costs nothing: `gates.sh` only consults the evidence
-  regex for a gate that already exited 0.
+  called `n=$(git`. The tidier-looking way to name a target once breaks the same
+  rule: `T="src tests lune"; selene $T && ...` makes `doctor.sh` hunt for an
+  executable called `T="src`. That is why the target is named **inside the
+  tool's own argument list**, as `${GATE_LINT_TARGET:=...}`, and never in a
+  leading assignment. Ordering costs nothing: `gates.sh` only consults the
+  evidence regex for a gate that already exited 0.
 
-Every gate below uses this pattern except `unit`, which has a real runner that
-counts for itself.
+Every gate below takes its count from one of those two places — the tool's own
+output where it has one, a pipeline over the tool's own target where it does
+not — except `unit`, which has a real runner that counts for itself.
 
 ## Gate commands for project.conf
 
-Let `COUNT(dirs)` stand for the counting pipeline above, to keep these readable:
+Written out in full, one line each. **There is deliberately no `COUNT(dirs)`
+macro here.** An earlier version of this profile defined one to keep the table
+readable, and because the macro took the path list as an *argument*, every gate
+written from it named its target twice by construction:
+`selene src tests lune && COUNT(src tests lune)`. The abbreviation saved a line
+of reading and cost a story (`HARNESS-006`) to undo, in a project that had
+already shipped the defect to CI. If a gate command is long, let it be long.
 
-    n=$(git ls-files -- <dirs> | while IFS= read -r f; do case "$f" in *.luau) if [ -e "$f" ]; then echo x; fi ;; esac; done | wc -l)
-
-    gate | format    | optional | . | stylua --check src tests lune && COUNT(src tests lune) && echo "stylua over $n files"
-    gate | lint      | required | . | selene src tests lune && COUNT(src tests lune) && echo "selene over $n files"
-    gate | typecheck | required | . | rojo sourcemap default.project.json --output sourcemap.json && test -s globalTypes.d.luau && luau-lsp analyze --sourcemap=sourcemap.json --definitions=globalTypes.d.luau --base-luaurc=.luaurc --ignore='Packages/**' src 2>&1 | awk '{print} /^\[ERROR\]|Sourcemap parsing failed/{bad=1} END{exit (bad?1:0)}' && COUNT(src) && echo "analyze over $n files"
+    gate | format    | optional | . | stylua --check -v src tests lune 2>&1 | awk '/^debug: formatted /{n++; next} skip{if ($0 == "}") skip=0; next} /^debug: .*\{$/{skip=1; next} /^debug: /{next} {print} END{print "stylua over " n+0 " files"}'; test "${PIPESTATUS[0]}" -eq 0
+    gate | lint      | required | . | selene ${GATE_LINT_TARGET:=src tests lune} && n=$(git ls-files --cached --others --exclude-standard -- $GATE_LINT_TARGET | while IFS= read -r f; do case "$f" in *.luau) if [ -e "$f" ]; then echo x; fi ;; esac; done | wc -l) && echo "selene over $n files"
+    gate | typecheck | required | . | rojo sourcemap default.project.json --output sourcemap.json && test -s globalTypes.d.luau && test -d ${GATE_TYPE_TARGET:=src} && luau-lsp analyze --sourcemap=sourcemap.json --definitions=globalTypes.d.luau --base-luaurc=.luaurc --ignore='Packages/**' $GATE_TYPE_TARGET 2>&1 | awk '{print} /^\[ERROR\]|Sourcemap parsing failed/{bad=1} END{exit (bad?1:0)}' && n=$(git ls-files --cached --others --exclude-standard -- $GATE_TYPE_TARGET | while IFS= read -r f; do case "$f" in *.luau) if [ -e "$f" ]; then echo x; fi ;; esac; done | wc -l) && echo "analyze over $n files"
     gate | unit      | required | . | lune run test
     gate | coverage  | optional | . |
     gate | build     | required | . | mkdir -p build && rojo build default.project.json --output build/place.rbxl && test -s build/place.rbxl && echo "built $(wc -c < build/place.rbxl) bytes"
@@ -89,6 +146,23 @@ Let `COUNT(dirs)` stand for the counting pipeline above, to keep these readable:
 
 Lint and format cover `lune` as well as `src` and `tests`. The test runner you
 are about to write is real code and the planned command left it unlinted.
+
+**Where the `:=` assignment sits in `typecheck` is load-bearing.** It is on
+`test -d ${GATE_TYPE_TARGET:=src}`, *before* the analyser, and not on the
+`luau-lsp ... | awk` step: every element of a pipeline runs in a subshell, so an
+assignment written there would take effect inside that subshell and leave the
+counter with an unbound variable under `set -u`. `test -d` is not a spacer
+either — it fails loudly if the target is renamed away, where the analyser would
+need the `[ERROR]` filter below to notice at all.
+
+**One trapdoor, recorded rather than hidden.** `:=` takes the default only if
+the variable is unset, so an **exported** `GATE_LINT_TARGET` in the caller's
+environment beats it. That is inherent to naming a target once, and it is
+accepted: an override narrows the tool *and* the counter together, so the gate
+checks less and says so honestly in its own evidence line — a lesser fault than
+reporting 38 while reading 7, which is what naming the list twice buys you. The
+variable names are deliberately gate-specific and ugly for this reason. Do not
+shorten them.
 
 `--no-trust-check` on `rokit install` is not only for CI: without it Rokit
 **prompts** before installing a tool it has not seen, and a prompt in the one
