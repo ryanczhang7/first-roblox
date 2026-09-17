@@ -143,17 +143,16 @@ assert_contains "but one source path is enough for the lock to bite" \
 # no-contract exception fires, and the plan silently moves RED to the stronger
 # model. Nothing fails; the story just runs on a model nobody chose, for a reason
 # nobody can see.
-story_with T-6 feature PLANNED 2 <<'EOF'
-CONTRACT:PLACEHOLDER
-EOF
-{ awk '/^CONTRACT_BODY$/ { exit } { print }' "$FIX/docs/backlog/stories/T-6.md" >/dev/null 2>&1; true; }
-big="$(yes '`src/core/world.ts` exports buildWorld(seed: number): World.' | head -c 1572864)"
-awk -v body="$big" '
-  /^## Contract$/ { print; print ""; print body; skip = 1; next }
-  skip && /^## / { skip = 0 }
-  !skip { print }
-' "$FIX/docs/backlog/stories/T-6.md" > "$FIX/docs/backlog/stories/T-6.md.new" \
-  && mv "$FIX/docs/backlog/stories/T-6.md.new" "$FIX/docs/backlog/stories/T-6.md"
+#
+# The body is STREAMED into the file rather than held in a shell variable and
+# passed through `awk -v`: a megabyte on a command line stalls indefinitely here,
+# which is a fact about this fixture rather than about the defect.
+{
+  printf -- '---\nid: T-6\ntitle: Fixture story\nslug: fixture\ntype: feature\nstatus: todo\nphase: PLANNED\nbranch: story/T-6-fixture\n---\n\n'
+  printf -- '## Acceptance criteria\n\n- **AC-1** - it works.\n\n## Contract\n\n'
+  yes '`src/core/world.ts` exports buildWorld(seed: number): World.' | head -c 1572864
+  printf -- '\n\n## Deferred verifications\n\n## Model guidance\n\n## Gate results\n\n## Notes\n'
+} > "$FIX/docs/backlog/stories/T-6.md"
 out="$(plan models T-6)"
 assert_contains "a 1.5 MiB contract still counts as a contract" \
   "RED	test-developer	fable" "$out"

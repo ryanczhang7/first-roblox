@@ -52,7 +52,27 @@ strip_comments() {
          printf "%s", s
        }'
 }
-has_content() { strip_comments | grep -q '[^[:space:]]'; }
+# ONE awk, not `strip_comments | grep -q`. This helper was lifted from
+# check-boundaries.sh when this script was written, and its defect came with it:
+# an awk that buffers to END feeding a grep that exits at the first match, so the
+# writer dies of SIGPIPE and `pipefail` turns 141 into "no content". 50,000 bytes
+# passed; 200,000 did not.
+#
+# The consequence here is quieter than a refused PR and worse for it. A thorough
+# contract - the kind the RED row exists to reward - reads as ABSENT, the
+# no-contract exception fires, and RED silently moves to the stronger model.
+# Nothing fails; the story just runs on a model nobody chose.
+has_content() {
+  awk '{ s = s $0 "\n" }
+       END {
+         while ((i = index(s, "<!--")) > 0) {
+           r = substr(s, i); j = index(r, "-->")
+           if (j == 0) { s = substr(s, 1, i - 1); break }
+           s = substr(s, 1, i - 1) substr(r, j + 3)
+         }
+         exit (s ~ /[^[:space:]]/) ? 0 : 1
+       }'
+}
 
 conf_rows() { grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$CONF"; }
 field() { printf '%s' "$1" | awk -F'|' -v n="$2" '{ gsub(/^[[:space:]]+|[[:space:]]+$/, "", $n); print $n }'; }

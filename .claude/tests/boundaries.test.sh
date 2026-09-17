@@ -1137,6 +1137,25 @@ run_boundaries
 assert_contains "a fenced block a megabyte in is still shown" \
   "ok    ## Regressions carries pasted output" "$out"
 
+# THE FOURTH INSTANCE, and the one that proves the point about not fixing this
+# by dropping `pipefail`. It is not one of the two named helpers - it is an
+# inline `printf | strip_comments | grep -qiE` looking for the owner of a
+# deferred verification, with the same buffering writer and the same
+# early-exiting reader. Fixing only `has_content` and `has_pasted_output` would
+# have left a large ## Deferred verifications refused for naming no owner while
+# naming one in its first line.
+{
+  printf -- '---\nid: T-1\ntitle: Fixture story\nslug: fixture\ntype: feature\nstatus: todo\nphase: REVIEW\nbranch: story/T-1-fixture\n---\n\n'
+  printf -- '## Acceptance criteria\n\n- **AC-1** - it works.\n\n## Handoff: RED -> GREEN\n\nthe command, the failure, the export shape.\n\n'
+  printf -- '## Deferred requirements placeholder\n\n'
+  printf -- '## Deferred verifications\n\nAC-2 cannot run until the renderer exists. Owner: GATES\n\nResult, run at GATES:\n\n```\n x the property fails against the lossy encoder\n```\n\n'
+  big_section; printf '\n'
+} > "$FIX/docs/backlog/stories/T-1.md"
+commit_all "a very large deferred-verifications section that names its owner"
+run_boundaries
+assert_contains "an owner named a megabyte from the end is still found" \
+  "ok    ## Deferred verifications names the phase that owns each entry" "$out"
+
 # ---------------------------------------------------------------------------
 describe "the gate record is a stamp on a tree, not a sentence about one"
 
