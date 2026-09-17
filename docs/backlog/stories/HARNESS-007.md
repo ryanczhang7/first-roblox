@@ -5,7 +5,7 @@ slug: the-roblox-luau-profile-still-teaches-th
 epic: 
 type: chore
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/HARNESS-007-the-roblox-luau-profile-still-teaches-th
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -338,7 +338,7 @@ the same way — assert the *claims are present*, not their wording.
 |---|---|---|---|---|
 | PLANNED | lead-po | opus | **`claude-opus-5`** | as planned |
 | RED | test-developer | fable | **`claude-opus-5`** | the `except \| RED \| unenforced` row applies; `plan.sh` did not fire it. See PO decision 4. Confirmed at dispatch by the agent: `bash scripts/phase.sh show` printed `Model for RED: fable` and the dispatch resolved to `claude-opus-5`, so this was an override, as decision 4 intended. |
-| GREEN | feature-developer | opus | _(record at dispatch)_ | |
+| GREEN | feature-developer | opus | **`claude-opus-5`** | as planned. No exception applies: the `unenforced` row is RED-only, and GREEN never moves by policy. |
 | GATES | feature-developer | opus | _(record at dispatch)_ | |
 | REVIEW | lead-po | opus | _(record at dispatch)_ | |
 
@@ -1054,6 +1054,77 @@ same defective shape still ships in the profile every project generated from it
 inherits."* Confirmed at filing time — `roblox-luau.md:40` and the `COUNT(dirs)`
 macro at line ~75.
 
+### GREEN's confirmation of the controls (2026-09-17)
+
+Not in `## Gate probes`: this story adds and changes no gate, and
+`check-boundaries.sh` reads that section as a claim about one.
+
+    $ bash .claude/tests/profile-counters.test.sh      # and via scripts/selftest.sh profile-counters
+    profile-counters: 40 passed, 0 failed
+
+**P1 was run against the rewritten profile, and its prediction was wrong in
+count — 3 newly red, not 1.** The predicted assertion did fire, verbatim and
+naming both lint prescriptions; two more fired with it. Both extras are genuine,
+so this is a divergence in the prediction rather than a defect in the suite or
+the rewrite:
+
+    $ bash scripts/mutate.sh .claude/skills/stack-profiles/reference/roblox-luau.md \
+        's/-- \$GATE_LINT_TARGET/-- src tests lune/' -- bash .claude/tests/profile-counters.test.sh
+        FAIL every lint gate command names its target through a single ${GATE_LINT_TARGET:=...} the counter reads
+             line 75:  '${GATE_LINT_TARGET:=...}' is assigned but $GATE_LINT_TARGET is never read back, so the counter is not sharing the tool's target
+             line 135: '${GATE_LINT_TARGET:=...}' is assigned but $GATE_LINT_TARGET is never read back, so the counter is not sharing the tool's target
+        FAIL every lint gate command names the target path list exactly once
+             line 75:  the target list 'src tests lune' is named 2 times, want exactly 1 - a second enumeration is the HARNESS-006 defect
+             line 135: the target list 'src tests lune' is named 2 times, want exactly 1 - a second enumeration is the HARNESS-006 defect
+        FAIL comparison 2 - lint/typecheck: both name the target through a single ${GATE_*_TARGET:=...}, path list once
+             expected: conf=ok/ok/ok/ok profile=ok/ok/ok/ok
+             actual:   conf=ok/ok/ok/ok profile=BAD/BAD/ok/ok
+    profile-counters: 37 passed, 3 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against
+        .../roblox-luau.md.20260917T190327Z.3943629.bak) ===
+
+**Why the handoff predicted 1.** It grounded P1 on assertions 35-37, which feed
+`REGRESSED_FIXTURE` — the same mutated shape — through **four scans concatenated
+into one string** and then `assert_contains` on it. The fixture therefore cannot
+distinguish which of the four checks produced a message, so the read-back arm of
+`_ck_target_named_once` was firing there all along, invisibly. Against a real
+document each check is its own assertion, so the same mutation surfaces three.
+The third (AC-6 comparison 2) aggregates the first two and follows from them.
+
+**This is a net gain in evidence.** The "assigned but never read back" arm had
+never been observed to fail: it is in none of RED's 16 failures (today's profile
+has no `${GATE_LINT_TARGET:=}` at all, so the *earlier* arm reports and returns)
+and no mutation in the measured table reached it. P1 has now reached it, on the
+shipped suite, against the shipped profile.
+
+**P4, twice, because GREEN rewrote two of the four hazard bullets** (hazard 3
+gained the `grep -c` finding, hazard 4 the `T="..."; tool $T` finding). Both
+needles still bite on the new wording, 2 newly red each, exactly as predicted:
+
+    $ bash scripts/mutate.sh ... 's/first token/FIRST-TOKEN-CLAIM-DELETED/' -- ...
+        FAIL hazard 4: doctor.sh reads the FIRST TOKEN of a gate command as the executable
+        FAIL and that same corrected document still states all four hazards
+    profile-counters: 38 passed, 2 failed
+
+    $ bash scripts/mutate.sh ... 's/empty tree/full tree/g' -- ...
+        FAIL hazard 3: a grep stage exits 1 on an empty tree and takes the && chain with it under pipefail
+        FAIL and that same corrected document still states all four hazards
+    profile-counters: 38 passed, 2 failed
+
+All three restores verified byte-for-byte by `mutate.sh`; no `.bak` remains under
+`.claude/state/mutations/`, and `40 passed, 0 failed` was re-confirmed afterwards.
+
+**Two claims in the GREEN dispatch were checked and held.** `stylua --check -v`
+does print one `debug: formatted ` line per file it read — measured here, 43,
+which is the same number the `format` gate reports as `observed 43`. And no
+`gate` line names this suite, so `gates.sh --fast` cannot run it; it was run by
+hand, both directly and through `scripts/selftest.sh profile-counters`.
+
+**`gates.sh --fast` after the rewrite** — unchanged from RED, which is the only
+thing it can tell this story: `format 43`, `lint 43`, `typecheck 8`,
+`unit 197`, `build 25103`, `harness 40`, all required gates passed. Not
+recorded, because a partial run is not a record. The full run belongs to GATES.
+
 ---
 
 ## PO decisions, taken at PLANNED (2026-09-17)
@@ -1258,3 +1329,105 @@ story's artifact, and CI runs it.
 **`scripts/plan.sh`'s `contract_unenforced()` is defective** — PO decision 4 above
 has the analysis. Upstream's file; report it to `../agentic-dev-harness` rather
 than patch it here.
+
+### Orchestrator verification of GREEN (2026-09-17)
+
+Run by the Lead PO, not read out of GREEN's report.
+
+**The freeze held, and it was unenforced.** `bash scripts/classify.sh` says both
+`.claude/tests/profile-counters.test.sh` and the profile classify `harness`, which
+GREEN may write — so the phase lock could not have stopped an edit to the suite.
+Checked directly:
+
+    $ git diff -- .claude/tests/profile-counters.test.sh .claude/harness/project.conf
+    (no output)
+
+    $ git status --porcelain
+     M .claude/skills/stack-profiles/reference/roblox-luau.md
+     M docs/backlog/stories/HARNESS-007.md
+
+Tests frozen, `project.conf` untouched, exactly the two files the contract allows.
+
+**The suite passes and the gates are unmoved.**
+
+    $ bash .claude/tests/profile-counters.test.sh
+    profile-counters: 40 passed, 0 failed
+
+    $ bash scripts/gates.sh --fast        # exit 0
+    PASS format (43) · lint (43, floor 1) · typecheck (8) · unit (197, floor 197)
+    PASS build (25103) · harness (40)
+    All required gates passed (6 ran, 1 unconfigured, 0 known).
+
+**EPIC-00's evidence survived, byte-for-byte.** Contract (d)'s two obligations,
+checked as a property of the diff rather than of the assertions that pin them:
+
+    $ git diff -- .../roblox-luau.md | grep -E '^[-+].*(Verified 2026-09-15|Rokit 1\.2\.0|Linux verified|macOS is still|install\.sh)'
+    (no output)
+
+Neither the banner nor the Rokit `curl` line appears on either side of the diff,
+so neither was touched.
+
+**P1's correction, reproduced independently.** GREEN reported that a mechanism the
+Lead PO's own dispatch named — "P1 isolates to one assertion" — does not hold. Re-run
+here, on a different invocation, against the shipped suite:
+
+    $ bash scripts/mutate.sh .claude/skills/stack-profiles/reference/roblox-luau.md \
+        's/-- \$GATE_LINT_TARGET/-- src tests lune/' -- bash .claude/tests/profile-counters.test.sh
+        FAIL every lint gate command names its target through a single ${GATE_LINT_TARGET:=...} the counter reads
+             line 75:  '${GATE_LINT_TARGET:=...}' is assigned but $GATE_LINT_TARGET is never read back, ...
+             line 135: '${GATE_LINT_TARGET:=...}' is assigned but $GATE_LINT_TARGET is never read back, ...
+        FAIL every lint gate command names the target path list exactly once
+             line 75:  the target list 'src tests lune' is named 2 times, want exactly 1 ...
+             line 135: the target list 'src tests lune' is named 2 times, want exactly 1 ...
+        FAIL comparison 2 - lint/typecheck: ...
+             actual:   conf=ok/ok/ok/ok profile=BAD/BAD/ok/ok
+    profile-counters: 37 passed, 3 failed
+    === mutate: ... restored (verified byte-for-byte against
+        .../roblox-luau.md.20260917T191420Z.3980801.bak) ===
+
+**37/3 confirmed. GREEN's count is right and the dispatch's was wrong.** The
+diagnosis was also checked against the code rather than taken on trust:
+`REGRESSED_OFF` in the suite is four `scan_gates` calls concatenated into one
+string with `assert_contains` over it, so assertions 35-37 genuinely cannot
+attribute a message to a check. The prediction under-counted **detection**; it
+never overstated it, and the assertion the story exists for fires verbatim,
+naming both prescriptions.
+
+**A second mutation, `## Notes` acceptance item 2, chosen independently of
+GREEN's three.** Predicted by P3 as 4 assertions:
+
+    $ bash scripts/mutate.sh .claude/skills/stack-profiles/reference/roblox-luau.md \
+        's/ --cached --others --exclude-standard//' -- bash .claude/tests/profile-counters.test.sh
+        FAIL no gate command in the profile uses a bare 'git ls-files'      (lines 75, 135, 136)
+        FAIL every lint gate command carries the counting pipeline inline   (lines 75, 135)
+        FAIL every typecheck gate command carries the counting pipeline inline  (line 136)
+        FAIL comparison 3 - both counters use 'git ls-files --cached --others --exclude-standard'
+             actual:   conf=ok/ok/ok profile=BAD/BAD/BAD
+    profile-counters: 36 passed, 4 failed
+    === mutate: ... restored (verified byte-for-byte ...) ===
+
+4 predicted, 4 measured, all three offending lines named. Baseline re-confirmed
+at `40 passed, 0 failed` afterwards; no `.bak` under `.claude/state/mutations/`.
+
+**The diff was read, because nothing else will read it** (`## Contract`, "The
+phase lock enforces nothing here either"). +120/−25 on the profile. The three
+gate lines now match `project.conf`; the `COUNT(dirs)` macro is deleted and
+replaced by a paragraph explaining why, which keeps
+`selene src tests lune && COUNT(src tests lune)` as **prose** — the boundary in
+Contract (c) working as designed. All four hazard bullets survive, two of them
+extended with the `HARNESS-006` findings. Nothing was removed that was not
+replaced by something that says more.
+
+### One finding, not a defect, and not fixed here
+
+**Assertions 35-37 are coarser than they read.** They are negative controls and
+they do discriminate — they require the checker to report against a deliberately
+defective prescription, and the paired clean fixture (38) stays green — but
+because all four scans land in one concatenated string, they cannot say *which*
+check spoke, and a future edit that broke one arm while leaving another firing
+would not be noticed there. P1 against a real document is what has coverage at
+that granularity, and it is a mutation rather than an assertion.
+
+Not a return to RED: no assertion is vacuous, nothing is weakened, and the
+property AC-7 names is verified. Recorded so the next person reading
+`REGRESSED_FIXTURE` knows its resolution is one string, not four.
