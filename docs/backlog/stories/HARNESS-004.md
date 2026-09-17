@@ -4,8 +4,8 @@ title: Phase lock covers MultiEdit and NotebookEdit
 slug: phase-lock-covers-multiedit-and-notebook
 epic: 
 type: chore
-status: todo
-phase: PLANNED
+status: done
+phase: DONE
 branch: story/HARNESS-004-phase-lock-covers-multiedit-and-notebook
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -244,3 +244,36 @@ Required gate that would fail if this story's artifact broke: `unit`
 
 ## Notes
 
+
+---
+
+## Closed: delivered by the harness refresh 19 -> 30
+
+**Not built here.** Upstream `cf7d958` ("the lock covers four tools; the suite
+tested two") landed the tests, and PR #9 brought them in. The hook already
+handled `MultiEdit` and `NotebookEdit` before the refresh - this story was always
+about the *suite*, which mentioned neither. Measured before: **0** occurrences of
+either tool in `phase-guard.test.sh`; after: **17**.
+
+Both criteria that name a mutation were verified by running it, through
+`scripts/mutate.sh`:
+
+| AC | Mutation run | Result | Assertions that caught it |
+|---|---|---|---|
+| AC-1 | `61s#Write\|Edit\|MultiEdit\|NotebookEdit)#Write\|Edit)#` | `172 passed, 6 failed` | `MultiEdit is blocked in RED`, `and names the path it refused`, `NotebookEdit is blocked on notebook_path`, `and names the notebook`, plus both GREEN cases |
+| AC-2 | `63s#check_path "$(json_get_string notebook_path \|\| true)"#true#` | `175 passed, 3 failed` | `NotebookEdit is blocked on notebook_path`, `and names the notebook`, `NotebookEdit to a test notebook is blocked in GREEN` |
+
+The two criteria that name no mutation are covered by assertions read directly
+out of the suite:
+
+- **AC-3** - that AC-1 and AC-2 are not satisfied by a guard denying every tool
+  it does not recognise. `phase-guard.test.sh:515-520` blocks `MultiEdit` and
+  `NotebookEdit` to a *test* in GREEN, and **:518** asserts
+  `but MultiEdit to source is allowed in GREEN`. That line is the control the
+  criterion is asking for: it fails against a deny-everything guard.
+- **AC-4** - allowed with no active story. `:600-603`, `MultiEdit with no story`
+  and `NotebookEdit with no story`, both asserting an empty denial.
+
+Both mutations restored byte-for-byte; no `.bak` remains.
+
+**Status: DONE without a RED->GREEN cycle in this repository.**

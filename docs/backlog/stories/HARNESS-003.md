@@ -4,8 +4,8 @@ title: check-boundaries asserts its own verdict on the story checks
 slug: check-boundaries-asserts-its-own-verdict
 epic: 
 type: chore
-status: todo
-phase: PLANNED
+status: done
+phase: DONE
 branch: story/HARNESS-003-check-boundaries-asserts-its-own-verdict
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -262,3 +262,33 @@ Required gate that would fail if this story's artifact broke: `unit`
 
 ## Notes
 
+
+---
+
+## Closed: delivered by the harness refresh 19 -> 30
+
+**Not built here.** Upstream `756b5dc` ("check-boundaries asserts its own verdict,
+not just its wording") landed these checks, and the refresh in PR #9 brought them
+in. `boundaries.test.sh` went from 1092 lines to 1283.
+
+A commit title is not evidence, so every acceptance criterion was verified by
+running **the mutation it names**, against the shipped tree, through
+`scripts/mutate.sh` (which restores the file and verifies the restore). Line
+anchors were re-derived: the story's were written against harness 19 and the file
+has moved.
+
+| AC | Mutation run | Result | Assertion that caught it |
+|---|---|---|---|
+| AC-1 | `s#\[ "$fid" = "$base" \]#[ -n "$fid" ]#` | `72 passed, 1 failed` | `an id that disagrees with the filename` |
+| AC-2 | `s#if git ls-files --error-unmatch#if ! git ls-files --error-unmatch#` | fails | `a committed current-story.env is refused` |
+| AC-3 | `212s#problem "branch#note "branch#` | `72 passed, 1 failed` | `two claimants is a problem, not a coin flip` |
+| AC-4 | `382s#grep -qE#grep -qvE#` | `72 passed, 1 failed` | `a required gate the record has no PASS for` |
+| AC-5 | `393s#feature\|fix)#nosuchtype)#` | `71 passed, 2 failed` | `a feature story with a template-only handoff`, `while a template-only one still is` |
+
+Every mutation was restored byte-for-byte; `.claude/state/mutations/` holds no
+`.bak`. AC-5's second assertion is the both-directions control the criterion
+implies: a guard that refused every story type would satisfy the first alone.
+
+**Status: DONE without a RED->GREEN cycle in this repository.** That is the
+honest description. The work exists, it is tested, and the tests discriminate -
+which is what the criteria asked for. Nothing here was written to make them pass.

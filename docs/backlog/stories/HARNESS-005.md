@@ -4,8 +4,8 @@ title: phase.sh refuses an invalid phase and keeps frontmatter in step
 slug: phase-sh-refuses-an-invalid-phase-and-ke
 epic: 
 type: chore
-status: todo
-phase: PLANNED
+status: done
+phase: DONE
 branch: story/HARNESS-005-phase-sh-refuses-an-invalid-phase-and-ke
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -262,3 +262,44 @@ Required gate that would fail if this story's artifact broke: `unit`
 
 ## Notes
 
+
+---
+
+## Closed: delivered by the harness refresh 19 -> 30
+
+**Not built here.** Upstream `a23abac` ("The lock opened on a typo, at two
+layers") is this story, both layers of it, and PR #9 brought it in.
+
+The striking part is AC-4. It was written saying the second defence *"does not
+currently exist"*, and recorded the measurement that proved it. Upstream's
+`phase_allows` now ends in `return 1` with this comment:
+
+> Measured before the change: PHASE=RED refused a source write while GREE, ZZZ,
+> GREEN. and empty all allowed it, so `phase.sh set`'s validation was the only
+> thing between a mistyped phase and a silently disabled lock.
+
+That is AC-4's own measurement, independently arrived at. The criterion and the
+fix agree on the defect, the enumerated values, and the reason it matters.
+
+Verified by running the mutation each criterion names:
+
+| AC | Mutation run | Result | Assertions that caught it |
+|---|---|---|---|
+| AC-1, AC-3 | `s#if (t == p)#if (t ~ p)#` on `scripts/phase.sh` | `27 passed, 6 failed` | `...refused: GREE`, `: RE`, `: D`, `so is a regex metacharacter matching any row`, `and after all of them the story is still RED`, `and so is the state the hooks read` |
+| AC-2 | `182s#set_frontmatter "$file" branch "$branch"#true#` | `31 passed, 2 failed` | `and the branch key is written into the frontmatter`, `matching the branch the hooks were told about` |
+| AC-4 | `782s#  return 1#  return 0#` on `.claude/hooks/lib.sh` | `174 passed, 4 failed` | `PHASE=GREE refuses a source write`, `PHASE=ZZZ ...`, `PHASE=GREEN. ...`, `an empty PHASE ...` |
+
+Three things worth noting against the criteria as written:
+
+- **AC-1 required the existing `GREEN.` control be KEPT alongside, not replaced.**
+  It is: `phase.test.sh:75-76` still asserts it, and lines 91-93 add the prefix
+  cases that actually discriminate.
+- **AC-1's "the story is still RED" and "the state the hooks read" halves are
+  both asserted**, so a refusal that printed the right message while writing the
+  phase anyway would still fail.
+- **AC-4's four values are each a separate assertion**, matching the criterion's
+  enumeration exactly rather than collapsing them into one.
+
+All three mutations restored byte-for-byte; no `.bak` remains.
+
+**Status: DONE without a RED->GREEN cycle in this repository.**
