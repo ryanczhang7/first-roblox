@@ -4,8 +4,8 @@ title: Seats are dealt as a seeded single-cycle derangement
 slug: seats-are-dealt-as-a-seeded-single-cycle
 epic: EPIC-02
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/SEAT-001-seats-are-dealt-as-a-seeded-single-cycle
 depends_on: [ROUND-001, ROUND-002]
 required_gates: []
@@ -1098,18 +1098,18 @@ confirmed from inside the dispatch.
 
 <!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
 
-    run:    2026-09-17T05:08:30Z
-    commit: bea475b (working tree had uncommitted changes)
+    run:    2026-09-17T05:27:26Z
+    commit: 03bd458
     tree:   d6d2554b37cccd1252949ddb9876007f3748cc8c
     result: pass (5 ran, 3 unconfigured, 0 known)
 
-    PASS         format (0s, observed 43)
-    PASS         lint (1s, observed 43, floor 1)
-    PASS         typecheck (3s, observed 8)
-    PASS         unit (16s, observed 197, floor 197)
+    PASS         format (2s, observed 43)
+    PASS         lint (3s, observed 43, floor 1)
+    PASS         typecheck (12s, observed 8)
+    PASS         unit (63s, observed 197, floor 197)
     UNCONFIGURED coverage
     UNCONFIGURED integration
-    PASS         build (0s, observed 25103)
+    PASS         build (2s, observed 25103)
     UNCONFIGURED mutation
 
 ## Gate probes

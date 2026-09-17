@@ -175,39 +175,45 @@ agreement in shape; the profile uses `<dirs>` placeholders and prose, and a
 byte comparison would fail on the first legitimate divergence and be deleted by
 the next person.
 
-### This story must bump `.claude/harness/VERSION`, and that is not cosmetic
+### This story does NOT bump `.claude/harness/VERSION` — an earlier pin here was wrong
 
-Added at PLANNED, after the harness refresh to 30. `check-boundaries.sh` now
-carries a check this story did not exist under when it was written:
+**Withdrawn 2026-09-17.** A previous version of this section instructed GREEN to
+bump `.claude/harness/VERSION`, on the grounds that harness 30's
+`check-boundaries.sh` refuses a PR touching `.claude/` without one. **That was a
+Lead PO error and the instruction is withdrawn.** It is recorded rather than
+deleted because an instruction that names a mechanism is a claim, and this one
+was made without checking that the mechanism fires here.
 
-    if [ "${touched_harness:-0}" -gt 0 ]; then
-      ... problem "this changes the harness ($touched_harness file(s) under
-      .claude/, scripts/ or .github/) and does not bump
-      .claude/harness/VERSION."
+The check is scoped by two conditions, not one
+(`scripts/check-boundaries.sh`, "3a-bis"):
 
-This story changes **two** files under `.claude/` - the profile and a new test
-suite - so it trips it, and CI refuses the PR. The bump goes in the same commit
-as the change.
+    if [ -z "$sid" ] && ! grep -qE '^BOOTSTRAPPED=yes' .claude/harness/project.conf
 
-**The wrinkle, recorded rather than discovered in GATES.** `VERSION` is
-upstream-owned: `refresh-harness.sh` lists it as REPLACED, so the next refresh
-overwrites whatever this story writes. That does not make the bump pointless -
-between now and that refresh it is the only thing telling a reader this tree is
-not stock harness 30 - but it does mean the number is a **local** claim, not a
-claim about upstream. GREEN writes it as such rather than inventing an upstream
-release that does not exist:
+- `[ -z "$sid" ]` — **not a story branch.** Downstream work always is; an upstream
+  harness round never is.
+- and the repo is **unbootstrapped**. Every real project sets `BOOTSTRAPPED=yes`;
+  only the template does not.
 
-    31 (2026-09-16, local: HARNESS-007)
+This project is bootstrapped and `HARNESS-007` is a story, so **the check cannot
+fire for it.** The script's own comment says so in as many words: *"This must
+never fire in a project BUILT on the harness, where `.claude/` is edited
+routinely - project.conf, paths.conf, .gitignore - by people who are not upstream
+and have no version to stamp."*
 
-**This is not a new acceptance criterion** and no AC changes - the criteria are
-about what the profile teaches, and a version stamp is a property of the commit,
-not of the artifact. It is a Contract pin because it is a thing GREEN must do and
-would otherwise meet as a CI refusal.
+**Proved by a story that had already run it.** `SEAT-001` changed
+`.claude/harness/project.conf` (the `unit` floor, 175 → 197) on a story branch,
+and `check-boundaries.sh` passed all ten checks with no VERSION bump and no
+complaint - locally and on CI.
 
-**It affects every future harness-touching story in this repository**, not just
-this one. `HARNESS-006` did not trip it only because it merged under harness 19,
-before the check existed. Worth a line in `CLAUDE.md` eventually; not this
-story's to add.
+**Where the wrong claim came from**, since it is the more useful half: the failure
+text was read out of `boundaries.test.sh`'s **fixture** output, where the fixture
+repo is deliberately unbootstrapped and has no story, and generalised to this
+repo without checking the guard. The fixture was doing its job; the reader was
+not.
+
+**So GREEN does nothing about VERSION.** Bumping it would be actively wrong —
+this project has no upstream version to stamp, and the next
+`refresh-harness.sh` would overwrite the claim anyway.
 
 ### Oracle partition
 
