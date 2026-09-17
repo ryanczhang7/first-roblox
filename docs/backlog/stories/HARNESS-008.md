@@ -4,8 +4,8 @@ title: The fast loop cannot see a harness suite it just broke
 slug: the-fast-loop-cannot-see-a-harness-suite
 epic: 
 type: chore
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-008-the-fast-loop-cannot-see-a-harness-suite
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
