@@ -4,8 +4,8 @@ title: The roblox-luau profile still teaches the counter HARNESS-006 removed
 slug: the-roblox-luau-profile-still-teaches-th
 epic: 
 type: chore
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-007-the-roblox-luau-profile-still-teaches-th
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -1484,3 +1484,44 @@ not among them. Recomputed with the story file dirty:
     7dd91365d27ad2d22361372720a82fa17e7d788f   recorded in ## Gate results
 
 Identical, so the REVIEW commit that carries this record cannot invalidate it.
+
+### REVIEW -> DONE (2026-09-17)
+
+PR [#12](https://github.com/ryanczhang7/first-roblox/pull/12), merged
+`2026-09-17T20:02:01Z` as `41bdea6`. Both required checks pass:
+
+    boundaries  pass  7s      actions/runs/35267895591
+    gates       pass  2m12s   actions/runs/35267895500
+
+**The timings, read out of the log rather than the summary**, because a pass
+within 10 % of a limit is a pending failure. No limit is near: `gates.yml` sets
+no `timeout-minutes`, so the ceiling is GitHub's 360-minute default and the job
+ran 2 m 12 s.
+
+Where that time goes, from the `Harness self-test` step (19:57:34 → 19:58:55,
+**81 s for all 18 suites**):
+
+| suite | CI | this machine |
+|---|---|---|
+| `harness-gate` | ~40 s | (the single largest cost; `HARNESS-008`'s, runs `gates.sh --fast` end to end) |
+| `project-counters` | ~12 s | ~21 s |
+| **`profile-counters`** — this story's | **~0.5 s** | ~12 s |
+| every other suite | < 1 s each | `phase-guard` ~5 min, `plan` did not finish |
+
+**`EPIC-00` recorded this job at 54 s; it is now 2 m 12 s, and this story is not
+why.** The difference is `HARNESS-008`'s `harness-gate` suite (~40 s) plus the
+`harness` gate (~12 s), both added after that measurement. This story's
+contribution is the ~0.5 s row above. Recorded so the next person comparing
+against `EPIC-00`'s number does not attribute the gap here.
+
+**The local/CI ratio is the finding worth carrying.** `scripts/selftest.sh` takes
+81 s on `ubuntu-24.04` and 20+ minutes on Windows/Git Bash — it did not finish
+locally on this branch, and `plan.test.sh` (34 assertions, **3 s** on CI) was the
+suite it died in. All of it is fork cost. It matters because `selftest.sh` is the
+only thing that runs this story's guard, so the guard is cheap where it runs and
+impractical to loop on locally. `profile-counters` alone is ~12 s and is the right
+local loop; the full self-test is not.
+
+**Nothing was pending CI and nothing was BLOCKED**, so `check-boundaries.sh`'s
+extra DONE condition does not apply. Its last local run before the PR was 9/9 ok,
+and the `boundaries` job confirms it against the merge commit.
