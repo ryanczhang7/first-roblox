@@ -506,6 +506,104 @@ the change, which is its to make; **the probe is GATES' and is recorded in
 
 ---
 
+
+---
+
+## PO ruling on the return to RED from REVIEW
+
+**The return was correct and the correction is accepted.** PR #10's `gates` job
+failed while every local signal was green. The failure was **not** in SEAT-001's
+work: `boundaries` passed, `Ring.luau` was untouched, and `lune run test` was
+`197 passed, 0 failed` throughout. It was `.claude/tests/project-counters.test.sh`
+- `HARNESS-006`'s suite - whose file-count literals SEAT-001 had legitimately
+made stale by adding one source file and four test files.
+
+This is the harness's own prescribed path rather than a judgement call: *a gate
+failure whose only legal fix is a write the current phase forbids is a return to
+RED.* REVIEW may write docs and harness; the fix is a test file.
+
+### The correction, verified rather than accepted
+
+| Constant | Was | Now |
+|---|---|---|
+| `BASE_FORMAT`, `BASE_LINT` | 38 | **43** |
+| `BASE_TYPECHECK` | 7 | **8** |
+| `NARROW_FORMAT`, `NARROW_LINT` | 7 | **8** |
+| `NARROW_TYPECHECK` | 5 | **5** (unchanged) |
+
+`NARROW_TYPECHECK` not moving is the detail that makes the rest credible: it
+counts `src/shared` alone, and SEAT-001 added under `src/server/seats`. A
+correction that moved all six would have been a correction applied by pattern
+rather than by measurement.
+
+**Orchestrator's own run after the fix:** `project-counters: 40 passed, 0 failed`,
+`lune run test` `197 passed, 0 failed`, `gates.sh --fast` all five PASS at
+`43 / 43 / 8 / 197`.
+
+### The probe, reproduced independently
+
+A corrected assertion runs for the first time against code that already satisfies
+it, so "watched to fail" is replaced rather than waived. RED's probe B was re-run
+by the orchestrator:
+
+    $ bash scripts/mutate.sh .claude/harness/project.conf \
+        's|{n++; next}|{if ($0 !~ /seats/) n++; next}|' \
+        -- bash .claude/tests/project-counters.test.sh
+
+        FAIL format reports 43 files on the unmodified tree
+        FAIL narrowing the format target to src reports 8, not 43
+        FAIL AC-2: format counts the untracked file (43 -> 44)
+        FAIL format does not count the ignored file (still 43)
+    project-counters: 36 passed, 4 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .claude/state/mutations/.claude_harness_project.conf.20260917T050203Z.2223710.bak) ===
+
+`36 passed, 4 failed` to the test. **The probe is well chosen**: it hides exactly
+`seats`, the file SEAT-001 added, so it demonstrates the suite can still see the
+change that made it stale - which a probe hiding some unrelated file would not.
+Probe A covers the `lint`/`typecheck` family, which shares a different counter;
+7 + 4 = 11, the exact set that was red, and the two families are disjoint.
+
+### Ruling — the assertion names were rightly updated too
+
+RED also changed assertion *names* carrying the old numbers
+(`format reports 38 files` -> `43`). That is inside the remit, not outside it: a
+failure message announcing 38 while asserting 43 is the **lying needle**
+`rules.md` warns about, at the level of the string. Accepted. Every tolerance,
+case and comparison is untouched; the diff is literals, comments and names.
+
+### GREEN on re-entry was a no-op, verified rather than delegated
+
+`git diff -- src` is empty and the suite is green, so there was nothing for a
+feature developer to do. No dispatch was made: an agent given no work finds some.
+
+### The real defect is the detection gap, and it is not this story's to fix
+
+`gates.sh --fast` never invokes `.claude/tests/*`. Only `selftest.sh` and
+`ci-local.sh` do, and neither is part of the per-story RED or GREEN procedure. So
+a harness suite can go red from an ordinary product story and **every local
+signal stays green until CI**. That is exactly what happened here, and it will
+happen to the next story that adds a `.luau` file regardless of how those
+expectations are computed.
+
+Two candidate fixes, for the follow-up story rather than for this one:
+
+1. **Put the harness suites into the fast loop.** Cheapest, closes the detection
+   gap, changes no acceptance criterion. This alone would have caught it in RED.
+2. Derive the expectations from `scripts/classify.sh --list` - an *independent*
+   enumeration, so not self-referential the way re-deriving from the gate command
+   under test would be. This slightly weakens `HARNESS-006` AC-7's claim and
+   needs its own story and its own probe.
+
+`HARNESS-006` is DONE with frozen criteria, so neither was done here. **Filed as a
+follow-up.**
+
+**Resolved model of the return dispatch:** `test-developer`, dispatched
+`model: opus` and resolved to **Opus 5** - deliberately not the planned `fable`,
+because a return to RED is a correction to an existing suite rather than writing
+a partitioned brief, which is the case `models.conf` measured.
+
+---
+
 ## Test plan
 
 Two files apply the SAME checks: the real suite to `src/server/seats/Ring.luau`,
@@ -1000,18 +1098,18 @@ confirmed from inside the dispatch.
 
 <!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
 
-    run:    2026-09-17T03:43:42Z
-    commit: a4d5fe0 (working tree had uncommitted changes)
-    tree:   6b620e9667ed88c6428964a3d1b0518a03964d50
+    run:    2026-09-17T05:08:30Z
+    commit: bea475b (working tree had uncommitted changes)
+    tree:   d6d2554b37cccd1252949ddb9876007f3748cc8c
     result: pass (5 ran, 3 unconfigured, 0 known)
 
     PASS         format (0s, observed 43)
     PASS         lint (1s, observed 43, floor 1)
-    PASS         typecheck (2s, observed 8)
-    PASS         unit (15s, observed 197, floor 197)
+    PASS         typecheck (3s, observed 8)
+    PASS         unit (16s, observed 197, floor 197)
     UNCONFIGURED coverage
     UNCONFIGURED integration
-    PASS         build (1s, observed 25103)
+    PASS         build (0s, observed 25103)
     UNCONFIGURED mutation
 
 ## Gate probes
@@ -1048,3 +1146,293 @@ only thing that notices a suite quietly shrinking. This story adds 22 tests; if 
 later story deletes twelve of them the suite still passes, the evidence regex
 still matches, and only the floor complains. That is why it moves in the story
 that adds the tests rather than later.
+
+## Regressions
+
+### GATES -> RED: `.claude/tests/project-counters.test.sh` pinned a tree that no longer exists
+
+**What was wrong.** HARNESS-006's counter suite asserts the project's `.luau`
+file counts against the **live tree**, and holds the expected values as
+module-level literals (`BASE_FORMAT`, `BASE_LINT`, `BASE_TYPECHECK`,
+`NARROW_FORMAT`, `NARROW_LINT`, `NARROW_TYPECHECK`). SEAT-001 legitimately added
+`src/server/seats/Ring.luau` and four test files, so every literal derived from
+`src tests lune` or from `src` went stale and **11 of the suite's 40 assertions
+failed**. The counters were reporting correctly; the numbers beside them were a
+description of the tree as it stood at HARNESS-006.
+
+This is not a weakening papered over. It is the same class of act as this story
+already performed on the `unit` floor (197): a settled literal that describes the
+tree has to move in the story that changes the tree.
+
+**How it was found, and why nothing local caught it.** CI's `gates` job failed on
+PR #10 while every local gate and `lune run test` passed. `scripts/gates.sh
+--fast` does not run the harness suites at all - only `scripts/selftest.sh` and
+`scripts/ci-local.sh` do, and neither is part of the RED/GREEN inner loop. So the
+whole story could go green locally with this suite red. That is a gap in the
+loop, not a property of this story; see "Opinion" at the end of this section.
+
+**What it asserts now.** The same assertions, against re-measured literals. Each
+value was read out of the gate command's **own evidence line**, by running the
+command from `.claude/harness/project.conf` verbatim (and, for the narrowing
+cases, with the one path substitution the suite itself makes):
+
+| Constant | Was | Now | Command it was measured with | Evidence line |
+|---|---|---|---|---|
+| `BASE_FORMAT` | 38 | **43** | `gate \| format` unmodified (`stylua --check -v src tests lune \| awk ...`) | `stylua over 43 files` |
+| `BASE_LINT` | 38 | **43** | `gate \| lint` unmodified (`selene src tests lune && ...`) | `selene over 43 files` |
+| `BASE_TYPECHECK` | 7 | **8** | `gate \| typecheck` unmodified (`luau-lsp analyze ... src && ...`) | `analyze over 8 files` |
+| `NARROW_FORMAT` | 7 | **8** | format with `src tests lune` -> `src` | `stylua over 8 files` |
+| `NARROW_LINT` | 7 | **8** | lint with `src tests lune` -> `src` | `selene over 8 files` |
+| `NARROW_TYPECHECK` | 5 | **5** (unchanged) | typecheck with `src` -> `src/shared` | `analyze over 5 files` |
+
+The arithmetic is consistent and was cross-checked against the file list: `src`
+holds 8 `.luau` files (the 7 of HARNESS-006 plus `src/server/seats/Ring.luau`),
+`tests` + `lune` hold 35, and 8 + 35 = 43. `src/shared` is untouched by this
+story, which is why `NARROW_TYPECHECK` is the one literal that did not move - and
+both probes below confirm it by leaving that assertion green.
+
+Nothing else in the suite changed: no assertion was removed, relaxed or skipped,
+no tolerance widened, and the derived cases (`BASE_* + 1` for the untracked
+scratch file, `BASE_*` unchanged for the ignored one) still derive from the
+literals rather than being written out. Assertion *names* carrying the old
+numbers were updated with them - a name reading "format reports 38 files" beside
+an assertion demanding 43 is a failure message that lies - and the comment above
+the constants now says explicitly that these track the tree, that they move when
+it grows, and how to re-measure them.
+
+**Before the fix:**
+
+    $ bash .claude/tests/project-counters.test.sh
+    project-counters: 29 passed, 11 failed
+
+**After the fix:**
+
+    $ bash .claude/tests/project-counters.test.sh
+    project-counters: 40 passed, 0 failed
+
+### Earning the corrected assertions: two mutation probes
+
+"Watch it fail" cannot apply - these assertions run for the first time against a
+tree that already satisfies them, so they are green on arrival and would be green
+if they asserted nothing. Both probes therefore break the *specific* behaviour the
+corrected literals pin: **the reported count is the number of `.luau` files the
+tool was actually handed for its target**. Each removes exactly one file from a
+counter - `src/server/seats/Ring.luau`, the file SEAT-001 added and the reason the
+literals moved - so a probe that stayed green would prove the suite cannot see the
+very change that made it stale.
+
+Two probes rather than one because no single `sed` expression reaches all three
+counters: `format` counts from **stylua's own `-v` output** through `awk`, while
+`lint` and `typecheck` share a `git ls-files` counter. Probe A reaches the shared
+one (7 assertions, both the `BASE_*` and `NARROW_*` families); probe B reaches
+stylua's (4 assertions, both families). 7 + 4 = 11, which is exactly the set that
+was red before the fix.
+
+#### Probe A - the shared `git ls-files` counter (lint + typecheck)
+
+    $ bash scripts/mutate.sh .claude/harness/project.conf \
+        's|\*\.luau) if|*seats/*.luau) ;; *.luau) if|g' \
+        -- bash .claude/tests/project-counters.test.sh
+
+    === mutate: .claude/harness/project.conf (2 line(s) changed by s|\*\.luau) if|*seats/*.luau) ;; *.luau) if|g) ===
+      350 - ... | while IFS= read -r f; do case "$f" in *.luau) if [ -e "$f" ]; then echo x; fi ;; esac; done | wc -l) && echo "selene over $n files"
+      350 + ... | while IFS= read -r f; do case "$f" in *seats/*.luau) ;; *.luau) if [ -e "$f" ]; then echo x; fi ;; esac; done | wc -l) && echo "selene over $n files"
+      376 - ... | while IFS= read -r f; do case "$f" in *.luau) if [ -e "$f" ]; then echo x; fi ;; esac; done | wc -l) && echo "analyze over $n files"
+      376 + ... | while IFS= read -r f; do case "$f" in *seats/*.luau) ;; *.luau) if [ -e "$f" ]; then echo x; fi ;; esac; done | wc -l) && echo "analyze over $n files"
+
+    === mutate: running bash .claude/tests/project-counters.test.sh ===
+
+      preconditions
+
+      AC-7: the three gates report the settled counts for this tree
+        FAIL lint reports 43 files on the unmodified tree
+             expected count: 43
+             actual count:   42
+             evidence regex: selene over [1-9][0-9]* files
+             gate output (last 6 lines):
+             Results:
+             0 errors
+             0 warnings
+             0 parse errors
+             selene over 42 files
+        FAIL typecheck reports 8 files on the unmodified tree
+             expected count: 8
+             actual count:   7
+             evidence regex: analyze over [1-9][0-9]* files
+             gate output (last 6 lines):
+             Created sourcemap at sourcemap.json
+             [INFO] Loading definitions file: @roblox - globalTypes.d.luau
+             [WARN] client does not allow didChangeWatchedFiles registration - automatic updating on sourcemap changes disabled
+             [INFO] Loading Luau configuration from c:\Users\ryanc\Projects\first-roblox\.luaurc
+             analyze over 7 files
+
+      a gate names its target once, so the tool and the counter cannot disagree
+
+      every gate command starts with a real executable, so doctor.sh can find the tool
+
+      AC-1: the format count is the number of files stylua read
+
+      AC-1, empty boundary: a format target with no .luau files claims no work
+
+      AC-3: the lint count moves with the target selene was handed
+        FAIL narrowing the lint target to src reports 8, not 43
+             expected count: 8
+             actual count:   7
+             evidence regex: selene over [1-9][0-9]* files
+             gate output (last 6 lines):
+             Results:
+             0 errors
+             0 warnings
+             0 parse errors
+             selene over 7 files
+
+      AC-5: the typecheck count moves with the target luau-lsp was handed
+
+      AC-2/AC-4: a .luau file on disk but not yet tracked by git is counted
+        FAIL AC-4: lint counts the untracked file (43 -> 44)
+             expected count: 44
+             actual count:   43
+             evidence regex: selene over [1-9][0-9]* files
+             gate output (last 6 lines):
+             Results:
+             0 errors
+             0 warnings
+             0 parse errors
+             selene over 43 files
+        FAIL typecheck counts the untracked file (8 -> 9)
+             expected count: 9
+             actual count:   8
+             evidence regex: analyze over [1-9][0-9]* files
+             gate output (last 6 lines):
+             Created sourcemap at sourcemap.json
+             [INFO] Loading definitions file: @roblox - globalTypes.d.luau
+             [WARN] client does not allow didChangeWatchedFiles registration - automatic updating on sourcemap changes disabled
+             [INFO] Loading Luau configuration from c:\Users\ryanc\Projects\first-roblox\.luaurc
+             analyze over 8 files
+
+      AC-6: a .luau file .gitignore covers is not counted
+        FAIL lint does not count the ignored file (still 43)
+             expected count: 43
+             actual count:   42
+             evidence regex: selene over [1-9][0-9]* files
+             gate output (last 6 lines):
+             Results:
+             0 errors
+             0 warnings
+             0 parse errors
+             selene over 42 files
+        FAIL typecheck does not count the ignored file (still 8)
+             expected count: 8
+             actual count:   7
+             evidence regex: analyze over [1-9][0-9]* files
+             gate output (last 6 lines):
+             Created sourcemap at sourcemap.json
+             [INFO] Loading definitions file: @roblox - globalTypes.d.luau
+             [WARN] client does not allow didChangeWatchedFiles registration - automatic updating on sourcemap changes disabled
+             [INFO] Loading Luau configuration from c:\Users\ryanc\Projects\first-roblox\.luaurc
+             analyze over 7 files
+
+      the format gate FAILS on a badly formatted file, however it counts
+
+    project-counters: 33 passed, 7 failed
+
+    === mutate: command exited 1; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/.claude_harness_project.conf.20260917T040958Z.2066476.bak) ===
+
+Seven failures, all of them corrected assertions, every message naming the right
+number. `NARROW_TYPECHECK` (5, over `src/shared`) stayed green, correctly: the
+file the mutation hid is under `src/server/seats`, not `src/shared`, which is why
+that one literal did not move either.
+
+#### Probe B - stylua's own counter (format)
+
+    $ bash scripts/mutate.sh .claude/harness/project.conf \
+        's|{n++; next}|{if ($0 !~ /seats/) n++; next}|' \
+        -- bash .claude/tests/project-counters.test.sh
+
+    === mutate: .claude/harness/project.conf (1 line(s) changed by s|{n++; next}|{if ($0 !~ /seats/) n++; next}|) ===
+      334 - gate | format    | optional | . | stylua --check -v src tests lune 2>&1 | awk '/^debug: formatted /{n++; next} skip{if ($0 == "}") skip=0; next} /^debug: .*\{$/{skip=1; next} /^debug: /{next} {print} END{print "stylua over " n+0 " files"}'; test "${PIPESTATUS[0]}" -eq 0
+      334 + gate | format    | optional | . | stylua --check -v src tests lune 2>&1 | awk '/^debug: formatted /{if ($0 !~ /seats/) n++; next} skip{if ($0 == "}") skip=0; next} /^debug: .*\{$/{skip=1; next} /^debug: /{next} {print} END{print "stylua over " n+0 " files"}'; test "${PIPESTATUS[0]}" -eq 0
+
+    === mutate: running bash .claude/tests/project-counters.test.sh ===
+
+      preconditions
+
+      AC-7: the three gates report the settled counts for this tree
+        FAIL format reports 43 files on the unmodified tree
+             expected count: 43
+             actual count:   42
+             evidence regex: stylua over [1-9][0-9]* files
+             gate output (last 6 lines):
+             stylua over 42 files
+
+      a gate names its target once, so the tool and the counter cannot disagree
+
+      every gate command starts with a real executable, so doctor.sh can find the tool
+
+      AC-1: the format count is the number of files stylua read
+        FAIL narrowing the format target to src reports 8, not 43
+             expected count: 8
+             actual count:   7
+             evidence regex: stylua over [1-9][0-9]* files
+             gate output (last 6 lines):
+             stylua over 7 files
+
+      AC-1, empty boundary: a format target with no .luau files claims no work
+
+      AC-3: the lint count moves with the target selene was handed
+
+      AC-5: the typecheck count moves with the target luau-lsp was handed
+
+      AC-2/AC-4: a .luau file on disk but not yet tracked by git is counted
+        FAIL AC-2: format counts the untracked file (43 -> 44)
+             expected count: 44
+             actual count:   43
+             evidence regex: stylua over [1-9][0-9]* files
+             gate output (last 6 lines):
+             stylua over 43 files
+
+      AC-6: a .luau file .gitignore covers is not counted
+        FAIL format does not count the ignored file (still 43)
+             expected count: 43
+             actual count:   42
+             evidence regex: stylua over [1-9][0-9]* files
+             gate output (last 6 lines):
+             stylua over 42 files
+
+      the format gate FAILS on a badly formatted file, however it counts
+
+    project-counters: 36 passed, 4 failed
+
+    === mutate: command exited 1; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/.claude_harness_project.conf.20260917T041026Z.2067959.bak) ===
+
+Four failures, all corrected assertions, and the lint/typecheck family stayed
+green - the two probes are independent, which is what makes the pair evidence
+rather than one probe counted twice.
+
+Both restores were verified byte-for-byte by `mutate.sh`;
+`.claude/state/mutations/` holds no `.bak`,
+`git diff -- .claude/harness/project.conf` is empty, and `git diff -- src tests`
+is empty.
+
+### What did NOT change
+
+- No source file. `git diff -- src` is empty; `src/server/seats/Ring.luau` is
+  untouched.
+- No test of this story's own behaviour. `git diff -- tests` is empty; the twelve
+  SEAT-001 tests and the `unit` floor of 197 are unchanged.
+- `.claude/harness/project.conf` - restored by both probes, unchanged on disk.
+- HARNESS-006's acceptance criteria and the *design* of its suite. See below.
+
+### Opinion, recorded and deliberately not acted on
+
+The suite's design makes every story that adds or deletes a `.luau` file pay this
+tax, and the gap that let it reach CI is that `gates.sh --fast` never runs the
+harness suites. Both are real, and both are out of scope here: deriving the
+expectations from the tool instead of hard-coding them would change what
+HARNESS-006's AC-7 asserts, and HARNESS-006 is DONE with frozen criteria. A
+separate harness story should decide between (a) deriving the counts from an
+**independent** enumeration - `scripts/classify.sh --list`, which is not the
+counter under test and so is not self-referential - and (b) leaving them settled
+but putting the harness suites into the fast loop so a stale literal is caught in
+RED rather than in CI. Recorded here so the next planner has it; nothing in this
+story acts on it.
