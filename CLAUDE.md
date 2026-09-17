@@ -16,6 +16,8 @@ every turn, so it stays short.
 /setup-environment → install the toolchain the stack needs → docs/wiki/environment.md
 /advance-story ID  → one phase of the cycle
 /complete-story ID → every phase, to done
+                     `bash scripts/plan.sh ID` recommends which, and why —
+                     ask it rather than asking the user every time
 /audit-mutations   → Mutation Tester (optional, above the bar)
 ```
 
@@ -66,7 +68,9 @@ form of "working around the lock" that is allowed.
 
 ```bash
 bash scripts/phase.sh show                 # what is active, what may be written
-bash scripts/phase.sh board                # every story at a glance
+bash scripts/phase.sh board                # every story at a glance, with the
+                                           # recommended command per story
+bash scripts/plan.sh WORLD-014             # why that command, and the model plan
 bash scripts/phase.sh set WORLD-014 GREEN  # the only supported way to change phase
 ```
 
@@ -94,6 +98,8 @@ bash scripts/gates.sh --fast     # every gate not marked `slow` — for RED and 
 bash scripts/gates.sh --gate unit
 bash scripts/check-boundaries.sh # the other half of CI: the commit, not the code
 bash scripts/ci-local.sh         # every step CI runs, in order, on this machine
+bash scripts/plan.sh ID          advance-story or complete-story, and why
+bash scripts/plan.sh write ID    put the per-phase model plan in the story
 bash scripts/classify.sh --list source src   # what the lock thinks a path is
 bash scripts/refresh-harness.sh ../agentic-dev-harness  # pull a newer harness in
 bash scripts/task.sh dev         # run the app
