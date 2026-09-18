@@ -4,8 +4,8 @@ title: Gate record tree stamp is verified end to end
 slug: gate-record-tree-stamp-is-verified-end-t
 epic: 
 type: chore
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-001-gate-record-tree-stamp-is-verified-end-t
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
