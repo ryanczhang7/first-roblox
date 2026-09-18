@@ -1191,23 +1191,90 @@ live_tree="$( cd "$FIX" && CLAUDE_PROJECT_DIR="$FIX" bash -c \
   '. .claude/hooks/lib.sh; gate_tree_hash' 2>/dev/null )"
 assert_eq "and the stamp gates.sh wrote IS that hash" "$live_tree" "$rec_tree"
 
+# --- AC-1's second name, pinned by value -------------------------------------
+# The refusal both cases below produce names TWO hashes: the one gates.sh
+# recorded, and the one the tree hashes to now. The needle they use to read it,
+# `gates were recorded against tree`, floats - a message naming only the FIRST
+# satisfies it exactly as well. Measured, not supposed: deleting
+# `but $where is '$now'. ` from the refusal at check-boundaries.sh:374 left this
+# suite at 73 passed, 0 failed, byte-identical to baseline. Half of AC-1 was
+# unobserved.
+#
+# So each hash is asserted BY VALUE. That is rules.md's third defence and the
+# only one of the three available here: anchoring the match and choosing a
+# needle whose negation is not also a match are both properties of prose, and a
+# 40-character hex string is not prose. No message meaning the opposite can
+# produce one.
+
+# fix_tree_hash   gate_tree_hash of $FIX, exactly as :1190 already computes it.
+fix_tree_hash() { ( cd "$FIX" && CLAUDE_PROJECT_DIR="$FIX" bash -c \
+  '. .claude/hooks/lib.sh; gate_tree_hash' 2>/dev/null ); }
+
+# rec_tree_of_fixture   The `tree:` stamp gates.sh wrote into the fixture story,
+# read the way :1188 reads it. Call it BEFORE the write that breaks the stamp:
+# afterwards it still returns the recorded value, and nothing distinguishes that
+# from a stale read of a record made two runs ago.
+rec_tree_of_fixture() {
+  sed -nE 's/^[[:space:]]*tree:[[:space:]]*([0-9a-f]+).*/\1/p' \
+    "$FIX/docs/backlog/stories/T-1.md" | head -1
+}
+
+# assert_sha40 <what> <value>   Every needle below is a variable, and the empty
+# string is a substring of every haystack. A hash that failed to be read would
+# make both `refused` calls pass while asserting nothing - the same defect this
+# block exists to remove, reintroduced one level down.
+assert_sha40() {
+  local shape="not 40 lowercase hex: '$2'"
+  [[ "$2" =~ ^[0-9a-f]{40}$ ]] && shape='40 lowercase hex'
+  assert_eq "$1" '40 lowercase hex' "$shape"
+}
+
+# assert_differ <what> <a> <b>   The control. The recorded hash is read before
+# the change and the live one after; if the two ever named the same tree there
+# would be no mismatch to refuse, and every assertion that follows would pass
+# for the wrong reason while looking identical in the output.
+assert_differ() {
+  local verdict=different
+  [ "$2" = "$3" ] && verdict="identical: $2"
+  assert_eq "$1" different "$verdict"
+}
+
 # Source moved after the run. The test moves with it, so that section 3a is
 # satisfied and the only thing left to refuse this PR is the stamp.
 printf 'export const x = 2\n'                       > "$FIX/src/main.ts"
 printf 'test("x", () => {})\n// and one more\n'     > "$FIX/tests/main.test.ts"
 commit_all "code changed after the gates ran"
+# $rec_tree was read at :1188, BEFORE the two writes above. now_tree is the tree
+# as it stands after them, which is what check-boundaries.sh is about to hash.
+now_tree="$(fix_tree_hash)"
 run_boundaries
 refused "a stamp describing a different tree is refused" "gates were recorded against tree"
+assert_sha40 "the recorded tree is a real hash, not an empty read" "$rec_tree"
+assert_sha40 "the tree after the source change is a real hash too" "$now_tree"
+assert_differ "control: source moved, so the two hashes name different trees" \
+  "$rec_tree" "$now_tree"
+refused "the refusal names the RECORDED tree by value" "$rec_tree"
+refused "and the CURRENT tree by value - the half nothing pinned" "$now_tree"
 
 # And a TEST changing is enough on its own. The hash covers test files because a
 # suite edited after the last full run is exactly the case law 3 exists for -
 # the gates passed against code nobody is merging. Dropping `test` from the
 # gated set left the stamp matching, and passed all 14 suites.
 printf '%s\n' "$GATE_STORY_NOTE" | story_blocked REVIEW
+# A fresh gates.sh run wrote a fresh record, so the value read at :1188 is stale
+# from here on. Read again, still BEFORE the test file moves.
+rec_tree_t="$(rec_tree_of_fixture)"
 printf 'test("x", () => {})\n// a case added after the run\n' > "$FIX/tests/main.test.ts"
 commit_all "only a test changed after the gates ran"
+now_tree_t="$(fix_tree_hash)"
 run_boundaries
 refused "a test changing alone breaks the stamp too" "gates were recorded against tree"
+assert_sha40 "the record from the second run is a real hash" "$rec_tree_t"
+assert_sha40 "and the tree after the test-only change is too" "$now_tree_t"
+assert_differ "control: a test moving alone still changes the tree hash" \
+  "$rec_tree_t" "$now_tree_t"
+refused "the test-only refusal names the RECORDED tree by value" "$rec_tree_t"
+refused "and the CURRENT tree by value, for a test-only change" "$now_tree_t"
 
 # ---------------------------------------------------------------------------
 describe "production code arrives with tests, or with an inventory"
