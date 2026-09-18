@@ -854,6 +854,22 @@ PASS (format 43, lint 43, typecheck 8, unit 197, build 25103, harness 40),
 coverage unconfigured. A partial run, so not recorded as evidence - the full
 run before REVIEW is what judges the story.
 
+### The guard actually ran on CI
+
+`## Context` records that no `gate |` row runs this suite - the only thing that
+does is the "Harness self-test" step of `gates.yml`. A green tick on the job is
+not evidence that the step ran *these* assertions, so the log is quoted:
+
+```
+$ gh run view 35360426651 --log | grep 'Harness self-test'
+gates  Harness self-test  2026-09-18T15:07:20Z  boundaries: 95 passed, 0 failed
+gates  Harness self-test  2026-09-18T15:08:44Z  18 harness suite(s) passed.
+```
+
+95 on CI, matching the local run. Both required checks on
+[PR #14](https://github.com/ryanczhang7/first-roblox/pull/14) pass: `boundaries`
+in 4s, `gates` in 2m12s.
+
 ### The audit entry
 
 The audit entry for C2 should be read as **closed on E4-E6 and open on the arm**.
