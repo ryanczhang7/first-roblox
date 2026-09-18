@@ -828,3 +828,36 @@ byte-for-byte a second time (backup
 
 ## Notes
 
+### The PR's CI run, quoted - because no local gate could
+
+`## Context` says `bash scripts/gates.sh` passes without ever running
+`.claude/tests/boundaries.test.sh`. That makes the green gate summary above
+silent about this story, and leaves exactly one thing that judges it: the
+**`Harness self-test`** step at `.github/workflows/gates.yml:108`. Quoting it is
+not ceremony here, it is the only evidence of the artifact.
+
+PR: https://github.com/ryanczhang7/first-roblox/pull/13
+
+```
+$ gh run view 35310141771 --log | grep -E 'boundaries: |harness suite'
+gates	Harness self-test	2026-09-18T05:16:36Z  boundaries: 83 passed, 0 failed
+gates	Harness self-test	2026-09-18T05:17:55Z  18 harness suite(s) passed.
+```
+
+```
+$ gh pr checks 13
+boundaries	pass	6s
+gates		pass	2m10s
+```
+
+83 assertions on CI, matching the 83 measured locally - the ten added by this
+story among them, on the machine that actually gates the merge.
+
+### One number worth carrying forward
+
+The whole `selftest.sh` took **1m30s** on the CI runner. On this Windows machine
+the `boundaries` suite **alone** takes ~15 minutes, and HARNESS-008 measured the
+full run at 10-55 minutes. That is a 20-40x gap on the same suite, and it is
+why HARNESS-008's decision to keep `selftest.sh` out of the fast loop is a
+statement about *this machine*, not about the suite. A future story tempted to
+add it to a gate should re-measure rather than quote HARNESS-008's number.
