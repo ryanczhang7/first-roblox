@@ -1,6 +1,6 @@
 ---
 id: HARNESS-002
-title: Production code cannot arrive without tests or an inventory
+title: The bootstrap and spike arms of section 3a are never exercised
 slug: production-code-cannot-arrive-without-te
 epic: 
 type: chore
@@ -13,166 +13,211 @@ required_gates: []  # gate ids that are optional for the repo but binding for TH
 
 ## Context
 
-<!-- Why this story exists. Link the epic and any wiki pages that constrain it.
-     Name the REQUIRED gate that would fail if this story's artifact broke. If
-     only an optional gate can, put it in required_gates above before RED:
-     every required gate once passed over a story none of them exercised. -->
-
 Filed from `docs/wiki/audits/enforcement-mutants-2026-09-15.md`, cluster C2.
 
-Section 3a of `check-boundaries.sh` is the commit-level enforcement of CLAUDE.md
-law 1 ("No production code without a failing test that demanded it") and of the
-bootstrap exception in `rules.md` ("`check-boundaries.sh` refuses the PR if a
-changed source file is missing from that list"). Three mutants show that no
-test exercises any branch of it. The first was confirmed against the whole
-selftest (566 assertions, 13 suites) and survived:
+**The original premise no longer holds, and the criteria were rewritten at
+PLANNED because of it.** The audit recorded that `.claude/tests/boundaries.test.sh`
+had no fixture exercising any branch of section 3a, and that the string
+"Production code ships with the test that demanded it" appeared nowhere in the
+suite. Commit `8edf687` ("Harness refresh 19 -> 27, part 1") added
+`describe "production code arrives with tests, or with an inventory"` at
+`.claude/tests/boundaries.test.sh:1280`, which covers all three mutants the
+audit named. Verified by the orchestrator before the phase moved, against a
+baseline of `boundaries: 83 passed, 0 failed` (the audit's baseline was 41):
 
-1. `scripts/check-boundaries.sh:146` — `[ "$src" -gt 0 ] && [ "$tst" -eq 0 ]`
-   replaced by `false`. Every PR then takes the `else` branch and reports
-   `ok    source changes accompanied by test changes (N source, 0 test)`, which
-   is the message a *correct* PR gets. Law 1 is unenforced at the commit.
-2. `scripts/check-boundaries.sh:151` — the `if !` on the empty-inventory check
-   inverted, so a `bootstrap`/`chore`/`spike` story with a completely empty
-   `## Scaffold inventory` passes.
-3. `scripts/check-boundaries.sh:157` — the per-file `grep -qF -- "$p"` short-circuited,
-   so the inventory need not name any of the source files actually changed.
+| Audit ref | Line today | Expression | Suite under the mutant | Verdict |
+|---|---|---|---|---|
+| E4 | 223 | the `src`/`tst` predicate replaced by `false` | 78 passed, **5 failed** | killed |
+| E5 | 228 | `228s#if ! #if #` | 79 passed, **4 failed** | killed |
+| E6 | 234 | the per-file `grep -qF` short-circuited to `true` | 81 passed, **2 failed** | killed |
 
-`.claude/tests/boundaries.test.sh` contains no story fixture that changes source
-without changing tests, and none that omits a file from its inventory. The string
-"Production code ships with the test that demanded it" appears nowhere in the
-suite.
+Each run was made with `bash scripts/mutate.sh`, which restored the file and
+verified the restore byte-for-byte against its backup. The full output, with the
+exact expressions, is in `## Notes`. The audit's line numbers (146/151/157) had
+shifted to 223/228/234.
 
-Required gate that would fail if this story's artifact broke: `unit`
-(`bash scripts/selftest.sh`).
+**What is still exposed, and what this story now covers.** Section 3a's case arm
+at `scripts/check-boundaries.sh:225` is `bootstrap|chore|spike)` - three story
+types are routed to the `## Scaffold inventory` check instead of to law 1's
+refusal. Every fixture in the suite is `feature` (via `story_on_branch`) or
+`chore` (via `scaffold_story`, called three times, always with `chore`). Neither
+`bootstrap` nor `spike` is exercised anywhere. So narrowing that arm - dropping
+`bootstrap`, dropping `spike`, or widening it to `*)` - changes behaviour that no
+assertion observes. The bootstrap exception in `rules.md` is the rule the whole
+`SCAFFOLD` phase depends on, and it is the one arm of the three with no test.
+
+**Measured, not inferred.** The orchestrator ran that mutation at PLANNED before
+rewriting the criteria, because a gap nobody has demonstrated is a hypothesis:
+
+```
+bash scripts/mutate.sh scripts/check-boundaries.sh \
+  '225s#bootstrap|chore|spike)#chore)#' -- bash .claude/tests/boundaries.test.sh
+
+boundaries: 83 passed, 0 failed
+=== mutate: command exited 0; restored (verified byte-for-byte against
+    .claude/state/mutations/scripts_check-boundaries.sh.20260918T142638Z.734.bak) ===
+  225:     bootstrap|chore|spike)
+```
+
+**It survived** - byte-identical to the 83/0 baseline, exit 0. The bootstrap
+exception can be deleted outright from the enforcement script and the whole
+suite stays green. That is what this story now exists to fix.
+
+**Correction to the guard named when this story was filed.** The original
+Context said the required gate was `unit` (`bash scripts/selftest.sh`). That is
+wrong for this project on both halves: `unit` is `lune run test` (Luau), and the
+`harness` gate runs only `bash .claude/tests/project-counters.test.sh` - because
+`HARNESS-008` measured the full `selftest.sh` at 10-55 minutes on this machine
+and deliberately kept it out of the gates.
+
+**No `gate |` row in `project.conf` runs `boundaries.test.sh`.** The artifact of
+this story is guarded by the **"Harness self-test" step at
+`.github/workflows/gates.yml:108`** (`bash scripts/selftest.sh`), which is a
+required step of the required `gates` workflow, and by `bash scripts/ci-local.sh`
+locally. `required_gates` cannot name it, because it is a workflow step rather
+than a gate id. PO decision, recorded here rather than resolved by adding a
+gate: a regression in this artifact is caught by CI and not by
+`bash scripts/gates.sh`, and adding a gate for it would put ~13 minutes on every
+story's gate run to protect a file only harness stories touch.
 
 ## Acceptance criteria
 
-<!-- Each AC is independently testable and phrased as observable behaviour.
-     The Test Developer writes at least one failing test per AC.
-     An AC that names a statistic, a metric or a threshold names a NEGATIVE
-     CONTROL too: the deliberately broken input the metric must reject, and
-     roughly what it should score. A criterion can be perfectly testable and
-     still be blind to the defect it exists to catch, and that is more
-     dangerous than a vague one - it survives review and goes green. -->
+- **AC-1** - Given a `bootstrap` story whose diff changes source files and no
+  test file, and whose `## Scaffold inventory` names every changed source file,
+  when `check-boundaries.sh` runs, then it reports
+  `every changed source file is named in ## Scaffold inventory` and does NOT
+  emit law 1's refusal.
+  *Semantics:* this is the bootstrap exception in `rules.md`. If the arm stops
+  routing `bootstrap`, the one story type that is ALLOWED to write source
+  without tests is refused for writing source without tests, and `SCAFFOLD`
+  becomes unusable.
+- **AC-2** - Given a `spike` story in the same situation, when
+  `check-boundaries.sh` runs, then it reports the same acceptance.
+- **AC-3** - Given a `bootstrap` story whose `## Scaffold inventory` omits one
+  of two changed source files, when `check-boundaries.sh` runs, then it FAILs
+  naming the omitted file and exits non-zero.
+  *Negative control for AC-1 and AC-2:* without it, an arm that accepts every
+  `bootstrap` story unconditionally satisfies both, and the per-file check is
+  never shown to run on that arm at all.
+- **AC-4** - Given a `fix` story whose diff changes a source file and no test
+  file, when `check-boundaries.sh` runs, then it FAILs with
+  `Production code ships with the test that demanded it` and exits non-zero.
+  *Negative control for the width of the arm:* `fix` is not one of the three
+  types and must not be routed to the inventory check. This is what refuses a
+  widening of the arm to `*)`, which every other criterion here would accept.
 
-- **AC-1** — Given a `feature` story whose diff changes a source file and no
-  test file, when `check-boundaries.sh` runs, then it FAILs with "Production
-  code ships with the test that demanded it" and exits non-zero. Kills:
-  `scripts/check-boundaries.sh:146`
-  `s#\[ "$src" -gt 0 \] && \[ "$tst" -eq 0 \]#false#`.
-- **AC-2** — Given a `chore` story whose diff changes a source file and no test
-  file, and whose `## Scaffold inventory` is empty or template-only, when
-  `check-boundaries.sh` runs, then it FAILs naming the empty inventory. Kills:
-  `scripts/check-boundaries.sh:151` `151s#if ! #if #`.
-- **AC-3** — Given a `chore` story whose `## Scaffold inventory` names one file
-  while the diff changes two source files, when `check-boundaries.sh` runs, then
-  it FAILs naming the file that is missing from the list. Kills:
-  `scripts/check-boundaries.sh:157` `157s#grep -qF -- "$p" ||#true ||#`.
-- **AC-4** — Given a `bootstrap` or `chore` story whose inventory names every
-  changed source file, when `check-boundaries.sh` runs, then it reports
-  "every changed source file is named in ## Scaffold inventory" and does not
-  FAIL — so AC-2 and AC-3 are not satisfied by a check that refuses everything.
+**Mutants these criteria are required to kill**, all on
+`scripts/check-boundaries.sh:225`, to be run and pasted by the phase that owns
+each one:
+
+| Mutant | Expression | Must be caught by |
+|---|---|---|
+| M1 | drop `bootstrap` from the arm | AC-1 |
+| M2 | drop `spike` from the arm | AC-2 |
+| M3 | widen the arm to `*)` | AC-4 |
 
 ## Contract
 
-<!-- Written by the Lead PO BEFORE RED, and AMENDABLE BY RED IN PLACE with a
-     reason - GREEN then builds what the amended block says. This is where "RED
-     tested one shape and GREEN built another" is prevented, and it is not the
-     acceptance criteria: the criteria are frozen and change only through
-     ## Amendments; this is a working agreement RED is expected to sharpen.
-     One block per thing the story touches:
-       * module paths and exported names, exactly
-       * exact signatures, and the types the assertions will destructure
-       * THE SEMANTICS BEHIND EACH NUMBER - not clamp(latitude) but "latitude
-         clamps at +/-85, and dragging DOWN brings the north into view". One
-         sentence per number settles a sign error in one line
-       * the accessible markup for anything user-facing: roles, labels, what is
-         a sibling of what
-       * the oracle partition of the criteria (settled / oracle-free /
-         mechanical - see story-authoring)
-       * baseline measurements the story may read out rather than re-derive,
-         each with what it was measured on
-       * TEST-ONLY DEPENDENCIES this story is likely to need, by name. RED
-         may add them itself, but only inside the dev block - so a library
-         production will ALSO use is a GREEN change and is better decided
-         here than discovered mid-phase. Where the ecosystem has no dev
-         block at all (go.mod, requirements.txt, *.csproj), RED cannot
-         declare one and the phase round trip is yours to plan for
-       * FOR EVERY EXISTING EXPORT WHOSE SIGNATURE THIS STORY CHANGES: every
-         caller, source and test, grep-listed here before dispatch. RED cannot
-         find these itself - the old signature still exists during RED, so a
-         caller of it still compiles and is absent from RED's typecheck. One
-         such file went missing and took 25 tests with it, silently, at GREEN. -->
+**Nothing in `scripts/check-boundaries.sh` changes.** This story adds
+assertions only. No exported signature changes, so there are no callers to
+list; `scripts/check-boundaries.sh` is invoked by
+`.github/workflows/boundaries.yml:25` and by `scripts/ci-local.sh`, and both are
+untouched.
 
-## Deferred verifications
+**File written:** `.claude/tests/boundaries.test.sh` - classified `test` by
+`paths.conf` (`**/*.test.*`), so it is writable in RED and frozen in GREEN and
+GATES. Confirm with `bash scripts/classify.sh .claude/tests/boundaries.test.sh`.
 
-<!-- REQUIRED when a verification this story depends on provably cannot run in
-     the phase that wants it; omit the section otherwise. Written by the Lead PO
-     at PLANNED, and the phase that owns it pastes the result in.
-     The case this exists for: a negative control for a round trip, a threshold
-     or a codec has to break the real implementation to mean anything, and in
-     RED there is no implementation to break. RED naming the control and saying
-     it could not run it is the honest answer; RED claiming a verification it
-     did not do is the failure. One block per entry:
-       * what it verifies, as a falsifiable condition - "with one field dropped
-         from the encoder, AC-1's property test MUST fail"
-       * why the phase that wants it cannot run it
-       * THE PHASE THAT OWNS IT, by name. check-boundaries.sh refuses a PR
-         whose block names no phase
-       * the RESULT, pasted, once that phase runs it: what was mutated, what
-         failed, and that the file was restored - or the word WAIVED with the
-         reason. check-boundaries.sh refuses a PR that has neither
-     Schedule it into GATES rather than RED where you can: source is writable
-     there, and a story that bounced back to RED mid-cycle gets its corrected
-     assertions earned by the same mutation, for free. Do THREE mutations rather
-     than one, and make one of them a wrong VALUE rather than a missing field: a
-     suite that catches an omission can be blind to a corruption, and a codec
-     that is uniformly wrong round-trips through itself perfectly. -->
+**Helpers that already exist and must be reused rather than reinvented**, all in
+that file unless noted:
 
-## Amendments
+| Helper | Line | Semantics |
+|---|---|---|
+| `scaffold_story <type>` | 1315 | Inventory body on stdin. Writes `docs/backlog/stories/T-1.md` on a fresh `story/T-1-fixture` branch cut from `main`, frontmatter `type: <type>`, `phase: REVIEW`. **Already parameterised by type** - `scaffold_story bootstrap` and `scaffold_story spike` need no new helper. Does NOT commit; callers run `commit_all`. |
+| `story_on_branch` | ~1005 | Body on stdin, but `type: feature` is hardcoded and it DOES commit. Not usable for AC-4, which needs `fix`. |
+| `commit_all [msg]` | 64 | Stages and commits everything in the fixture. |
+| `run_boundaries` | 32 | Runs the script in the fixture against `main` with `GITHUB_HEAD_REF=` and `PR_HEAD_SHA=` cleared. Sets **both** `$out` and `$rc` as globals. |
+| `refused <what> <needle>` | 40 | Asserts `$out` contains the needle **and** `$rc` is non-zero. The right helper for AC-3 and AC-4. |
+| `assert_contains <what> <needle> <haystack>` | `_lib.sh:43` | Substring only, no status. The right helper for AC-1 and AC-2. |
 
-<!-- Acceptance criteria are frozen once the story leaves PLANNED. If one turns
-     out to be wrong or unsatisfiable, stop, put it to the product owner, and
-     record the change here: which AC, what it said, what it says now, who
-     approved it and why. check-boundaries.sh fails a PR whose criteria differ
-     from the base branch without an entry here. Omit the section if unused.
-     Where the change came from a subagent's claim that the criterion was
-     wrong, record the ORCHESTRATOR'S OWN reproduction of it - different
-     inputs, not the subagent's code. That claim is also what an agent says
-     when it wants to stop failing. -->
+**Why AC-1 and AC-2 cannot use `refused` or assert a clean exit.** These fixture
+stories carry no `## Gate results`, so every run of them also fails with
+`## Gate results was not written by scripts/gates.sh`. What AC-1 and AC-2 assert
+is therefore the PRESENCE of this rule's `ok` line, not a zero exit - the same
+shape as the existing `accepts_manifest` helper at line 57 and for the reason
+recorded there. Asserting `rc -eq 0` here would be a test that can never pass.
+
+**AC-4 needs a `fix`-typed fixture and there is no helper for one.**
+`scaffold_story` writes a `## Scaffold inventory` section, which a `fix` story
+has no business carrying; `story_on_branch` hardcodes `feature`. RED writes the
+fixture inline or generalises one of the two - its choice, but say which in the
+handoff.
+
+**Exact strings the assertions match.** Anchored on the message rather than on a
+fragment a differently-worded refusal would also satisfy:
+
+- acceptance: `ok    every changed source file is named in ## Scaffold inventory`
+- per-file refusal: `not named in ## Scaffold inventory:` followed by the path
+- law 1 refusal: `Production code ships with the test that demanded it`
+- the `note` the arm emits before the inventory check, which names the type and
+  so distinguishes the three arms from each other:
+  `source file(s) without tests - allowed for a '<type>' story`
+
+That last string is the one that makes AC-1 and AC-2 distinguishable from each
+other and from the existing `chore` case. A test asserting only the acceptance
+line would pass under M1 if some other fixture happened to reach the same
+branch; asserting the type-naming note as well pins which arm ran.
+
+**Oracle partition.** All four criteria are **mechanical**: the strings above are
+already emitted by code that exists, and the story pins them. Nothing here is
+oracle-free and nothing needs calibrating. The negative controls are AC-3 and
+AC-4, and both are real runs of the real script rather than metrics.
+
+**Baseline the story may read out rather than re-derive:** `boundaries: 83
+passed, 0 failed`, measured by the orchestrator at PLANNED on commit `cffcb4a`,
+Windows 11 / Git Bash. The suite takes **~13 minutes** on this machine - budget
+for that rather than assuming a fast loop. Four new assertions are expected; a
+run reporting fewer than 83 passes after GREEN is a regression, not a rounding
+difference.
+
+**Test-only dependencies:** none. The suite is bash, git and coreutils, and
+`rules.md` forbids reaching for python here.
 
 ## Model guidance
 
-<!-- Optional, written by the Lead PO BEFORE the phase it applies to. Use it
-     when a phase of this story is worth running on a different model from the
-     default, and make it falsifiable rather than folklore:
-       * which phase, which model, and why that phase specifically
-       * THE RESOLVED MODEL ACTUALLY DISPATCHED, by name - never the word
-         "default". An agent definition's `model:` field, or the session's
-         setting, or an override: the orchestrator cannot see which won unless
-         it records it. Two stories once compared "the default model" against a
-         stronger one, and neither could say what the default had resolved to,
-         so the comparison may have been the stronger model against itself
-       * what the orchestrator should stay on
-       * HOW to brief it differently - a model chosen for judgement wants the
-         criteria and the constraints, not a pre-decided test design
-       * the ORACLE PARTITION of the criteria: which are settled (read the
-         numbers out, do not calibrate), which are oracle-free (invent the
-         metric and demand a negative control that fires hard), which are
-         mechanical (pin exactly). Measured to matter more than the model
-       * a success condition that could come out either way
-     Then record the VERDICT against that condition when the phase ends, with
-     evidence. The verdict is the part that gets skipped, and without it a model
-     choice becomes a habit nobody can argue with. -->
+Planned by `bash scripts/plan.sh write HARNESS-002` from `.claude/harness/models.conf`.
+A PLAN, not a record: a session setting or an explicit override can beat both
+this and the agent's own `model:` field, and nothing here can see which won.
+The orchestrator still writes down the model each dispatch **resolved** to, by
+name, below the table.
 
+| Phase | Agent | Planned | Why |
+|---|---|---|---|
+| PLANNED | `lead-po` | `opus` | planning is the judgement phase: decomposition, the oracle partition, and what goes in the contract |
+| RED | `test-developer` | `fable` | the measured case. With a partitioned contract to work from, the brief carries the judgement and the weaker model writes sharper negative controls than the stronger one did without it |
+| GREEN | `feature-developer` | `opus` | the failure mode of a weaker model here is reaching green by weakening a test, which is the one thing this harness exists to prevent |
+| GATES | `feature-developer` | `opus` | same risk as GREEN, and a gate failure is where "make it stop complaining" is most tempting |
+| REVIEW | `lead-po` | `opus` | reading review feedback against the contract is judgement, and a wrong call here ships |
+| SCAFFOLD | `lead-po` | `opus` | source, tests and config in one indivisible derivation, with no failing test in front of any of it |
+
+**Resolved:**
+
+<!-- One line per dispatch, as it happened: phase, agent, the model that
+     actually ran, and — if a phase was planned for one model and ran on
+     another — what that changed. A choice with no verdict is folklore. -->
 ## Out of scope
 
-<!-- Explicit non-goals. Prevents the Feature Developer from over-building. -->
-
-## Design notes
-
-<!-- Filled by the Lead Designer for user-facing stories: layout, states,
-     tokens, accessibility requirements. Omit for non-UI stories. -->
+- **Adding a gate that runs `boundaries.test.sh`.** PO decision recorded in
+  `## Context`: the ~13-minute cost lands on every story, and `HARNESS-008`
+  already settled that the full self-test stays out of the gates. CI covers it.
+- **Re-testing E4, E5 and E6.** They are killed by assertions that already
+  exist; the evidence is in `## Context` and `## Notes`. Do not add duplicate
+  fixtures for them.
+- **Section 3a's other branches** - the empty-inventory check, the per-file
+  check and law 1's predicate. Covered, and verified covered.
+- **`scripts/check-boundaries.sh` itself.** No production change is in scope; if
+  one turns out to be needed, that is a finding to raise, not a fix to make.
+- **Editing the audit document.** It is a record of a run on commit `7b6f6db`.
 
 ## Test plan
 
@@ -181,73 +226,56 @@ Required gate that would fail if this story's artifact broke: `unit`
 
 ## Handoff: RED -> GREEN
 
-<!-- Filled by the Test Developer at the end of RED. This is the ONLY channel
-     to the Feature Developer, whose context is fresh. Must contain:
-       * the exact command that runs the new tests
-       * the failure output, and why it is the RIGHT failure
-       * every file touched, and which AC each test covers
-       * the EXPORT SHAPE the tests already pin: every module they import, the
-         exact exported names and signatures, and the types the assertions
-         destructure. Not a suggestion - a test already imports them, so a
-         wrong guess is a compile error. Say what the tests do NOT constrain
-         too, so it stays the implementer's choice.
-       * any test that passed on arrival, and the probe or negative control
-         that earns it
-       * the EXPECTED VALUE of every negative control, as a table: threshold,
-         candidate range, and the number the control measured. In RED the
-         suite fails at import, so no assertion in it has run - the controls
-         are claims until GREEN confirms them against the shipped module
-       * anything discovered that changes the approach -->
-
-## Regressions
-
-<!-- REQUIRED if this story ever returned to RED after GREEN or GATES; omit
-     otherwise. A test that is wrong is never edited into passing, and the
-     return is not a footnote - it is the story failing to be one clean cycle,
-     and the next person needs to know why. One block per return:
-       * which test, what it asserted, and what was wrong with it
-       * how the defect was found
-       * what it asserts now
-       * what earns it, since "watched it fail" cannot apply once the
-         implementation exists - the corrected assertion passes on its first
-         run and every run after, whether or not it asserts anything: either a
-         PROBE (mutate the specific behaviour the test pins, paste the red,
-         confirm the revert) or, where the defect was cost rather than
-         correctness, a BEFORE/AFTER measurement taken under the gate command -
-         not the plain test command, which is the faster one.
-         PASTE THE OUTPUT. check-boundaries.sh refuses a PR whose Regressions
-         or Gate probes section describes a failure without showing one
-       * whether GREEN was a no-op, and the command output proving the source
-         was untouched and still passes -->
+<!-- Filled by the Test Developer at the end of RED. -->
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
-
-## Gate probes
-
-<!-- REQUIRED if this story adds or changes a gate, its command, or its
-     evidence line. Omit the section entirely otherwise.
-     A gate that has never been observed to fail is not a gate: break the thing
-     it guards, run the gate, paste the failure, revert. One block per gate:
-       * what was broken, and where
-       * the gate output proving it failed
-       * confirmation the probe was reverted -->
-
-## Scaffold inventory
-
-<!-- REQUIRED for a bootstrap or chore story that writes production code under
-     SCAFFOLD, where nothing forces a test to exist first, and for a spike that
-     commits its throwaway code. Omit otherwise.
-     One line per production file written, and for anything with behaviour
-     rather than configuration, the test that covers it:
-       src/core/palette.ts        - src/core/palette.test.ts
-       vite.config.ts             - configuration, no behaviour
-     check-boundaries.sh refuses the PR if any changed source file is not
-     named here. -->
-
 ## Notes
 
+**Supersession evidence.** The three mutation runs that retired the original
+criteria, made at PLANNED on commit `cffcb4a` against
+`bash .claude/tests/boundaries.test.sh` (baseline `83 passed, 0 failed`):
+
+```
+================ MUTANT E4 ================
+expr: 223s#\[ "$src" -gt 0 \] && \[ "$tst" -eq 0 \]#false#
+    FAIL and the refusal names the file it missed
+         expected to contain: src/helper.ts
+         actual:               ok    story files validated
+         ok    source changes accompanied by test changes (1 source, 0 test)
+    FAIL an inventory naming every file is accepted
+         expected to contain: ok    every changed source file is named in ## Scaffold inventory
+boundaries: 78 passed, 5 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against
+    .claude/state/mutations/scripts_check-boundaries.sh.20260918T062810Z.1483071.bak) ===
+
+================ MUTANT E5 ================
+expr: 228s#if ! #if #
+    FAIL and the refusal names the file it missed
+         expected to contain: src/helper.ts
+    FAIL an inventory naming every file is accepted
+         expected to contain: ok    every changed source file is named in ## Scaffold inventory
+         FAIL  story T-1: source changed without tests, and ## Scaffold inventory is empty.
+boundaries: 79 passed, 4 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against
+    .claude/state/mutations/scripts_check-boundaries.sh.20260918T064039Z.1513478.bak) ===
+
+================ MUTANT E6 ================
+expr: 234s#grep -qF -- "$p" ||#true ||#
+    FAIL a source file missing from the inventory
+         expected a refusal saying: not named in ## Scaffold inventory:
+         ok    every changed source file is named in ## Scaffold inventory
+    FAIL and the refusal names the file it missed
+         expected to contain: src/helper.ts
+boundaries: 81 passed, 2 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against
+    .claude/state/mutations/scripts_check-boundaries.sh.20260918T065011Z.1534485.bak) ===
+```
+
+E4's third line of output - `ok source changes accompanied by test changes (1
+source, 0 test)` - is precisely the symptom the audit predicted: the rule off,
+reporting a pass in the same breath. It is now caught.
+
+The audit entry for C2 should be read as **closed on E4-E6 and open on the arm**.
+`docs/wiki/audits/enforcement-mutants-2026-09-15.md` is a record of a run on
+commit `7b6f6db` and is not edited by this story.
