@@ -4,8 +4,8 @@ title: Gate record tree stamp is verified end to end
 slug: gate-record-tree-stamp-is-verified-end-t
 epic: 
 type: chore
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/HARNESS-001-gate-record-tree-stamp-is-verified-end-t
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -787,10 +787,22 @@ byte-for-byte a second time (backup
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-18T05:14:07Z
+    commit: 6f2169c
+    tree:   1ac80a2930c7e063aff67c8d6a02c4575daf8998
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 43)
+    PASS         lint (2s, observed 43, floor 1)
+    PASS         typecheck (5s, observed 8)
+    PASS         unit (44s, observed 197, floor 197)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (1s, observed 25103)
+    PASS         harness (32s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
