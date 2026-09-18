@@ -4,8 +4,8 @@ title: The bootstrap and spike arms of section 3a are never exercised
 slug: production-code-cannot-arrive-without-te
 epic: 
 type: chore
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/HARNESS-002-production-code-cannot-arrive-without-te
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -124,9 +124,17 @@ list; `scripts/check-boundaries.sh` is invoked by
 `.github/workflows/boundaries.yml:25` and by `scripts/ci-local.sh`, and both are
 untouched.
 
-**File written:** `.claude/tests/boundaries.test.sh` - classified `test` by
-`paths.conf` (`**/*.test.*`), so it is writable in RED and frozen in GREEN and
-GATES. Confirm with `bash scripts/classify.sh .claude/tests/boundaries.test.sh`.
+**File written:** `.claude/tests/boundaries.test.sh`.
+*Amended at RED (Test Developer):* this paragraph said the file classifies as
+`test` via `**/*.test.*` and is therefore frozen in GREEN and GATES. It is
+not: `bash scripts/classify.sh .claude/tests/boundaries.test.sh` prints
+`harness`, because `harness | .claude/**` at `paths.conf:79` precedes the
+`test` rules and the first match wins. `harness` is writable in **every**
+phase, so the phase lock freezes neither this suite in GREEN nor
+`scripts/check-boundaries.sh` (also `harness`) in RED. Nothing here is
+protected by the lock; the freeze is honoured by role, and GREEN must not
+touch the suite for the same reason it never would - not because a hook
+would stop it. RED used `mutate.sh` for every mutation regardless.
 
 **Helpers that already exist and must be reused rather than reinvented**, all in
 that file unless noted:
@@ -140,12 +148,18 @@ that file unless noted:
 | `refused <what> <needle>` | 40 | Asserts `$out` contains the needle **and** `$rc` is non-zero. The right helper for AC-3 and AC-4. |
 | `assert_contains <what> <needle> <haystack>` | `_lib.sh:43` | Substring only, no status. The right helper for AC-1 and AC-2. |
 
-**Why AC-1 and AC-2 cannot use `refused` or assert a clean exit.** These fixture
-stories carry no `## Gate results`, so every run of them also fails with
-`## Gate results was not written by scripts/gates.sh`. What AC-1 and AC-2 assert
-is therefore the PRESENCE of this rule's `ok` line, not a zero exit - the same
-shape as the existing `accepts_manifest` helper at line 57 and for the reason
-recorded there. Asserting `rc -eq 0` here would be a test that can never pass.
+**Why AC-1 cannot use `refused` or assert a clean exit - and why AC-2 can.**
+*Amended at RED (Test Developer):* as written this paragraph said neither
+could, because the fixture stories carry no `## Gate results`. Measured at
+RED against the unmutated script: the bootstrap fixture exits 1 for exactly
+that reason, but the **spike** fixture exits **0** - `check-boundaries.sh`
+prints `spike story; gate record not required` and waives the gate-record
+rule for spikes. So AC-1 asserts the PRESENCE of this rule's `ok` line and
+the ABSENCE of law 1's refusal (the shape of `accepts_manifest` at line 57,
+for the reason recorded there), and AC-2 asserts those **and** `$rc -eq 0`,
+because `$rc` is what CI acts on and it is available there. Asserting
+`rc -eq 0` for the bootstrap fixture would still be a test that can never
+pass.
 
 **AC-4 needs a `fix`-typed fixture and there is no helper for one.**
 `scaffold_story` writes a `## Scaffold inventory` section, which a `fix` story
@@ -202,9 +216,38 @@ name, below the table.
 
 **Resolved:**
 
-<!-- One line per dispatch, as it happened: phase, agent, the model that
-     actually ran, and — if a phase was planned for one model and ran on
-     another — what that changed. A choice with no verdict is folklore. -->
+- **PLANNED** - `lead-po`, **Opus 5** (`claude-opus-5`), the session model. As
+  planned.
+- **RED** - `test-developer`, **Fable 5.1** (`claude-fable-5-1`), dispatched with
+  an explicit `model: fable` override on the Agent call. As planned; no session
+  setting or agent-definition value beat it, and the subagent reported the same
+  name back independently.
+
+**Verdict on the RED row, against the condition `models.conf` sets for it** -
+that a partitioned contract lets the weaker model write sharper negative
+controls than the stronger model produced without one. **The condition held,
+and it could have come out the other way.** Evidence, all of it things the
+brief did NOT tell it to do:
+
+1. It found the contract's needle analysis incomplete and sharpened it. The
+   contract said AC-4 should match law 1's sentence; RED worked out *why* on
+   its own - under M3 a `fix` story is **still refused**, for an empty
+   inventory, so a needle for "any refusal" would score the mutant caught when
+   it was not - and pasted the output proving it.
+2. It found a negative control the contract had ruled out. The contract said
+   neither acceptance could assert a clean exit; RED found
+   `check-boundaries.sh:320` exempts a spike from the gate-record rule, so the
+   spike fixture *can* assert `rc -eq 0`, and added a twelfth assertion. That
+   is the only assertion in the block checking the status CI acts on rather
+   than the message text.
+3. It reported a finding that **weakened its own story** rather than inflating
+   it: M3 was already dead before this story (see `## Notes`). An agent
+   optimising for a clean result does not volunteer that.
+
+Against that: it got one thing wrong in the same direction the contract did -
+nothing, in fact, that the contract had right. The contract's own error (the
+`test` classification) was found *by* RED, not by the orchestrator.
+
 ## Out of scope
 
 - **Adding a gate that runs `boundaries.test.sh`.** PO decision recorded in
@@ -221,12 +264,394 @@ name, below the table.
 
 ## Test plan
 
-<!-- Filled by the Test Developer during RED: which tests, at which level,
-     and which AC each one covers. -->
+All twelve new assertions live in one `describe` block,
+`"the inventory arm is exactly bootstrap, chore and spike"`, appended to
+`.claude/tests/boundaries.test.sh` just above `summary`. Level: integration -
+a real two-branch fixture repository driven through the real
+`scripts/check-boundaries.sh`, because the contract under test is the
+script's routing of a story *type*, which lives nowhere else. Every fixture is
+built with the existing `scaffold_story <type>` (bootstrap, spike) or with
+`story_on_branch`, which RED generalised to take an optional type so AC-4 can
+build a `fix` story without a `## Scaffold inventory` it has no business
+carrying.
 
+| AC | Assertion name (as printed by the suite) | What it pins |
+|---|---|---|
+| AC-1 | `a bootstrap story is routed to the inventory arm, by name` | the `note` naming `'bootstrap'` - which arm ran |
+| AC-1 | `and a bootstrap inventory naming every file is accepted` | the `ok    every changed source file is named in ## Scaffold inventory` line |
+| AC-1 | `and a bootstrap story is not refused under law 1` | absence of `Production code ships with the test that demanded it` |
+| AC-2 | `a spike story is routed to the inventory arm, by name` | the `note` naming `'spike'` |
+| AC-2 | `and a spike inventory naming every file is accepted` | the same `ok` line |
+| AC-2 | `and a spike story is not refused under law 1` | absence of law 1's refusal |
+| AC-2 | `and a spike with a complete inventory exits clean, so CI would merge it` | `$rc -eq 0` - available for spike only, see the contract amendment |
+| AC-3 | `control: the incomplete bootstrap still enters the bootstrap arm` | the `note` naming `'bootstrap'` on the refused fixture |
+| AC-3 | `control: a bootstrap source file missing from the inventory is refused` | `not named in ## Scaffold inventory:` AND `$rc` non-zero (`refused`) |
+| AC-3 | `control: and the bootstrap refusal names the file it missed` | `src/helper.ts` in the refusal |
+| AC-4 | `control: a fix story whose source moved alone is refused under law 1` | `Production code ships with the test that demanded it` AND `$rc` non-zero |
+| AC-4 | `control: and a fix story is never excused by name` | absence of `allowed for a 'fix' story` - the line `*)` would print |
+
+Why AC-1 and AC-2 carry the type-naming `note` and not only the `ok` line: the
+`ok` line is also what the three existing `chore` fixtures print, so on its own
+it cannot tell a bootstrap that reached the inventory arm from a chore that
+did. The note names the type; it is the needle whose negation is not also a
+match.
+
+Why AC-4 matches law 1's sentence and not "any refusal": under M3 (`*)`) a
+`fix` story is *still refused* - for an empty `## Scaffold inventory` - so a
+needle for "exit non-zero with some FAIL" would call the mutant caught when it
+was not. The smoke preview in `## Regressions` shows exactly that output.
+
+Edges the story implies and how they are covered: *empty* inventory and *one
+of many missing* are the existing chore cases and are out of scope by the
+story's own list; AC-3 re-pins *one of two missing* on the bootstrap arm
+specifically, because a per-file check that runs on chore's arm has not been
+shown to run on bootstrap's until a bootstrap fixture is refused by it.
 ## Handoff: RED -> GREEN
 
-<!-- Filled by the Test Developer at the end of RED. -->
+**GREEN is a no-op on the code.** `scripts/check-boundaries.sh` already
+satisfies every assertion below (the clean run is 95/0) and this story's
+`## Out of scope` forbids changing it. What GREEN has to do is **verify, not
+build**:
+
+1. Run the command below and confirm `boundaries: 95 passed, 0 failed` -
+   twelve more than the 83 baseline the contract lets you read out.
+2. Confirm `scripts/check-boundaries.sh` is byte-identical to `main`
+   (`git diff main -- scripts/check-boundaries.sh` prints nothing). If it is
+   not, something other than this story touched it: stop.
+3. Confirm `.claude/state/mutations/` holds only `log` - no `.bak` - which is
+   what a verified restore leaves behind.
+4. Do NOT touch `.claude/tests/boundaries.test.sh`. Note that the phase lock
+   will not stop you: it classifies as `harness` (see the contract amendment),
+   which is writable in every phase. The freeze is by role.
+
+**Command that runs these tests:**
+
+    bash .claude/tests/boundaries.test.sh
+
+It is one file and there is no way to run a subset. On this machine each run
+took **2m20s** (local, Windows 11 / Git Bash, 2026-09-18, four consecutive
+runs at 14:36-14:45Z) - not the ~13 minutes the contract budgeted; that
+figure may be from a colder cache or a busier machine. CI runs it through the
+"Harness self-test" step of `gates.yml` (`bash scripts/selftest.sh`), and no
+`gates.sh` gate runs it. `VERBOSE=1` prints the `ok` lines too.
+
+**Current state - green on arrival, by design:**
+
+    ### clean  started 2026-09-18T14:36:14Z
+    boundaries: 95 passed, 0 failed
+    ### clean  exit=0 finished 2026-09-18T14:38:36Z
+
+There is no verbatim *failure* output from the clean run to paste because
+there was none: the implementation exists and is correct. The red that earns
+each assertion is the three mutation runs in `## Regressions`, made with
+`bash scripts/mutate.sh` and restored byte-for-byte.
+
+**One line per assertion** (twelve, in one `describe` block, in order):
+
+| # | Assertion | AC | Dies under |
+|---|---|---|---|
+| 1 | `a bootstrap story is routed to the inventory arm, by name` | AC-1 | M1 |
+| 2 | `and a bootstrap inventory naming every file is accepted` | AC-1 | M1 |
+| 3 | `and a bootstrap story is not refused under law 1` | AC-1 | M1 |
+| 4 | `a spike story is routed to the inventory arm, by name` | AC-2 | M2 |
+| 5 | `and a spike inventory naming every file is accepted` | AC-2 | M2 |
+| 6 | `and a spike story is not refused under law 1` | AC-2 | M2 |
+| 7 | `and a spike with a complete inventory exits clean, so CI would merge it` | AC-2 | M2 |
+| 8 | `control: the incomplete bootstrap still enters the bootstrap arm` | AC-3 | M1 |
+| 9 | `control: a bootstrap source file missing from the inventory is refused` | AC-3 | M1 |
+| 10 | `control: and the bootstrap refusal names the file it missed` | AC-3 | M1 |
+| 11 | `control: a fix story whose source moved alone is refused under law 1` | AC-4 | M3 |
+| 12 | `control: and a fix story is never excused by name` | AC-4 | M3 |
+
+**Files touched:**
+
+- `.claude/tests/boundaries.test.sh` - the new `describe` block appended
+  above `summary`, and `story_on_branch` generalised to
+  `story_on_branch [type]` with `type` defaulting to `feature`. Every
+  existing call site passes no argument, so their behaviour is unchanged; the
+  clean run's 83 pre-existing assertions still pass. **AC-4's `fix` fixture
+  is built with `story_on_branch fix`** - that is the choice the contract left
+  to RED: generalise rather than write inline, because `story_on_branch`
+  already carries the filled `## Handoff` a `feature|fix` story needs to get
+  past the handoff rule, and a `fix` story has no business carrying the
+  `## Scaffold inventory` that `scaffold_story` writes.
+- `docs/backlog/stories/HARNESS-002.md` - `## Test plan`, this section,
+  `## Regressions`, and two in-place amendments to `## Contract`: the file's
+  classification (`harness`, not `test`), and the spike fixture's exit status
+  (`check-boundaries.sh` waives the gate-record rule for a spike - it prints
+  `spike story; gate record not required` - which is what licenses assertion
+  #7's `rc -eq 0`).
+
+**Export shape pinned:** none in the usual sense - nothing is imported. What
+the tests pin is the stdout and exit status of `scripts/check-boundaries.sh`
+when run from a fixture repository with `GITHUB_HEAD_REF=` and `PR_HEAD_SHA=`
+cleared, against `main`, for a story of the given `type:`:
+
+- the `note` line contains `source file(s) without tests - allowed for a
+  '<type>' story` with `<type>` being exactly the frontmatter type;
+- the acceptance line is exactly `ok    every changed source file is named in
+  ## Scaffold inventory` (four spaces after `ok`);
+- the per-file refusal contains `not named in ## Scaffold inventory:` and the
+  omitted path, with a non-zero exit;
+- law 1's refusal contains `Production code ships with the test that demanded
+  it`, with a non-zero exit;
+- a `spike` story with a complete inventory and no `## Gate results` exits 0.
+
+Not constrained: the wording of anything else the script prints, the order of
+the lines, and whether the count in the note is `1` or `2` - the fixture's
+`src/main.ts` already exists with the same content on `main`, so only
+`src/helper.ts` is a changed file and the note says `1 source file(s)`; the
+assertions do not depend on that number.
+
+**Negative controls and their expected values.** All are mechanical - the
+contract has no calibrated thresholds - and all twelve assertions have
+executed against the shipped script (nothing fails at import here), so the
+values are measured, not claimed:
+
+| Control | Threshold | Expected under correct script | Measured (clean run) | Measured under its mutant |
+|---|---|---|---|---|
+| AC-3 (#8-#10) | `$rc != 0` and refusal names `src/helper.ts` | refused, `rc=1` | passed (refused with the file named) | M1: 3 of 3 red, the run went to law 1 instead |
+| AC-4 (#11-#12) | `$rc != 0` and message is law 1's | refused, `rc=1` | passed | M3: 2 of 2 red, the run printed `allowed for a 'fix' story` and refused for an EMPTY inventory instead |
+| #7 spike exit | `$rc == 0` | `0` | `0` (measured directly at RED; output in the contract amendment) | M2: red, `rc=1` |
+
+**Things GREEN and the orchestrator should know:**
+
+- **M3 was already killed before this story.** Under `*)` the existing
+  assertion `a feature story whose source moved alone` (line ~1291) also goes
+  red, because a `feature` story is routed to the inventory arm too - so the
+  full run under M3 is 3 failed, not the 2 the AC-4 block alone gives. The
+  story's `## Context` says widening the arm "changes behaviour that no
+  assertion observes"; that was true of M1 and M2 (measured at PLANNED as
+  83/0 under `chore)`) and is **not** true of M3. AC-4 is still a real
+  criterion - it pins that `fix` specifically is refused, and the handoff
+  rule at `feature|fix)` makes `fix` a type with routing of its own - but it
+  is the second observer of M3, not the first. No criterion changes; recorded
+  so nobody reads the AC-4 kill as evidence the suite was previously blind
+  there.
+- **The phase lock protects nothing this story touches.** Both the suite and
+  the script classify as `harness` (contract amendment). RED made every
+  mutation through `mutate.sh` anyway, and GREEN should treat the suite as
+  frozen by rule rather than by hook.
+- **The spike fixture exits 0** because of the gate-record waiver for spikes.
+  If a later story changes that waiver, assertion #7 is the one that will
+  notice, and it will be right to.
+- Timings above are all **local**; none are from CI. The suite sets no
+  timeouts and has no hooks, so there is no budget to size.
+- `bash scripts/gates.sh --fast` at the end of RED: all six required gates
+  PASS (format, lint, typecheck, unit 197, build, harness 40), coverage
+  unconfigured. That is the expected shape here rather than a red test gate,
+  because no gate runs this suite - the PO decision in `## Context`.
+- Model: this dispatch ran on **Fable 5.1** (`claude-fable-5-1`), which is the
+  planned `fable` row; no override was reported to me.
+
+## Regressions
+
+The implementation existed before every assertion in this story, so each one
+went green on its first run and "watch it fail" is replaced, not waived: one
+mutation of the specific behaviour each block pins, one run of the whole
+suite, one verified restore. All three were made with
+`bash scripts/mutate.sh scripts/check-boundaries.sh '<expr>' -- bash .claude/tests/boundaries.test.sh`
+on 2026-09-18, in sequence immediately after the clean run, Windows 11 / Git
+Bash. The `###` lines are the driver's timestamps; everything between them is
+the suite's and `mutate.sh`'s own output. The non-verbose suite prints only
+`describe` headers and `FAIL` blocks, so the headers of blocks with no failure
+are omitted here for length; nothing else is.
+
+Clean run, immediately before the three mutants:
+
+```
+### clean  started 2026-09-18T14:36:14Z
+boundaries: 95 passed, 0 failed
+### clean  exit=0 finished 2026-09-18T14:38:36Z
+```
+
+**M1 - drop `bootstrap` from the arm. Caught by AC-1 (#1-#3) and AC-3 (#8-#10): 6 red.**
+
+```
+### M1  started 2026-09-18T14:38:36Z
+=== mutate: scripts/check-boundaries.sh (1 line(s) changed by 225s#bootstrap|chore|spike)#chore|spike)#) ===
+  225 -     bootstrap|chore|spike)
+  225 +     chore|spike)
+
+=== mutate: running bash .claude/tests/boundaries.test.sh ===
+
+  the inventory arm is exactly bootstrap, chore and spike
+    FAIL a bootstrap story is routed to the inventory arm, by name
+         expected to contain: source file(s) without tests - allowed for a 'bootstrap' story
+         actual:               ok    story files validated
+         ok    harness state not tracked
+         FAIL  1 source file(s) changed with no test changes. Production code ships with the test that demanded it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+         FAIL  story T-1: ## Gate results was not written by scripts/gates.sh. Run 'bash scripts/gates.sh' - it records its own result; a pasted summary is not evidence.
+    FAIL and a bootstrap inventory naming every file is accepted
+         expected to contain: ok    every changed source file is named in ## Scaffold inventory
+         actual:               ok    story files validated
+         ok    harness state not tracked
+         FAIL  1 source file(s) changed with no test changes. Production code ships with the test that demanded it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+         FAIL  story T-1: ## Gate results was not written by scripts/gates.sh. Run 'bash scripts/gates.sh' - it records its own result; a pasted summary is not evidence.
+    FAIL and a bootstrap story is not refused under law 1
+         refused: ok    story files validated
+         ok    harness state not tracked
+         FAIL  1 source file(s) changed with no test changes. Production code ships with the test that demanded it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+         FAIL  story T-1: ## Gate results was not written by scripts/gates.sh. Run 'bash scripts/gates.sh' - it records its own result; a pasted summary is not evidence.
+    FAIL control: the incomplete bootstrap still enters the bootstrap arm
+         expected to contain: source file(s) without tests - allowed for a 'bootstrap' story
+         actual:               ok    story files validated
+         ok    harness state not tracked
+         FAIL  1 source file(s) changed with no test changes. Production code ships with the test that demanded it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+         FAIL  story T-1: ## Gate results was not written by scripts/gates.sh. Run 'bash scripts/gates.sh' - it records its own result; a pasted summary is not evidence.
+    FAIL control: a bootstrap source file missing from the inventory is refused
+         expected a refusal saying: not named in ## Scaffold inventory:
+         actual:                    ok    story files validated
+         ok    harness state not tracked
+         FAIL  1 source file(s) changed with no test changes. Production code ships with the test that demanded it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+         FAIL  story T-1: ## Gate results was not written by scripts/gates.sh. Run 'bash scripts/gates.sh' - it records its own result; a pasted summary is not evidence.
+    FAIL control: and the bootstrap refusal names the file it missed
+         expected to contain: src/helper.ts
+         actual:               ok    story files validated
+         ok    harness state not tracked
+         FAIL  1 source file(s) changed with no test changes. Production code ships with the test that demanded it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+         FAIL  story T-1: ## Gate results was not written by scripts/gates.sh. Run 'bash scripts/gates.sh' - it records its own result; a pasted summary is not evidence.
+
+boundaries: 89 passed, 6 failed
+
+=== mutate: command exited 1; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/scripts_check-boundaries.sh.20260918T143836Z.29657.bak) ===
+  225:     bootstrap|chore|spike)
+### M1  exit=1 finished 2026-09-18T14:40:58Z
+```
+
+**M2 - drop `spike` from the arm. Caught by AC-2 (#4-#7): 4 red.**
+
+```
+### M2  started 2026-09-18T14:40:58Z
+=== mutate: scripts/check-boundaries.sh (1 line(s) changed by 225s#bootstrap|chore|spike)#bootstrap|chore)#) ===
+  225 -     bootstrap|chore|spike)
+  225 +     bootstrap|chore)
+
+=== mutate: running bash .claude/tests/boundaries.test.sh ===
+
+  the inventory arm is exactly bootstrap, chore and spike
+    FAIL a spike story is routed to the inventory arm, by name
+         expected to contain: source file(s) without tests - allowed for a 'spike' story
+         actual:               ok    story files validated
+         ok    harness state not tracked
+         FAIL  1 source file(s) changed with no test changes. Production code ships with the test that demanded it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+           spike story; gate record not required
+    FAIL and a spike inventory naming every file is accepted
+         expected to contain: ok    every changed source file is named in ## Scaffold inventory
+         actual:               ok    story files validated
+         ok    harness state not tracked
+         FAIL  1 source file(s) changed with no test changes. Production code ships with the test that demanded it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+           spike story; gate record not required
+    FAIL and a spike story is not refused under law 1
+         refused: ok    story files validated
+         ok    harness state not tracked
+         FAIL  1 source file(s) changed with no test changes. Production code ships with the test that demanded it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+           spike story; gate record not required
+    FAIL and a spike with a complete inventory exits clean, so CI would merge it
+         expected: 0
+         actual:   1
+
+boundaries: 91 passed, 4 failed
+
+=== mutate: command exited 1; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/scripts_check-boundaries.sh.20260918T144058Z.52945.bak) ===
+  225:     bootstrap|chore|spike)
+### M2  exit=1 finished 2026-09-18T14:43:20Z
+```
+
+**M3 - widen the arm to `*)`. Caught by AC-4 (#11-#12): 2 red, plus the pre-existing feature assertion: 3 red in all.**
+
+```
+### M3  started 2026-09-18T14:43:20Z
+=== mutate: scripts/check-boundaries.sh (1 line(s) changed by 225s#bootstrap|chore|spike)#*)#) ===
+  225 -     bootstrap|chore|spike)
+  225 +     *)
+
+=== mutate: running bash .claude/tests/boundaries.test.sh ===
+
+  production code arrives with tests, or with an inventory
+    FAIL a feature story whose source moved alone
+         expected a refusal saying: Production code ships with the test that demanded it
+         actual:                    ok    story files validated
+         ok    harness state not tracked
+           1 source file(s) without tests - allowed for a 'feature' story, so the inventory must account for them
+         FAIL  story T-1: source changed without tests, and ## Scaffold inventory is empty. Name every production file written and the test that covers it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+         FAIL  story T-1: ## Gate results was not written by scripts/gates.sh. Run 'bash scripts/gates.sh' - it records its own result; a pasted summary is not evidence.
+         ok    ## Handoff is filled in
+
+  the inventory arm is exactly bootstrap, chore and spike
+    FAIL control: a fix story whose source moved alone is refused under law 1
+         expected a refusal saying: Production code ships with the test that demanded it
+         actual:                    ok    story files validated
+         ok    harness state not tracked
+           1 source file(s) without tests - allowed for a 'fix' story, so the inventory must account for them
+         FAIL  story T-1: source changed without tests, and ## Scaffold inventory is empty. Name every production file written and the test that covers it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+         FAIL  story T-1: ## Gate results was not written by scripts/gates.sh. Run 'bash scripts/gates.sh' - it records its own result; a pasted summary is not evidence.
+         ok    ## Handoff is filled in
+    FAIL control: and a fix story is never excused by name
+         excused: ok    story files validated
+         ok    harness state not tracked
+           1 source file(s) without tests - allowed for a 'fix' story, so the inventory must account for them
+         FAIL  story T-1: source changed without tests, and ## Scaffold inventory is empty. Name every production file written and the test that covers it.
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+         FAIL  story T-1: ## Gate results was not written by scripts/gates.sh. Run 'bash scripts/gates.sh' - it records its own result; a pasted summary is not evidence.
+         ok    ## Handoff is filled in
+
+boundaries: 92 passed, 3 failed
+
+=== mutate: command exited 1; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/scripts_check-boundaries.sh.20260918T144320Z.74260.bak) ===
+  225:     bootstrap|chore|spike)
+### M3  exit=1 finished 2026-09-18T14:45:45Z
+```
+
+After the chain: `git status --short scripts/` is empty,
+`cmp scripts/check-boundaries.sh <(git show HEAD:scripts/check-boundaries.sh)`
+is silent, and `.claude/state/mutations/` contains only `log`.
+
+**Why AC-4's needle is law 1's sentence and not "any refusal".** The M3 block
+above shows it: under `*)` the `fix` fixture is still refused (`FAIL  story
+T-1: source changed without tests, and ## Scaffold inventory is empty`) and
+still exits non-zero - it has simply been excused by name (`allowed for a
+'fix' story`) and then refused by a different rule. A needle for "some FAIL
+and rc != 0" would have called that mutant caught. The same output was seen
+first in a 6-second smoke preview (helpers + the new block assembled in a
+scratch file outside the tree) run before the full chain; it agreed with the
+full runs on every assertion that dies, and is not pasted because the full
+runs are the evidence.
 
 ## Gate results
 
@@ -275,6 +700,71 @@ boundaries: 81 passed, 2 failed
 E4's third line of output - `ok source changes accompanied by test changes (1
 source, 0 test)` - is precisely the symptom the audit predicted: the rule off,
 reporting a pass in the same breath. It is now caught.
+
+### Orchestrator's verification of RED
+
+RED's handoff makes three claims that contradict the contract, and a mutation
+table. A table is a claim until somebody runs one, so these were reproduced by
+the orchestrator rather than accepted.
+
+**1. "M3 was already dead before this story" - CONFIRMED, on a different input.**
+RED measured M3 against the *new* suite. The claim is about the *old* one, so
+the orchestrator stashed the new block and ran M3 against the pre-story suite:
+
+```
+$ git stash push -- .claude/tests/boundaries.test.sh
+$ bash scripts/mutate.sh scripts/check-boundaries.sh \
+    '225s#bootstrap|chore|spike)#*)#' -- bash .claude/tests/boundaries.test.sh
+
+    FAIL a feature story whose source moved alone
+         FAIL  story T-1: source changed without tests, and ## Scaffold
+               inventory is empty.
+boundaries: 82 passed, 1 failed
+=== mutate: command exited 1; restored (verified byte-for-byte ...) ===
+```
+
+82 + 1 = 83, the baseline. The pre-existing `feature` assertion already caught
+M3. **So this story closes M1 and M2 - the bootstrap and spike arms - and AC-4
+is a type-specific observer of a mutant that was already covered.** That is a
+narrower delivery than the Context as first written implied, and it is recorded
+here rather than left for a reader to discover.
+
+**2. The M2 row of the handoff table - CONFIRMED exactly.** Run by the
+orchestrator against the new suite:
+
+```
+    FAIL a spike story is routed to the inventory arm, by name
+    FAIL and a spike inventory naming every file is accepted
+    FAIL and a spike story is not refused under law 1
+    FAIL and a spike with a complete inventory exits clean, so CI would merge it
+boundaries: 91 passed, 4 failed
+=== mutate: command exited 1; restored (verified byte-for-byte ...) ===
+```
+
+`91 passed, 4 failed`, and the four are exactly AC-2's four. Note the refusal a
+spike story receives under M2: `Production code ships with the test that
+demanded it` - the exception deleted, which is the failure this story exists to
+make observable.
+
+**3. "The suite classifies as `harness`, not `test`" - CONFIRMED; the contract
+was wrong.**
+
+```
+$ bash scripts/classify.sh .claude/tests/boundaries.test.sh scripts/check-boundaries.sh
+harness	.claude/tests/boundaries.test.sh
+harness	scripts/check-boundaries.sh
+```
+
+`harness | .claude/**` precedes every `test` rule in `paths.conf` and the first
+match wins. **The phase lock froze nothing this story touched** - both the suite
+and the script under test are writable in every phase. The freeze held by role
+discipline alone. This is a general property worth knowing: the harness's own
+test suites are not protected by the harness's own lock.
+
+**Tree state after all verification:** `scripts/check-boundaries.sh` byte-identical
+to `main`, `.claude/state/mutations/` holding only `log`, no `.bak`.
+
+### The audit entry
 
 The audit entry for C2 should be read as **closed on E4-E6 and open on the arm**.
 `docs/wiki/audits/enforcement-mutants-2026-09-15.md` is a record of a run on
