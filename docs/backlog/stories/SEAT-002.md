@@ -842,3 +842,42 @@ assertions stay green under the probe because the mutation touches only the
 format gate's awk — the probe hides files from one counter and only that
 counter's literal fires, which is what makes the literal a measurement rather
 than a pattern.
+
+---
+
+## Orchestrator's RED acceptance (PO-8)
+
+**Verified, not accepted on report.**
+
+- `lune run test` run by the orchestrator: **211 passed, 10 failed**. All ten fail
+  for the right reason — seven at the `pcall`'d require (`could not resolve child
+  component "Projection"`), three at PO-4's vacuity assertion (`Projection.luau is
+  not in the scanned set … classify.sh --list source src/server/seats said:
+  src/server/seats/Ring.luau`). No syntax error, no unrelated helper import
+  failure.
+- `bash scripts/gates.sh --fast` **after the RED commit**: `format` PASS (47),
+  `lint` PASS (47), `typecheck` PASS (8), `build` PASS, `harness` PASS (40),
+  `unit` FAIL. That is the admissibility answer RED is supposed to end on: the
+  only red gate is the one the story is about, and nothing failed on a timeout, a
+  threshold, a config error or a lint rule tripped by the new test files.
+- RED's handed-over prediction that the `harness` gate clears on commit was
+  checked rather than taken: `project-counters: 40 passed, 0 failed` on the clean
+  tree, against `39 passed, 1 failed` before. The one failure was the stray-file
+  precondition naming exactly the four untracked test files.
+- The two escalations that land against the contract were **reproduced
+  independently** before being accepted — see `## Amendments` A-1 and PO-7. Neither
+  reused any code the subagent wrote.
+
+**Superseding the mutation predictions in `## Notes`.** Those three were written by
+the PO at PLANNED, against no implementation. RED measured them against stubs and
+two came out differently: mutation 1 (`table.clone(assignment)` + `sigma = nil`)
+does **not** leave AC-1 green, because the extra keys are reported — five
+assertions red, not two; and mutation 2 (`lensClass` from the supplier) fires
+AC-1, AC-2 **and** AC-6, not AC-1 alone.
+
+GATES runs the real mutations against the shipped module and the numbers to compare
+against are **RED's measured table in `## Handoff`**, not the PLANNED predictions.
+The prediction that still matters is the shape of the claim, and it is unchanged:
+mutation 3 (`{}` for an unknown player) must fire **AC-5 alone**, and `refuseViaRing`
+must fire **AC-5 alone** — two single-assertion catches, which is where a vacuous
+test would hide.
