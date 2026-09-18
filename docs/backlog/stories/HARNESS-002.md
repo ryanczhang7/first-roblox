@@ -5,7 +5,7 @@ slug: production-code-cannot-arrive-without-te
 epic: 
 type: chore
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/HARNESS-002-production-code-cannot-arrive-without-te
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -763,6 +763,40 @@ test suites are not protected by the harness's own lock.
 
 **Tree state after all verification:** `scripts/check-boundaries.sh` byte-identical
 to `main`, `.claude/state/mutations/` holding only `log`, no `.bak`.
+
+### GREEN was a no-op, verified rather than delegated
+
+The handoff named four things GREEN had to VERIFY rather than build. No
+subagent was dispatched; the orchestrator ran each one. Output, in order:
+
+```
+$ bash .claude/tests/boundaries.test.sh
+  the inventory arm is exactly bootstrap, chore and spike
+boundaries: 95 passed, 0 failed
+
+$ git diff main -- scripts/check-boundaries.sh
+   [no diff]
+
+$ ls .claude/state/mutations/
+log
+
+$ git diff --stat HEAD -- .claude/tests/boundaries.test.sh
+   [no diff]
+
+$ git diff --name-only main...HEAD
+   .claude/tests/boundaries.test.sh
+   docs/backlog/stories/HARNESS-002.md
+```
+
+95/0 reproduced independently of RED. The script under test is byte-identical
+to `main`, the mutations directory holds only its log, the suite is untouched
+since the RED commit, and **no source or config file is in this story's diff at
+all** - which is the strongest form of "GREEN built nothing".
+
+`bash scripts/gates.sh --fast` at the end of GREEN: all six required gates
+PASS (format 43, lint 43, typecheck 8, unit 197, build 25103, harness 40),
+coverage unconfigured. A partial run, so not recorded as evidence - the full
+run before REVIEW is what judges the story.
 
 ### The audit entry
 
