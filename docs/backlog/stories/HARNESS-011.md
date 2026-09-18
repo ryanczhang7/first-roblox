@@ -65,9 +65,14 @@ after stripping the 109-character path prefix:
 
 | Helper | Measured body length |
 |---|---|
-| `tests/helpers/RingContract.luau` | exactly **511 (truncated)** for AC-1, AC-2, AC-3, AC-4, AC-5, AC-7 and the sub-stream pin — seven checks |
+| `tests/helpers/RingContract.luau` | exactly **511 (truncated)** for SEAT-001's AC-1, AC-2, AC-3, AC-4, AC-5, AC-7 and the sub-stream pin — seven checks |
 | `tests/helpers/LobbyGateContract.luau` | max 404 — not truncated |
 | `tests/helpers/RoundEndingContract.luau` | max 291 — not truncated |
+
+Throughout `## Context`, an `AC-N` names a **SEAT-001** criterion as implemented
+in `RingContract.luau` — never one of this story's own, which are numbered
+independently under `## Acceptance criteria` below. The two sets collide by
+number and mean different things.
 
 ### What is NOT wrong here
 
@@ -90,7 +95,9 @@ of the `rules.md` kind for an unreachable needle, because no needle is
 unreachable — there is nothing to watch go red on that axis. Do not invent one.**
 (This does not exempt the story from the general rule; see `## Notes`.)
 
-What *is* real is a fragility worth recording. AC-5's needle —
+What *is* real is a fragility worth recording. The needle belonging to
+**SEAT-001's** AC-5 — the distribution check in `RingContract.luau`, not this
+story's own AC-5 —
 
     kim>zed,zed>amy,amy>bob,bob>kim = 10000 (100.0%)  <- above 25.0%
 
@@ -272,9 +279,9 @@ from. All of these may be quoted; none needs re-deriving.
 | `lune run test` | **197 passed, 0 failed** |
 | `assert` message cap | **511** characters, message only |
 | position prefix, from a 1 / 40 / 90-character directory name | 173 / 212 / 259 — cap unchanged at 511 |
-| `RingContract` truncated checks | 7 (AC-1..AC-5, AC-7, sub-stream pin), body exactly 511 |
+| `RingContract` truncated checks | 7 (SEAT-001's AC-1..AC-5, AC-7, sub-stream pin), body exactly 511 |
 | `LobbyGateContract` / `RoundEndingContract` max body | 404 / 291 |
-| AC-5 needle end offset | 479 of 511 — 32 characters of slack |
+| SEAT-001 AC-5 needle end offset | 479 of 511 — 32 characters of slack |
 | `error(msg, 0 / 1 / 2)` on 900 characters | 900 / 1075 / 1075, no truncation at any level |
 | `unit` gate floor in `project.conf` | 197 — a minimum, so adding tests needs no edit |
 
