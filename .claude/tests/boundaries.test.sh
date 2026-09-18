@@ -64,15 +64,20 @@ accepts_manifest() {
 commit_all() { git -C "$FIX" add -A >/dev/null 2>&1
                git -C "$FIX" -c user.email=t@t -c user.name=t commit -qm "${1:-wip}" >/dev/null 2>&1; }
 
-# story_on_branch   Writes docs/backlog/stories/T-1.md on a fresh story branch
-# cut from main, with the body on stdin appended after the frontmatter.
+# story_on_branch [type]   Writes docs/backlog/stories/T-1.md on a fresh story branch
+# cut from main, with the body on stdin appended after the frontmatter. The type
+# defaults to feature; HARNESS-002 added the parameter so a `fix` story - the
+# one type law 1 refuses that is nearest to the ones it excuses - can be built
+# without a helper that also writes a ## Scaffold inventory it has no business
+# carrying.
 story_on_branch() {
+  local t="${1:-feature}"
   git -C "$FIX" checkout -q main 2>/dev/null
   git -C "$FIX" branch -D story/T-1-fixture >/dev/null 2>&1
   git -C "$FIX" checkout -q -b story/T-1-fixture 2>/dev/null
   mkdir -p "$FIX/docs/backlog/stories"
   {
-    printf -- '---\nid: T-1\ntitle: Fixture story\nslug: fixture\ntype: feature\nstatus: todo\nphase: REVIEW\nbranch: story/T-1-fixture\n---\n\n'
+    printf -- '---\nid: T-1\ntitle: Fixture story\nslug: fixture\ntype: %s\nstatus: todo\nphase: REVIEW\nbranch: story/T-1-fixture\n---\n\n' "$t"
     printf -- '## Acceptance criteria\n\n- **AC-1** - it works.\n\n## Handoff: RED -> GREEN\n\nthe command, the failure, the export shape.\n\n'
     cat
   } > "$FIX/docs/backlog/stories/T-1.md"
@@ -1365,5 +1370,111 @@ commit_all "a chore that lists everything it wrote"
 run_boundaries
 assert_contains "an inventory naming every file is accepted" \
   "ok    every changed source file is named in ## Scaffold inventory" "$out"
+
+
+# ---------------------------------------------------------------------------
+describe "the inventory arm is exactly bootstrap, chore and spike"
+
+# HARNESS-002. Everything above builds a `chore`, and `story_on_branch` builds a
+# `feature`, so the case arm at check-boundaries.sh `bootstrap|chore|spike)` was
+# only ever entered through its middle word. Narrowing it to `chore)` - deleting
+# the bootstrap exception, the rule the whole SCAFFOLD phase rests on - left the
+# suite at 83/0. Measured with mutate.sh at PLANNED, not inferred.
+#
+# Each acceptance below asserts TWO lines, and the order matters: the `ok` line
+# is also what the chore fixture above prints, so on its own it is a needle
+# whose negation is not distinguishable from a different fixture's pass. The
+# note names the type, and that is what pins WHICH arm ran.
+#
+# Neither acceptance can assert a clean exit: these fixtures carry no ## Gate
+# results, so the gate-record rule refuses them regardless - the same shape as
+# accepts_manifest, for the same reason. What is asserted is the presence of
+# this rule's acceptance and the absence of this rule's refusal.
+
+# AC-1: a bootstrap story that names everything it wrote is excused from law 1.
+scaffold_story bootstrap <<'EOF'
+src/main.ts   - the entry point, covered by tests/main.test.ts
+src/helper.ts - the helper it calls, covered by tests/main.test.ts
+EOF
+printf 'export const x = 1\n'      > "$FIX/src/main.ts"
+printf 'export const helper = 1\n' > "$FIX/src/helper.ts"
+commit_all "a bootstrap that lists everything it wrote"
+run_boundaries
+assert_contains "a bootstrap story is routed to the inventory arm, by name" \
+  "source file(s) without tests - allowed for a 'bootstrap' story" "$out"
+assert_contains "and a bootstrap inventory naming every file is accepted" \
+  "ok    every changed source file is named in ## Scaffold inventory" "$out"
+case "$out" in
+  *"Production code ships with the test that demanded it"*)
+    _bad "and a bootstrap story is not refused under law 1" "refused: $out" ;;
+  *) _ok "and a bootstrap story is not refused under law 1" ;;
+esac
+
+# AC-2: the same for a spike. Same two needles, different type in the note.
+scaffold_story spike <<'EOF'
+src/main.ts   - the throwaway entry point, covered by tests/main.test.ts
+src/helper.ts - the helper it calls, covered by tests/main.test.ts
+EOF
+printf 'export const x = 1\n'      > "$FIX/src/main.ts"
+printf 'export const helper = 1\n' > "$FIX/src/helper.ts"
+commit_all "a spike that lists everything it wrote"
+run_boundaries
+assert_contains "a spike story is routed to the inventory arm, by name" \
+  "source file(s) without tests - allowed for a 'spike' story" "$out"
+assert_contains "and a spike inventory naming every file is accepted" \
+  "ok    every changed source file is named in ## Scaffold inventory" "$out"
+case "$out" in
+  *"Production code ships with the test that demanded it"*)
+    _bad "and a spike story is not refused under law 1" "refused: $out" ;;
+  *) _ok "and a spike story is not refused under law 1" ;;
+esac
+# A spike, unlike a bootstrap, is exempt from the gate-record rule ("spike
+# story; gate record not required"), so this fixture is the one of the two
+# where a clean exit IS available - and $rc is what CI acts on, not the words.
+# Measured at RED: the unmutated spike fixture exits 0, the bootstrap one 1.
+assert_eq "and a spike with a complete inventory exits clean, so CI would merge it" \
+  0 "$rc"
+
+# AC-3: the control for AC-1 and AC-2. An arm that waves every bootstrap story
+# through unconditionally satisfies both acceptances above; only a bootstrap
+# story that is REFUSED for an incomplete inventory shows the per-file check
+# runs on this arm and not just on chore's.
+scaffold_story bootstrap <<'EOF'
+src/main.ts - the entry point, covered by tests/main.test.ts
+EOF
+printf 'export const x = 1\n'      > "$FIX/src/main.ts"
+printf 'export const helper = 1\n' > "$FIX/src/helper.ts"
+commit_all "a bootstrap that writes two files and lists one"
+run_boundaries
+assert_contains "control: the incomplete bootstrap still enters the bootstrap arm" \
+  "source file(s) without tests - allowed for a 'bootstrap' story" "$out"
+refused "control: a bootstrap source file missing from the inventory is refused" \
+  "not named in ## Scaffold inventory:"
+assert_contains "control: and the bootstrap refusal names the file it missed" \
+  "src/helper.ts" "$out"
+
+# AC-4: the control for the WIDTH of the arm. Every case above is satisfied by
+# `*)` - route every type to the inventory check - because every fixture either
+# carries an inventory or is a feature that earlier cases refuse for other
+# reasons. `fix` is the type nearest to the excused three that is not one of
+# them: it is a real story type, it ships source, and it has no inventory to
+# fall back on. The needle is law 1's own sentence, because under `*)` a fix
+# story is still refused - for an EMPTY INVENTORY - and a needle for "any
+# refusal" would call that a pass.
+story_on_branch fix <<'EOF'
+## Notes
+
+One clean cycle.
+EOF
+printf 'export const x = 101\n' > "$FIX/src/main.ts"
+commit_all "a fix whose source moved alone"
+run_boundaries
+refused "control: a fix story whose source moved alone is refused under law 1" \
+  "Production code ships with the test that demanded it"
+case "$out" in
+  *"allowed for a 'fix' story"*)
+    _bad "control: and a fix story is never excused by name" "excused: $out" ;;
+  *) _ok "control: and a fix story is never excused by name" ;;
+esac
 
 summary "boundaries"
