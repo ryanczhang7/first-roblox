@@ -5,7 +5,7 @@ slug: gate-record-tree-stamp-is-verified-end-t
 epic: 
 type: chore
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/HARNESS-001-gate-record-tree-stamp-is-verified-end-t
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -722,6 +722,68 @@ boundaries: 83 passed, 0 failed
 
 1 harness suite(s) passed.
 ```
+
+### GREEN was a no-op, verified rather than delegated
+
+No `feature-developer` was dispatched. The handoff predicted a no-op - the
+behaviour AC-1 names is already correct - and dispatching an implementer with
+nothing to implement is how a story acquires a change it did not need. The
+orchestrator verified it directly instead.
+
+**The source was untouched.** The whole branch, against `main`:
+
+```
+$ git diff --stat main...HEAD
+ .claude/tests/boundaries.test.sh    |  67 ++++
+ docs/backlog/stories/HARNESS-001.md | 613 +++++++++++++++++++++++++++++++-----
+ 2 files changed, 625 insertions(+), 55 deletions(-)
+
+$ git diff main...HEAD -- scripts .claude/hooks .claude/harness src lune default.project.json
+                                         (no output)
+
+$ git diff --name-only main...HEAD | while read -r f; do bash scripts/classify.sh "$f"; done
+harness	.claude/tests/boundaries.test.sh
+docs	docs/backlog/stories/HARNESS-001.md
+```
+
+Two paths, one `harness` and one `docs`. No source, no config, no manifest, in
+any commit on this branch.
+
+**And it still passes**, unmutated, on the committed tree:
+
+```
+$ bash scripts/selftest.sh boundaries
+
+  the gate record is a stamp on a tree, not a sentence about one
+
+  production code arrives with tests, or with an inventory
+
+boundaries: 83 passed, 0 failed
+
+1 harness suite(s) passed.
+```
+
+**The negative controls were confirmed, not assumed.** `rules.md` warns that in
+an ordinary RED the suite fails at import, so its controls are claims until GREEN
+measures them. That does not apply to a shell suite, which runs top to bottom -
+but the confirmation is cheap and the failure mode it guards against is silent,
+so it was done anyway. In the orchestrator's own mutation run the two
+`assert_differ` controls and all four `assert_sha40` guards were among the 81
+assertions that stayed **green** while only the two CURRENT-tree assertions went
+red. Values measured, matching RED's table exactly:
+
+| Control | Expected | Measured, independently |
+|---|---|---|
+| `control: source moved, ...` | two distinct 40-hex hashes | `89e98fee9d0616e17589f86fbd7e793d88c8ea24` vs `f443c354d85da58ba1359317d1d0102f7355d679` - differ |
+| `control: a test moving alone ...` | two distinct 40-hex hashes | `89e98fee9d0616e17589f86fbd7e793d88c8ea24` vs `9e45d5ea7a1475f68bb1260fab217ff6848957f2` - differ |
+| `assert_sha40` x4 | `40 lowercase hex` | all four `40 lowercase hex` |
+
+**The mutation table was reproduced, not taken on trust.** RED reported
+`81 passed, 2 failed` under the earning mutation. The orchestrator ran the same
+`scripts/mutate.sh` invocation itself and got the same counts, the same two
+failing assertions and the same three hashes, with the restore verified
+byte-for-byte a second time (backup
+`scripts_check-boundaries.sh.20260918T042723Z.1235334.bak`, distinct from RED's).
 
 ## Gate results
 
