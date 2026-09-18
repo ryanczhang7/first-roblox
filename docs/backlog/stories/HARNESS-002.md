@@ -4,8 +4,8 @@ title: The bootstrap and spike arms of section 3a are never exercised
 slug: production-code-cannot-arrive-without-te
 epic: 
 type: chore
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/HARNESS-002-production-code-cannot-arrive-without-te
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -654,6 +654,23 @@ full runs on every assertion that dies, and is not pasted because the full
 runs are the evidence.
 
 ## Gate results
+
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-18T15:05:13Z
+    commit: 7f98564
+    tree:   f6b0cfc1fe64aaa1ce3c06fb794eefedada49215
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 43)
+    PASS         lint (1s, observed 43, floor 1)
+    PASS         typecheck (2s, observed 8)
+    PASS         unit (6s, observed 197, floor 197)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 25103)
+    PASS         harness (11s, observed 40)
+    UNCONFIGURED mutation
 
 ## Notes
 
