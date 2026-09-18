@@ -116,6 +116,45 @@ each one:
 | M2 | drop `spike` from the arm | AC-2 |
 | M3 | widen the arm to `*)` | AC-4 |
 
+## Amendments
+
+**All four acceptance criteria were replaced, while the story was still
+PLANNED.** They are therefore not a break of the freeze - the freeze bites once
+a story leaves PLANNED - but they differ from the copy on `main`, which is what
+`check-boundaries.sh` compares against, so they are recorded here in full.
+
+**Approved by:** the product owner, in session, on 2026-09-18, choosing
+"re-scope to the bootstrap/spike gap" over closing the story as delivered or
+doing both. The orchestrator put the choice with the evidence below attached and
+did not pick for them.
+
+**Why:** every one of the original criteria was already satisfied by tests that
+arrived in harness refresh `8edf687`, months after the audit that filed this
+story. The orchestrator confirmed that by mutation before proposing the change -
+E4, E5 and E6 are all killed by assertions already in the suite (table in
+`## Context`, full output in `## Notes`). Writing the original criteria would
+have added duplicate fixtures for branches that are already covered. The
+measured residual exposure is the case arm itself, which is what the criteria
+now target.
+
+| AC | Was | Is now |
+|---|---|---|
+| AC-1 | a `feature` story whose source moved alone is refused under law 1; kills `check-boundaries.sh:146` | a `bootstrap` story with a complete inventory is routed to the inventory arm and not refused; kills the arm's `bootstrap` word |
+| AC-2 | a `chore` story with an empty or template-only inventory is refused for the empty inventory; kills `:151` | a `spike` story in the same situation is accepted the same way; kills the arm's `spike` word |
+| AC-3 | a `chore` story naming one of two changed files is refused naming the missing one; kills `:157` | the same, but on a **`bootstrap`** fixture - the control showing the per-file check runs on that arm and not only on `chore`'s |
+| AC-4 | a `bootstrap` or `chore` story naming every file is accepted, so AC-2 and AC-3 are not met by a check that refuses everything | a `fix` story whose source moved alone is refused under law 1 - the control on the arm's WIDTH, refusing a widening to `*)` |
+
+Two corrections were made to `## Context` at the same time and under the same
+approval: the guard this story named (`unit` / `selftest.sh`) does not exist in
+this project as described, and the audit's line numbers had shifted from
+146/151/157 to 223/228/234.
+
+**One thing this amendment does NOT claim.** AC-4's mutant (M3) turned out to be
+already dead before this story - reproduced by the orchestrator against the
+pre-story suite, `82 passed, 1 failed`, in `## Notes`. AC-4 is a legitimate
+type-specific observer and is earned by mutation, but it is the second killer of
+M3, not the first. The delivery is AC-1, AC-2 and AC-3.
+
 ## Contract
 
 **Nothing in `scripts/check-boundaries.sh` changes.** This story adds
