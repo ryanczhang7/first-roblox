@@ -91,6 +91,19 @@ mask_shell_quotes() {
       if (c == "<")  return "\005"
       if (c == " ")  return "\006"
       if (c == "\t") return "\007"
+      # A paren inside a quoted span is a character, not a subshell. It was
+      # the one operator left unmasked, and every extractor in phase-guard.sh
+      # terminates its match at an open paren - so a quoted sed script
+      # containing a BRE group, which is what an ordinary sed script looks
+      # like, was cut off mid-word, and the fragment left behind was taken for
+      # the write target and reported as a write to a path named s.
+      # (No apostrophe anywhere in this comment: it sits inside the single
+      # quotes that delimit the awk program, as the note about Q below says.)
+      # \013 and \014 rather than the next two free bytes: \011 is tab and
+      # \012 is newline, and a masker emitting either would be
+      # indistinguishable from the whitespace it is masking.
+      if (c == "(")  return "\013"
+      if (c == ")")  return "\014"
       return c
     }
     function maskstr(t,   k, o) {
@@ -202,7 +215,7 @@ mask_shell_quotes() {
 }
 
 unmask_shell_quotes() {
-  tr '\001\002\003\004\005\006\007\010' '|&;>< \t\n'
+  tr '\001\002\003\004\005\006\007\010\013\014' '|&;>< \t\n()'
 }
 
 # --- Variables in a command string ------------------------------------------

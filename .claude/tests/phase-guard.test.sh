@@ -722,4 +722,91 @@ assert_blocked "$FIX" 'echo x > src/main.ts' src/main.ts \
   'AC-11: a redirect into frozen source is untouched by this fix'
 
 
+
+# ---------------------------------------------------------------------------
+describe "SEAT-002: a sed EXPRESSION is not a path, parentheses included"
+set_phase "$FIX" RED
+
+# The report, from SEAT-002's RED phase:
+#
+#   f=.claude/tests/project-counters.test.sh && sed -i -e 's/.../.../' "$f"
+#       refused, path: s, category: source
+#
+# The target was a harness file RED may write; the guard named `s`. Two
+# separate defects, and the first hides the second:
+#
+#   * `(` and `)` were not masked inside a quoted span, though every other
+#     operator was. The sed extractor terminates at `[|&;()]`, so a BRE group
+#     - `s/\(BASE_[A-Z]*\)=43/\1=47/`, which is what a real sed script looks
+#     like - truncated the match at the first paren. `awk '{print $NF}'` then
+#     took the surviving fragment `'s/\` as the write target, which normalises
+#     to `s`. A quoted paren is DATA, exactly as a quoted `|` is; masking it
+#     is the same rule the masker already applies to the other six.
+#   * The extractor's whole model of sed's argv was `$NF`. The last word is
+#     the target only when sed was given a script and exactly one file. With
+#     `-e` and no file it is the EXPRESSION, and with two files it is the
+#     second - so `sed -i 's/a/b/' src/main.ts docs/notes.md` wrote frozen
+#     source and was permitted. Truncation was hiding that hole: fixing only
+#     the masking leaves the guard naming an expression as a path whenever no
+#     file follows it.
+#
+# So the words are classified as sed classifies them: options, the argument of
+# an option that takes one (`-e`, `-f`, and their long forms), then operands -
+# of which the first is the SCRIPT unless `-e`/`-f` already supplied one, and
+# the rest are files. Every file is judged, not merely the last.
+
+# The controls, first. Each permitted command below has the same shape as a
+# refusal here, differing only in the category of the file it names - without
+# these, a fix that simply stopped parsing sed would pass the whole block.
+assert_blocked "$FIX" "sed -i -e 's/\(a\)/b/' src/main.ts" src/main.ts \
+  'control: a BRE group does not excuse an in-place write to source'
+assert_blocked "$FIX" "sed -i 's/(a)/b/' src/main.ts" src/main.ts \
+  'control: a literal paren does not excuse one either'
+assert_blocked "$FIX" "sed -i --expression='s/\(a\)/b/' src/main.ts" src/main.ts \
+  'control: --expression= with a group, writing source'
+assert_blocked "$FIX" 'f=src/main.ts && sed -i -e '"'"'s/\(a\)/b/'"'"' "$f"' src/main.ts \
+  'control: the reported shape, with a SOURCE path in the variable'
+
+# The report itself. A harness path RED may write, named through a variable,
+# with a group in the expression.
+assert_allowed "$FIX" 'f=.claude/tests/project-counters.test.sh && sed -i -e '"'"'s/\(BASE_[A-Z]*\)=43/\1=47/'"'"' "$f"' \
+  'the reported command: -e, a BRE group, harness target in a variable'
+assert_allowed "$FIX" 'f=.claude/tests/project-counters.test.sh && sed -i '"'"'s/\(BASE_[A-Z]*\)=43/\1=47/'"'"' "$f"' \
+  'the same without -e, which parses differently'
+
+# Parens in the expression, direct path, both quoting styles and both syntaxes.
+assert_allowed "$FIX" "sed -i -e 's/(43)/(47)/' .gitignore" \
+  'literal parens in the expression, writing harness'
+assert_allowed "$FIX" 'sed -i "s/\(43\)/\1x/" .gitignore' \
+  'a BRE group inside double quotes'
+assert_allowed "$FIX" "sed -Ei 's/(a)|(b)/c/' .gitignore" \
+  'an ERE alternation of two groups'
+assert_allowed "$FIX" "sed -n 's/\(a\)/b/p' src/main.ts" \
+  'a sed READ whose script contains a group'
+
+# The expression as the last word, because no file follows it. `$NF` made this
+# a write to a path called `s/a/b`.
+assert_allowed "$FIX" "sed -i -e 's/a/b/'" \
+  'an -e expression with no file after it is not a file'
+assert_allowed "$FIX" "sed -i --expression='s/a/b/'" \
+  'nor is the argument of --expression='
+
+# `-f` names a script to READ. It must not become a target when every operand
+# is judged rather than only the last.
+assert_allowed "$FIX" 'sed -i -f fix.sed docs/notes.md' \
+  'the -f script file is read, not written'
+assert_blocked "$FIX" 'sed -i -f fix.sed src/main.ts' src/main.ts \
+  'and the FILE behind -f is still judged'
+
+# The hole the truncation was hiding: sed takes any number of files.
+assert_blocked "$FIX" "sed -i 's/a/b/' src/main.ts docs/notes.md" src/main.ts \
+  'every file operand is judged, not just the last'
+assert_blocked "$FIX" "sed -i 's/a/b/' docs/notes.md src/lib/layer-imports.ts" \
+  src/lib/layer-imports.ts 'a source file behind a permitted one'
+
+# Law 5 in one line: the plain shapes this fix must never stop refusing.
+assert_blocked "$FIX" "sed -i 's/a/b/' src/main.ts"    src/main.ts 'plain sed -i onto source'
+assert_blocked "$FIX" "sed -i -e 's/a/b/' src/main.ts" src/main.ts 'sed -i -e onto source'
+assert_blocked "$FIX" "sed -i.bak -e 's/a/b/' src/main.ts" src/main.ts 'sed -i.bak -e onto source'
+
 summary "phase-guard"

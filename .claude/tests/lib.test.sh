@@ -117,6 +117,35 @@ for cmd in \
   assert_eq "round trip: $cmd" "$cmd" "$(roundtrip "$cmd")"
 done
 
+# SEAT-002. A paren inside a quoted span is data, like every other operator
+# here - and it was the one the masker left alone. `s/\(a\)/b/` is what a real
+# sed script looks like, and every extractor in phase-guard.sh terminates its
+# match at `(`, so the group truncated the command mid-word and the fragment
+# left behind was taken for the write target. Masking it is not a special case
+# for sed: a subshell paren is syntax, a quoted one is a character.
+has_paren() { printf '%s' "$1" | grep -qF '('; }
+for cmd in \
+  "sed -i 's/\(a\)/b/' f.txt" \
+  "sed -i 's/(43)/(47)/' f.txt" \
+  'grep -oE "(a|b)c" f.txt' \
+  "awk 'BEGIN { print (1) }' f.txt" \
+  ; do
+  masked="$(mask "$cmd")"
+  if has_paren "${masked#*[\'\"]}"; then
+    _bad "masks parens in: $cmd" "still paren-bearing: $masked"
+  else
+    _ok "masks parens in: $cmd"
+  fi
+  assert_eq "round trip: $cmd" "$cmd" "$(roundtrip "$cmd")"
+done
+
+# And the control, because masking every paren everywhere would delete the
+# terminator that stops `(cd src && echo x > a.ts)` yielding a target of
+# `a.ts)`. An UNQUOTED paren is still shell syntax.
+assert_contains "an unquoted subshell paren survives masking" "(" "$(mask '(cd src && echo x > a.ts)')"
+assert_contains "so does its closing paren"                   ")" "$(mask '(cd src && echo x > a.ts)')"
+assert_contains "and an unquoted command substitution keeps its paren" "(" "$(mask 'printf x > $(mktemp)')"
+
 describe "mask_shell_quotes: structure outside quotes is preserved"
 
 for cmd in \

@@ -130,20 +130,65 @@ case "$TOOL" in
         # every false positive above and opened a fresh hole in the same commit.
         # It is a prefix rather than a search for the letter because `--silent`
         # - GNU's long form of `-n` - contains an `i` and writes nothing.
+        #
+        # And the target is not `$NF`. The last word is the file only when sed
+        # was handed a script and exactly one file, which is the shape every
+        # example is written in and neither of the shapes that broke:
+        #
+        #   sed --in-place -e 's/a/b/'         $NF is the EXPRESSION - refused
+        #                                      as a write to a path `s/a/b`
+        #   sed --in-place 's/a/b/' src/main.ts docs/notes.md
+        #                                      $NF is the SECOND file, so the
+        #                                      write to frozen source passed
+        #
+        # (Spelt `--in-place` because the portability guard in lib.test.sh
+        # greps every shipped script for the GNU-only short form, comments
+        # included, and it is right to: a reader copies what is written here.)
+        #
+        # The same defect from both ends, again: a nonsense denial and an open
+        # hole. So the words are read the way sed reads them - options, the
+        # argument of an option that takes one, then operands, of which the
+        # first is the SCRIPT unless `-e`/`-f` already supplied it - and every
+        # file operand is judged rather than the last word.
         printf '%s\n' "$NOREDIR" | grep -oE '\bsed\b[^|&;()]*' \
-          | awk '{ inplace = 0
-                   for (i = 1; i <= NF; i++) {
+          | awk '{ inplace = 0; scripted = 0; nops = 0; skip = 0
+                   for (i = 2; i <= NF; i++) {          # $1 is `sed` itself
                      w = $i
-                     if (w !~ /^-/) continue
+                     if (skip) { skip = 0; continue }   # an option argument
                      if (w ~ /^--/) {
-                       o = w; sub(/=.*$/, "", o); sub(/^--/, "", o)
-                       if (o != "" && index("in-place", o) == 1) inplace = 1
+                       o = w; att = (index(o, "=") > 0)
+                       sub(/=.*$/, "", o); sub(/^--/, "", o)
+                       if (o == "") continue
+                       if      (index("in-place", o)   == 1) inplace = 1
+                       else if (index("expression", o) == 1) { scripted = 1; if (!att) skip = 1 }
+                       else if (index("file", o)       == 1) { scripted = 1; if (!att) skip = 1 }
                        continue
                      }
-                     c = w; sub(/^-/, "", c)
-                     if (match(c, /^[A-Za-z]+/) && substr(c, 1, RLENGTH) ~ /i/) inplace = 1
+                     if (w ~ /^-./) {
+                       c = w; sub(/^-/, "", c)
+                       # A short cluster, read left to right until a letter
+                       # swallows the rest of the word: `-i` takes the rest as
+                       # its backup SUFFIX (`-i.bak`), `-e` and `-f` take it as
+                       # their argument (`-e s/a/b/`), or the next word when
+                       # they end the cluster.
+                       for (k = 1; k <= length(c); k++) {
+                         ch = substr(c, k, 1)
+                         if (ch == "i") { inplace = 1; break }
+                         if (ch == "e" || ch == "f") {
+                           scripted = 1
+                           if (k == length(c)) skip = 1
+                           break
+                         }
+                       }
+                       continue
+                     }
+                     nops++; op[nops] = w
                    }
-                   if (inplace) print $NF }'
+                   if (!inplace) next
+                   for (k = 1; k <= nops; k++) {
+                     if (k == 1 && !scripted) continue  # the script, not a file
+                     print op[k]
+                   } }'
         printf '%s\n' "$NOREDIR" | grep -oE '\b(cp|mv)\b[[:space:]]+[^|&;()]+'         | awk '{print $NF}'
         # Words, minus the command, minus options - and minus the ARGUMENT of an
         # option that takes one. That last clause is the tenth shape of the
