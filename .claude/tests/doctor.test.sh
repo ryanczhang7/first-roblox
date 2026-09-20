@@ -289,4 +289,190 @@ case "$out" in
   *) _ok "and is not mistaken for unstamped" ;;
 esac
 printf '%s\n' "$first" > "$FIX/.claude/harness/VERSION"
+# ---------------------------------------------------------------------------
+describe "a gate needs more than executables: the artifacts git does not carry"
+
+# The gap. doctor checked every executable a gate names, found them all, and
+# printed "Everything this project needs is installed" on a tree where a
+# REQUIRED gate could not run one command - because that gate opens with
+# `test -s globalTypes.d.luau`, the file is generated rather than authored,
+# `.gitignore` covers it, and only `scripts/task.sh install` produces it. A
+# fresh git worktree therefore never has it. `scripts/selftest.sh` there failed
+# 2 of 18 suites while CI passed 18 of 18, CI having installed first.
+#
+# It is the same shape as the `evidence` rule one level up: a tool with nothing
+# to do does not complain, and neither does a CHECK with nothing to check.
+
+# DERIVED, with no declaration at all. This half is what keeps the gap from
+# reopening: it needs nobody to remember to write a line.
+rm -rf "$FIX/dist"
+write_conf "$FIX" <<'EOF'
+gate      | unit      | required | . | printf 'Tests  1 passed (1)\n'
+evidence  | unit      | Tests +[1-9][0-9]* passed
+gate      | typecheck | required | . | test -s dist/globalTypes.d.ts && printf 'analyze over 8 files\n'
+EOF
+run_doctor
+assert_contains "a gate's untracked precondition is named when it is absent" \
+  "MISSING  typecheck    dist/globalTypes.d.ts" "$out"
+assert_contains "and says why git did not bring it" "fresh clone or worktree" "$out"
+assert_contains "and gives a remedy to run" "scripts/task.sh install" "$out"
+# THE HALF A CALLER CAN ACT ON. doctor's whole failure here was exiting 0 while
+# saying everything was installed; assertions on its text would all have passed
+# in exactly that state.
+assert_eq "and doctor exits non-zero rather than merely printing" 1 "$rc"
+case "$out" in
+  *"Everything this project needs is installed"*)
+    _bad "and does not claim everything is installed" "claimed it anyway: $out" ;;
+  *) _ok "and does not claim everything is installed" ;;
+esac
+
+# The control. Without it, "always report MISSING" passes every assertion above.
+mkdir -p "$FIX/dist"
+printf 'declare const x: number\n' > "$FIX/dist/globalTypes.d.ts"
+run_doctor
+assert_contains "present, it reports ok and its size" \
+  "ok       typecheck    dist/globalTypes.d.ts present (" "$out"
+assert_eq "and doctor exits 0" 0 "$rc"
+
+# PRESENT IS NOT ENOUGH. An interrupted download leaves a zero-byte file that
+# `test -e` accepts and every tool reading it rejects. The gate's own
+# precondition is `test -s`, so doctor's is too.
+: > "$FIX/dist/globalTypes.d.ts"
+run_doctor
+assert_contains "a zero-byte artifact is missing, not present" \
+  "MISSING  typecheck    dist/globalTypes.d.ts - the file is empty" "$out"
+assert_eq "and still exits non-zero" 1 "$rc"
+rm -rf "$FIX/dist"
+
+# ---------------------------------------------------------------------------
+describe "a postcondition is not a precondition"
+
+# The false alarm that would get this section deleted. `gate | build` in a real
+# project.conf is `mkdir -p build && rojo build --output build/place.rbxl &&
+# test -s build/place.rbxl`: it tests a path the SAME COMMAND just wrote.
+# Reporting that as missing makes doctor fail on a healthy tree. (`task |
+# install` has the same shape around globalTypes.d.luau; only `gate` lines are
+# scanned, so it is not read - but a gate could be written that way, and
+# `build` is.)
+#
+# The rule that separates them, and the reason the scan reads the command
+# rather than grepping it: a test is a precondition only when the path appears
+# nowhere earlier in the command, so nothing in the command could have made it.
+rm -rf "$FIX/build"
+write_conf "$FIX" <<'EOF'
+gate     | unit  | required | . | printf 'Tests  1 passed (1)\n'
+evidence | unit  | Tests +[1-9][0-9]* passed
+gate     | build | required | . | mkdir -p build && faux --output build/place.bin && test -s build/place.bin
+EOF
+run_doctor
+case "$out" in
+  *"build/place.bin"*)
+    _bad "a path the command itself produces is not an artifact" "reported it: $out" ;;
+  *) _ok "a path the command itself produces is not an artifact" ;;
+esac
+assert_eq "and doctor does not fail a healthy tree over it" 0 "$rc"
+
+# ---------------------------------------------------------------------------
+describe "what the scan deliberately says nothing about"
+
+# git carries it, so every clone has it. Reporting it would be noise, and noise
+# in this section is what makes a reader stop reading it.
+write_conf "$FIX" <<'EOF'
+gate     | unit | required | . | printf 'Tests  1 passed (1)\n'
+evidence | unit | Tests +[1-9][0-9]* passed
+gate     | lint | required | . | test -d src && printf 'lint over 2 files\n'
+EOF
+run_doctor
+case "$out" in
+  *MISSING*src*)
+    _bad "a tracked path is not reported" "reported it: $out" ;;
+  *) _ok "a tracked path is not reported" ;;
+esac
+assert_eq "and a tracked precondition is not a failure" 0 "$rc"
+
+# An unresolved variable is declined, not guessed. The real typecheck gate
+# carries `test -d ${GATE_TYPE_TARGET:=src}`, and doctor does not expand it - a
+# guess here reports a path that was never tested.
+write_conf "$FIX" <<'EOF'
+gate     | unit      | required | . | printf 'Tests  1 passed (1)\n'
+evidence | unit      | Tests +[1-9][0-9]* passed
+gate     | typecheck | required | . | test -d ${GATE_TYPE_TARGET:=nowhere} && printf 'analyze over 8 files\n'
+EOF
+run_doctor
+case "$out" in
+  *GATE_TYPE_TARGET*|*"MISSING  typecheck"*)
+    _bad "an unresolvable path is declined, not guessed at" "reported it: $out" ;;
+  *) _ok "an unresolvable path is declined, not guessed at" ;;
+esac
+assert_eq "and that is not a failure either" 0 "$rc"
+
+# ---------------------------------------------------------------------------
+describe "an artifact no test guards is declared, with its own remedy"
+
+# Derivation only sees what a gate command tests for. An artifact a tool reads
+# without checking - and the exact command that produces one - has to be said.
+rm -rf "$FIX/dist"
+write_conf "$FIX" <<'EOF'
+gate     | unit  | required | . | printf 'Tests  1 passed (1)\n'
+evidence | unit  | Tests +[1-9][0-9]* passed
+artifact | types | dist/api.d.ts | bash scripts/task.sh fetch-types
+EOF
+run_doctor
+assert_contains "a declared artifact that is absent is reported" \
+  "MISSING  types        dist/api.d.ts" "$out"
+assert_contains "with the remedy the declaration gave" "bash scripts/task.sh fetch-types" "$out"
+assert_eq "and exits non-zero" 1 "$rc"
+
+mkdir -p "$FIX/dist"; printf 'export {}\n' > "$FIX/dist/api.d.ts"
+run_doctor
+assert_contains "and ok once it is there" "ok       types        dist/api.d.ts present (" "$out"
+assert_eq "and exits 0" 0 "$rc"
+rm -rf "$FIX/dist"
+
+# A directory artifact is judged by whether it has anything in it. An empty
+# `node_modules/` is the same condition as a zero-byte download.
+write_conf "$FIX" <<'EOF'
+gate     | unit   | required | . | printf 'Tests  1 passed (1)\n'
+evidence | unit   | Tests +[1-9][0-9]* passed
+artifact | vendor | dist | bash scripts/task.sh install
+EOF
+mkdir -p "$FIX/dist"
+run_doctor
+assert_contains "an empty directory artifact is missing" \
+  "MISSING  vendor       dist - the directory is empty" "$out"
+assert_eq "and exits non-zero" 1 "$rc"
+printf 'x\n' > "$FIX/dist/thing"
+run_doctor
+assert_contains "and present once it has contents" "ok       vendor       dist present" "$out"
+assert_eq "and exits 0" 0 "$rc"
+rm -rf "$FIX/dist"
+
+# An artifact line whose gate ALSO tests for it is one artifact, not two. The
+# declaration is read first, so the remedy a caller is given is the precise one.
+rm -rf "$FIX/dist"
+write_conf "$FIX" <<'EOF'
+gate      | unit      | required | . | printf 'Tests  1 passed (1)\n'
+evidence  | unit      | Tests +[1-9][0-9]* passed
+gate      | typecheck | required | . | test -s dist/api.d.ts && printf 'analyze over 8 files\n'
+artifact  | types     | dist/api.d.ts | bash scripts/task.sh fetch-types
+EOF
+run_doctor
+assert_contains "a declared artifact a gate also tests wins the declared remedy" \
+  "MISSING  types        dist/api.d.ts" "$out"
+case "$out" in
+  *"MISSING  typecheck    dist/api.d.ts"*)
+    _bad "and is not reported a second time by derivation" "reported twice: $out" ;;
+  *) _ok "and is not reported a second time by derivation" ;;
+esac
+
+# Nothing to check is said out loud rather than skipped, for the same reason
+# `discovery` says it: a silent section reads as a passing one.
+write_conf "$FIX" <<'EOF'
+gate     | unit | required | . | printf 'Tests  1 passed (1)\n'
+evidence | unit | Tests +[1-9][0-9]* passed
+EOF
+out="$(doctor)"
+assert_contains "no artifacts at all is reported, not skipped" \
+  "none declared, and no gate command tests for one" "$out"
+
 summary "doctor"
