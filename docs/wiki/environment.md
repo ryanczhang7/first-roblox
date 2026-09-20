@@ -129,6 +129,19 @@ The `typecheck` gate guards against that with a `test -s` before the run and an
 `awk` filter after it; see `docs/wiki/stack.md` §2. If you ever see type errors
 that look like code errors, re-run `task install` before believing them.
 
+**A fresh `git worktree` is a fresh install, and doctor now says so.** The dump
+is gitignored, so `git worktree add` produces a tree that has never had it —
+same as a fresh clone, and easier to miss because the toolchain on PATH is
+already there. In that state the required `typecheck` gate cannot run its first
+command, `bash scripts/selftest.sh` exits 1 with `harness-gate` and
+`project-counters` failing on typecheck errors that read like code errors, and
+CI passed every suite on the identical commit because `.github/workflows/gates.yml`
+runs `task install` first. `scripts/doctor.sh` reported `Everything this project
+needs is installed` and exited 0 throughout. It no longer does: its **Required
+artifacts** section checks the dump for presence and non-emptiness, names
+`bash scripts/task.sh install` as the remedy, and exits 1. Run `doctor` in a new
+worktree before anything else.
+
 **The harness self-test is slow on Windows and that is not a hang.**
 `bash scripts/selftest.sh` takes 10–25 minutes here — measured runs of 607s,
 1133s and 1423s on the same machine — because the suites spawn thousands of short
