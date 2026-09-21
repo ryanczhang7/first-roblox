@@ -70,12 +70,17 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # Read the number out of each command's own evidence line; do not count files
 # yourself, for the same reason the suite does not.
 #
-# LAST MEASURED: TEL-001 (RED), which added five test files (tests/helpers/
+# LAST MEASURED: TEL-001 (GREEN), which added src/shared/telemetry/Event.luau
+# and src/shared/telemetry/Sink.luau and no test file: 53/53/9 -> 55/55/11,
+# narrow 9/9/5 -> 11/11/7. Both modules are src/shared, so NARROW_TYPECHECK
+# moves this time where SEAT-002's src/server module left it alone. Read from
+# the gates' own evidence lines - `stylua over 55 files`, `selene over 55
+# files`, `analyze over 11 files` - and the narrow ones from the same commands
+# with the target replaced, as the header prescribes.
+# BEFORE THAT: TEL-001 (RED), which added five test files (tests/helpers/
 # TelemetryContract.luau, tests/helpers/TelemetryStubs.luau and three
 # tests/shared/telemetry_*_test.luau) and no source: 48/48/9 -> 53/53/9, narrow
-# unchanged at 9/9/5. Read from `gates.sh --fast` evidence lines - `stylua over
-# 53 files`, `selene over 53 files`, `analyze over 9 files` - and the narrow ones
-# from the same commands with the target replaced.
+# unchanged at 9/9/5.
 # BEFORE THAT: SEAT-002 (GREEN), which added src/server/seats/Projection.luau
 # and no test file: 47/47/8 -> 48/48/9, narrow 8/8/5 -> 9/9/5. NARROW_TYPECHECK
 # is unchanged because it is src/shared alone and the new module is src/server.
@@ -86,12 +91,12 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-BASE_FORMAT=53     # stylua  over src tests lune   (53 = 9 src + 44 tests/lune)
-BASE_LINT=53       # selene  over src tests lune
-BASE_TYPECHECK=9   # analyze over src
-NARROW_FORMAT=9    # stylua  over src alone
-NARROW_LINT=9      # selene  over src alone
-NARROW_TYPECHECK=5 # analyze over src/shared alone (unchanged by SEAT-002)
+BASE_FORMAT=55     # stylua  over src tests lune   (55 = 11 src + 44 tests/lune)
+BASE_LINT=55       # selene  over src tests lune
+BASE_TYPECHECK=11  # analyze over src
+NARROW_FORMAT=11   # stylua  over src alone
+NARROW_LINT=11     # selene  over src alone
+NARROW_TYPECHECK=7 # analyze over src/shared alone (moved by TEL-001's two modules)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`
 # rather than `source` - rules.md's probe convention - and so every guard that
