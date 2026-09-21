@@ -4,8 +4,8 @@ title: A replicated seat view contains nothing of anyone else's
 slug: a-replicated-seat-view-contains-nothing
 epic: EPIC-02
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/SEAT-002-a-replicated-seat-view-contains-nothing
 depends_on: [SEAT-001]
 required_gates: []
@@ -384,7 +384,63 @@ receiving `nil`; and set one player's `keyClass` to another player's value and
 confirm the projection for the *other* player is unchanged. A suite that catches an
 omission can be blind to a corruption.
 
-**Result:** _(paste: what was mutated, what went red, that the file was restored)_
+**Result — run at GATES by the orchestrator, three mutations, all through
+`scripts/mutate.sh` (which restores the file and verifies the restore with
+`cmp`).** Baseline before and after: `221 passed, 0 failed`. No `.bak` was left
+under `.claude/state/mutations/`, which is how that script reports a failed
+restore.
+
+**Mutation 1 — a private field added to `Assignment` (the M3 shape).**
+
+    $ bash scripts/mutate.sh src/server/seats/Ring.luau \
+        's|keyClass = keyClass,|keyClass = keyClass, pairings = { secret = "SECRET:m3-lens-pairings" },|' \
+        -- lune run test
+    === mutate: src/server/seats/Ring.luau (1 line(s) changed by …) ===
+      FAIL  tests/server/ring_test.luau :: Contract: assign returns an Assignment carrying players, sigma and keyClass, and nothing the Contract does not name
+    220 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against …Ring.luau.20260921T001947Z.1414444.bak) ===
+
+**Nothing leaked.** Every one of the six `projection_test` assertions stayed
+green with a per-player secret sitting in the assignment — which is the
+condition this entry states. The single failure is SEAT-001's own pin on the
+`Assignment` shape, i.e. the *generator* noticing a field nobody declared, not
+the projection passing one on. That is the property that makes M3's additions
+safe by default.
+
+**Mutation 2 — a field removed from the allowlist.**
+
+    $ bash scripts/mutate.sh src/server/seats/Projection.luau \
+        's|lensClass = Ring.lensOf(assignment, playerId),||' -- lune run test
+      FAIL  tests/server/projection_test.luau :: AC-1: the view for p is exactly p's own keyClass, own lensClass, supplierId, dependentId, playerId and a fresh seatOrder - and nothing else
+      FAIL  tests/server/projection_test.luau :: AC-2: flattened to scalars at every depth, the view carries exactly two integers and neither is another player's key class
+    219 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against …Projection.luau.20260921T002017Z.1417016.bak) ===
+
+**A consumer breaks visibly, not silently.** AC-1 reports the missing key and
+AC-2's integer-leaf count drops from two to one. Neither test accepted a `nil`.
+
+**Mutation 3 — a wrong VALUE rather than a missing field**, which this entry
+insisted on because "a suite that catches an omission can be blind to a
+corruption". One player is dealt another player's key class:
+
+    $ bash scripts/mutate.sh src/server/seats/Ring.luau \
+        's|keyClass\[p\] = i|keyClass[p] = if i == 1 then 2 else i|' -- lune run test
+      FAIL  tests/server/projection_test.luau :: AC-2: flattened to scalars at every depth, the view carries exactly two integers and neither is another player's key class
+      FAIL  tests/server/projection_test.luau :: AC-6: for every pair of players, neither view carries the other's key class or σ in any form - as a map, a string, or the ring order
+      FAIL  tests/server/ring_test.luau :: AC-4: each player holds exactly one key class and the key classes are the integers 1..n each used once
+      (and eight `projection_controls_test` controls, whose measured literals no
+       longer describe the corrupted fixture)
+    210 passed, 11 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against …Ring.luau.20260921T002048Z.1419260.bak) ===
+
+**Not blind to the corruption.** AC-2 and AC-6 both fire against the real module
+— the collision makes one player's own class indistinguishable from a foreign
+one, which is exactly what AC-6 is for — and SEAT-001's bijection pin fires
+underneath. Worth noting for M3: the eight control failures are the controls'
+*own* measured literals ("in 144 of 144 views", "3 integer-valued") no longer
+matching a corrupted fixture. That is the controls doing their job as
+instruments, and it is the reason those numbers are asserted rather than
+described.
 
 ## Model guidance
 
@@ -1118,3 +1174,125 @@ pathspec, and the three AC-4 tests share one cached answer.
   "not 47" after moving the literals they describe; I renamed them along with the
   numbers this story moved, and the probe above was run with the stale text
   visible, which is why it appears in that output.
+
+## Gate results
+
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-21T00:30:25Z
+    commit: dabf267 (working tree had uncommitted changes)
+    tree:   5ec7835eb1cde47458ae8a34b014ffb5af11b73d
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 48)
+    PASS         lint (1s, observed 48, floor 1)
+    PASS         typecheck (3s, observed 9)
+    PASS         unit (26s, observed 221, floor 221)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (1s, observed 28826)
+    PASS         harness (27s, observed 40)
+    UNCONFIGURED mutation
+
+## PO acceptance at GATES
+
+### The mutation table, turned from a claim into evidence
+
+`## Handoff: RED -> GREEN` carries a table predicting which assertions each defect
+fires. That table was measured against *stubs*; against the **shipped module** it
+was a claim until run. Two mutations, one run each, both chosen because the table
+predicts a **single** assertion — a lone assertion is where a vacuous test hides.
+Both through `scripts/mutate.sh`, which restores and verifies the restore.
+
+**Predicted AC-5 alone** — the membership check disabled, so `Ring.supplierOf`
+raises instead (RED's `refuseViaRing`, and PO-3's whole point):
+
+    $ bash scripts/mutate.sh src/server/seats/Projection.luau \
+        's|if not isSeated(assignment, playerId) then|if false then|' -- lune run test
+      FAIL  tests/server/projection_test.luau :: AC-5: a player not in the assignment is refused by Projection itself - the error names the module and the player, is not Ring's, and blames the caller
+    220 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte …) ===
+
+**Measured: AC-5 alone. Predicted: AC-5 alone. Match.**
+
+**Predicted AC-1 alone** — `supplierId` read from the wrong side of the ring,
+which is the one error `Ring.luau`'s header says the ring's structure cannot catch:
+
+    $ bash scripts/mutate.sh src/server/seats/Projection.luau \
+        's|supplierId = Ring.supplierOf(assignment, playerId),|supplierId = Ring.dependentOf(assignment, playerId),|' -- lune run test
+      FAIL  tests/server/projection_test.luau :: AC-1: the view for p is exactly p's own keyClass, own lensClass, supplierId, dependentId, playerId and a fresh seatOrder - and nothing else
+    220 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte …) ===
+
+**Measured: AC-1 alone. Predicted: AC-1 alone. Match.**
+
+Both counts match, so the table is evidence rather than a claim, and the two
+single-assertion catches are genuinely single. The suite was `221 passed, 0 failed`
+before and after, and `.claude/state/mutations/` holds no `.bak`, which is how
+`mutate.sh` reports a restore that failed.
+
+
+### Two more mutations: the guard, and the leak itself
+
+The two above confirm RED's predicted *counts*. Two things they do not touch, both
+run here for the same reason the rest of this section exists.
+
+**AC-4 had never been observed to fire against the real module.** RED's AC-4
+controls ran the matcher over a synthetic text and over `Ring.luau`; the guard had
+never seen `Projection.luau` itself contain a banned symbol. So:
+
+    $ bash scripts/mutate.sh src/server/seats/Projection.luau \
+        's|local seatOrder: { Ring.PlayerId } = {}|local seatOrder: { Ring.PlayerId } = table.clone({})|' \
+        -- lune run test
+      FAIL  tests/server/projection_test.luau :: AC-4: Projection.luau builds its result field by field - no table.clone, table.move, table.pack, table.unpack, table.freeze, Deep.copy, pairs, next or setmetatable anywhere in it
+    220 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte …) ===
+
+**AC-4 alone, and the mutation changes no behaviour whatsoever** —
+`table.clone({})` returns `{}`, so the loop that follows appends to the same empty
+list and every view is byte-identical. Every behavioural assertion stayed green
+and only the structural guard caught it. That is the case AC-4 was written for and
+the case no other criterion can reach: `architecture.md` D8's copy arriving in a
+file where it happens to be harmless *today*, which is precisely how the M3 field
+would leak.
+
+**And the leak the story exists to prevent** — σ replicated to a client:
+
+    $ bash scripts/mutate.sh src/server/seats/Projection.luau \
+        's|seatOrder = seatOrder,|seatOrder = seatOrder, sigma = assignment.sigma,|' \
+        -- lune run test
+      FAIL  tests/server/projection_test.luau :: AC-1: … and nothing else
+      FAIL  tests/server/projection_test.luau :: AC-3: every field of the private Assignment is allowlisted or absent …
+      FAIL  tests/server/projection_test.luau :: AC-6: … neither view carries the other's key class or σ in any form …
+      FAIL  tests/server/projection_test.luau :: naive: the view has no sigma key and has a keyClass key
+    217 passed, 4 failed
+    === mutate: command exited 1; restored (verified byte-for-byte …) ===
+
+Four assertions, from four different directions. `roles.md` §6's property — "a
+client that can read another player's lens is not cheating at a scoreboard, it has
+deleted the game" — is defended by the suite and not merely by the current shape
+of the code.
+
+Baseline after all five mutations: **`221 passed, 0 failed`**, and
+`.claude/state/mutations/` holds **zero** `.bak` files.
+
+### What the orchestrator verified rather than accepted on report
+
+- `lune run test` → **`221 passed, 0 failed`**, run here, not quoted from GREEN.
+- `bash scripts/gates.sh --fast` → every required gate green, including the line
+  **`changes: 1 changed source path(s), all exercised by a required gate`**. That
+  is the check that catches a story whose artifact no required gate reads, and it
+  is the reason `required_gates` was confirmed empty at PLANNED rather than
+  assumed.
+- `src/server/seats/Projection.luau` read in full against the pinned contract:
+  one `require("./Ring")`, no redeclared types, membership checked before any
+  `Ring` call with `error(…, 2)`, `seatOrder` built by a `table.insert` loop, and
+  no banned symbol as code. Every PO block honoured.
+- GREEN reported **no escalations** and every PO decision holding when probed —
+  including PO-7, which it reproduced a third time with its own selene probe.
+
+### The `unit` floor
+
+Raised **197 → 221** in `.claude/harness/project.conf`, with the reason recorded
+in that file's own comment block as every previous raise was. This is the Lead PO's
+edit, noted as such at PLANNED and left alone by both developers.
