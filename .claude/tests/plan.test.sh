@@ -286,4 +286,120 @@ plan write T-40 >/dev/null
 assert_eq "writing it again replaces rather than appends" 1 \
   "$(grep -c '^| RED ' "$FIX/docs/backlog/stories/T-40.md")"
 
+# ---------------------------------------------------------------------------
+describe "a write preserves the story's own guidance"
+
+# `## Model guidance` is not a generated section with a generated section's
+# rules. rules.md sends authors INTO it: "A story that wants a different answer
+# says so in its own `## Model guidance` with a success condition that could
+# come out either way - it does not edit the policy file." It also asks the
+# orchestrator to record, under the table, what each dispatch RESOLVED to.
+#
+# So the section holds two things with different owners, and `plan write`
+# replaced the whole of it with the rendered policy - deleting the brief and the
+# success condition the rules had just told the author to put there, and the
+# resolved record with them. Reproduced against NET-001 on 2026-09-21: a RED
+# brief and a `**Success condition:**` line went in, `plan write` ran, and
+# `git diff` showed both gone.
+#
+# The generated region is now fenced by markers. Everything outside them in that
+# section belongs to whoever wrote it and survives the rewrite.
+
+# guidance <id>   The body of the story's `## Model guidance` section.
+guidance() {
+  awk '/^## Model guidance/{on=1;next} on&&/^## /{exit} on{print}' \
+    "$FIX/docs/backlog/stories/$1.md"
+}
+
+# put_guidance <id>   Body on stdin, placed under that heading.
+put_guidance() {
+  local f="$FIX/docs/backlog/stories/$1.md" body; body="$(cat)"
+  awk -v body="$body" '/^## Model guidance/ { print; print ""; print body; next } { print }' \
+    "$f" > "$f.new" && mv "$f.new" "$f"
+}
+
+ordinary T-50
+put_guidance T-50 <<'EOF'
+Brief RED that this is the adversarial story of the backlog: the valuable test
+is not that a valid call is accepted but that four wrong ones are refused.
+
+**Success condition:** the AC-5 control fails against a plausible wrong
+implementation, demonstrated in the handoff rather than described.
+EOF
+plan write T-50 >/dev/null
+body="$(guidance T-50)"
+assert_contains "the story's own brief survives the write" \
+  "adversarial story of the backlog" "$body"
+assert_contains "and the success condition rules.md asks for with it" \
+  "**Success condition:**" "$body"
+# The preservation is worth nothing if it cost the thing being preserved around.
+assert_contains "while the rendered plan is still written" "| RED |" "$body"
+assert_contains "with the model for each phase" "fable" "$body"
+
+# Re-running is the case that produced the loss: the orchestrator runs this
+# again after amending the contract. Replacing the generated region must not
+# mean replacing the section, and must not mean a second copy of either half.
+plan write T-50 >/dev/null
+assert_eq "writing again does not duplicate the preserved prose" 1 \
+  "$(grep -c 'adversarial story of the backlog' "$FIX/docs/backlog/stories/T-50.md")"
+assert_eq "nor the success condition" 1 \
+  "$(grep -c 'Success condition' "$FIX/docs/backlog/stories/T-50.md")"
+assert_eq "nor the plan table" 1 \
+  "$(grep -c '^| RED ' "$FIX/docs/backlog/stories/T-50.md")"
+
+# A section written by the OLD writer has no markers, and stale policy rows in
+# it are genuinely generated content - they must go, or the story ends up
+# carrying two answers to the same question. Everything around them stays.
+ordinary T-51
+put_guidance T-51 <<'EOF'
+Planned by `bash scripts/plan.sh write T-51` from `.claude/harness/models.conf`.
+A PLAN, not a record: a session setting or an explicit override can beat both
+this and the agent's own `model:` field, and nothing here can see which won.
+
+| Phase | Agent | Planned | Why |
+|---|---|---|---|
+| RED | `test-developer` | `sonnet` | a stale row from an earlier run |
+
+**Resolved:**
+
+RED dispatched and resolved to fable.
+
+This story argues for something different, and here is the argument.
+EOF
+plan write T-51 >/dev/null
+body="$(guidance T-51)"
+assert_contains "an unmarked section's prose survives too" \
+  "argues for something different" "$body"
+assert_contains "and the resolved record, which is not a plan" \
+  "RED dispatched and resolved to fable." "$body"
+assert_eq "while the stale policy row is replaced rather than kept" 0 \
+  "$(grep -c 'a stale row from an earlier run' "$FIX/docs/backlog/stories/T-51.md")"
+assert_eq "leaving exactly one row per phase" 1 \
+  "$(grep -c '^| RED ' "$FIX/docs/backlog/stories/T-51.md")"
+
+# THE CONTROL for the rule above, and the reason it keys on the plan table's own
+# header rather than on a leading pipe. An author who tabulates their negative
+# controls in this section writes markdown table rows too, and a stripper that
+# ate every line starting with `|` would delete them and pass every assertion
+# above.
+ordinary T-52
+put_guidance T-52 <<'EOF'
+The controls this story turns on, and what each is expected to report:
+
+| Control | Expected |
+|---|---|
+| a call from a player who is not seated | rejected |
+EOF
+plan write T-52 >/dev/null
+body="$(guidance T-52)"
+assert_contains "a table the author wrote is not the generated one" \
+  "a call from a player who is not seated" "$body"
+assert_contains "and its header survives as well" "| Control | Expected |" "$body"
+
+# Nothing outside the section moves, on any of these.
+assert_contains "the criteria are untouched" "**AC-1**" \
+  "$(cat "$FIX/docs/backlog/stories/T-51.md")"
+assert_contains "and so is the contract" "buildWorld" \
+  "$(cat "$FIX/docs/backlog/stories/T-51.md")"
+
 summary "plan"

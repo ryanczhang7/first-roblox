@@ -128,8 +128,9 @@ cat >> "$file" <<'TEMPLATE'
 <!-- FILLED BY A TOOL, not by hand: `bash scripts/plan.sh write <id>`, as the
      last step of PLANNED once the ## Contract exists. It renders the per-phase
      plan from .claude/harness/models.conf with the reason for each row. Run it
-     again after amending the contract; it replaces the section rather than
-     appending to it.
+     again after amending the contract; it rewrites only the region between the
+     `plan.sh:generated` markers. Everything you write OUTSIDE them in this
+     section is preserved - that is where the two halves below belong.
 
      Not at story creation: the plan depends on the contract, and the "no
      contract, so RED stays on the stronger model" exception would be baked in

@@ -33,6 +33,9 @@ are easy to leave empty by default:
   Departing from the plan is allowed and needs a success condition that could
   come out either way, written in the same section — the plan is what stops the
   question being re-asked every story, not a rule that the answer never changes.
+  Re-running it is safe: it rewrites only the region between the
+  `plan.sh:generated` markers, so the departure, its success condition and the
+  resolved record all survive.
 
 Finally, report the story id and what `bash scripts/plan.sh <id>` recommends —
 `advance-story` or `complete-story` — with its reason. Do not put that question
