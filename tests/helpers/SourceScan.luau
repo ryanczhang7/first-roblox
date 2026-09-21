@@ -433,6 +433,79 @@ function SourceScan.hitsIn(path: string, text: string, symbols: { string }): { H
 end
 
 --[[
+	Every place one of `symbols` appears AS A MEMBER OR A WORD in `text` - the
+	sibling of `hitsIn` that NET-001 AC-7 needs, and deliberately not a change
+	to it.
+
+	`hitsIn` was built for ROUND-001's globals, where a field access is NOT a
+	hit: it rejects any match preceded by `.` or `:`, so that `self.tick` is a
+	field and not the global. AC-7's three needles - `OnServerEvent`,
+	`OnServerInvoke`, `.OnClientEvent` - are all member accesses, so `hitsIn`
+	scores zero on every one of them. Measured by the Lead PO at PLANNED and
+	re-measured in RED over a four-line sample: 0, 0, 0. A guard reusing
+	`hitsIn` would report green over a tree in which every module connects a
+	raw remote. Two frozen test files depend on `hitsIn` staying as it is, so
+	this is a second matcher rather than a flag on the first.
+
+	The rule here is the simpler one: a symbol counts wherever it stands as a
+	whole word in CODE. `remote.OnServerEvent:Connect(...)`,
+	`fn.OnServerInvoke = function ... end`, `local s = r.OnClientEvent` and
+	`{ OnServerEvent = signal }` are all hits; `OnServerEvents`,
+	`MyOnServerEvent` and `OnServerEventHandler` are not. A symbol that starts
+	with `.` is matched with the dot, so `.OnClientEvent` does not fire on a
+	bare identifier `OnClientEvent`. Being assigned to is a hit, unlike
+	`hitsIn`: `remote.OnServerInvoke = function` is exactly the offence.
+
+	Comments and string literals are blanked by `codeOnly` first, as for
+	`hitsIn`, so `architecture.md`'s sentence about the rule is not an offence
+	and `remote["OnServerEvent"]` is invisible - the same limit `hitsIn`
+	documents, stated here so nobody assumes otherwise.
+]]
+function SourceScan.memberHitsIn(path: string, text: string, symbols: { string }): { Hit }
+	local hits: { Hit } = {}
+	local lines = string.split(SourceScan.codeOnly(text), "\n")
+
+	for lineNumber, line in lines do
+		for _, symbol in symbols do
+			local dotted = string.sub(symbol, 1, 1) == "."
+			local from = 1
+			while true do
+				local s, e = string.find(line, symbol, from, true)
+				if s == nil then
+					break
+				end
+				local start = s :: number
+				local finish = e :: number
+				-- A dotted symbol supplies its own left boundary: whatever is
+				-- before the `.` is the object, and that is the point.
+				local okBefore = dotted
+					or start == 1
+					or not isIdentByte(string.byte(line, start - 1))
+				local okAfter = not isIdentByte(string.byte(line, finish + 1))
+				if okBefore and okAfter then
+					table.insert(hits, { path = path, line = lineNumber, symbol = symbol })
+				end
+				from = finish + 1
+			end
+		end
+	end
+
+	return hits
+end
+
+-- `scanFor` with the member matcher: every member reference to `symbols`
+-- across `paths`, accumulated and asserted once by the caller.
+function SourceScan.scanForMembers(paths: { string }, symbols: { string }): { Hit }
+	local hits: { Hit } = {}
+	for _, path in paths do
+		for _, hit in SourceScan.memberHitsIn(path, fs.readFile(path), symbols) do
+			table.insert(hits, hit)
+		end
+	end
+	return hits
+end
+
+--[[
 	Every AC-5 violation in `text`, attributed to `path`.
 
 	`path` decides ownership: the two adapters are allowed to say their own
