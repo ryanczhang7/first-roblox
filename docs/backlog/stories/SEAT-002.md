@@ -4,8 +4,8 @@ title: A replicated seat view contains nothing of anyone else's
 slug: a-replicated-seat-view-contains-nothing
 epic: EPIC-02
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/SEAT-002-a-replicated-seat-view-contains-nothing
 depends_on: [SEAT-001]
 required_gates: []
