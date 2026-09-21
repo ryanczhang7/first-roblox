@@ -5,7 +5,7 @@ slug: a-replicated-seat-view-contains-nothing
 epic: EPIC-02
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/SEAT-002-a-replicated-seat-view-contains-nothing
 depends_on: [SEAT-001]
 required_gates: []
@@ -843,6 +843,84 @@ format gate's awk — the probe hides files from one counter and only that
 counter's literal fires, which is what makes the literal a measurement rather
 than a pattern.
 
+### `.claude/tests/project-counters.test.sh`: literals moved 47 → 48 / 8 → 9 (GREEN)
+
+GREEN added one source file and no test file, so the counts the `harness` gate
+pins moved: `BASE_FORMAT`/`BASE_LINT` 47 → 48, `BASE_TYPECHECK` 8 → 9,
+`NARROW_FORMAT`/`NARROW_LINT` 8 → 9. `NARROW_TYPECHECK` stays **5** — it is
+`src/shared` alone and `Projection.luau` is `src/server`. The nine assertion
+labels and the three narrowing labels carrying those numbers moved with them,
+and the header's LAST MEASURED paragraph now names this story's GREEN.
+
+**Read from the gates' own evidence lines**, not counted by hand, exactly as
+RED and SEAT-001 did — `bash scripts/gates.sh --fast` reported `stylua over 48
+files`, `selene over 48 files`, `analyze over 9 files`, and the two narrowed
+targets were run as the suite narrows them (`src tests lune` → `src`, `src` →
+`src/shared`), giving `stylua over 9 files`, `selene over 9 files`, `analyze
+over 5 files`.
+
+**Before**, with `Projection.luau` on disk and the literals still at 47/8:
+
+    FAIL format reports 47 files on the unmodified tree
+         expected count: 47
+         actual count:   48
+    FAIL lint reports 47 files on the unmodified tree
+         expected count: 47
+         actual count:   48
+    FAIL typecheck reports 8 files on the unmodified tree
+         expected count: 8
+         actual count:   9
+    ... and the narrowing and untracked/ignored cases for all three
+    project-counters: 25 passed, 15 failed
+
+**After** the literals and labels moved:
+
+    project-counters: 39 passed, 1 failed
+
+The one remaining failure is the same stray-file precondition RED ended on —
+`?? src/server/seats/Projection.luau`, untracked until the GREEN commit. It
+clears on a clean tree; the run after committing is below under
+`## Handoff: GREEN -> GATES`.
+
+**The probe**, because a corrected literal is green the moment it is written.
+The same shape RED used: hide the `Projection*` files from the **format**
+gate's counter through `mutate.sh`, and watch exactly the corrected format
+literals go red while the lint and typecheck ones stay green.
+
+    $ bash scripts/mutate.sh .claude/harness/project.conf \
+        's|{n++; next}|{if ($0 !~ /Projection/) n++; next}|' \
+        -- bash .claude/tests/project-counters.test.sh
+    === mutate: .claude/harness/project.conf (1 line(s) changed by s|{n++; next}|{if ($0 !~ /Projection/) n++; next}|) ===
+    === mutate: running bash .claude/tests/project-counters.test.sh ===
+        FAIL the working tree carries no stray .luau files, so the baselines mean what they say
+        FAIL format reports 48 files on the unmodified tree
+             expected count: 48
+             actual count:   45
+        FAIL narrowing the format target to src reports 8, not 47
+             expected count: 9
+             actual count:   8
+        FAIL AC-2: format counts the untracked file (48 -> 49)
+             expected count: 49
+             actual count:   46
+        FAIL format does not count the ignored file (still 48)
+             expected count: 48
+             actual count:   45
+    project-counters: 35 passed, 5 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/.claude_harness_project.conf.20260921T000158Z.1335610.bak) ===
+
+The mutation hides **three** files (48 → 45), not one: `Projection.luau`,
+`ProjectionContract.luau` and `ProjectionStubs.luau` all match `/Projection/`,
+while the two lowercase `projection_*_test.luau` files do not. The narrowed
+case is the sharper half — `src` alone loses exactly one file, 9 → 8, which is
+the `NARROW_FORMAT` literal this story moved, firing on its own. `lint` and
+`typecheck` stayed green throughout because the mutation touches one gate's
+awk, which is what makes each literal a measurement of one counter rather than
+a pattern shared between them.
+
+(The two narrowing labels still read "not 47" in that run; they were renamed to
+"not 48" immediately after, with the typecheck one to "not 9". The plain run
+above is with the renamed labels.)
+
 ---
 
 ## Orchestrator's RED acceptance (PO-8)
@@ -881,3 +959,162 @@ The prediction that still matters is the shape of the claim, and it is unchanged
 mutation 3 (`{}` for an unknown player) must fire **AC-5 alone**, and `refuseViaRing`
 must fire **AC-5 alone** — two single-assertion catches, which is where a vacuous
 test would hide.
+
+---
+
+## Handoff: GREEN -> GATES
+
+**Dispatch.** GREEN ran on **claude-opus-5** (`Opus 5`), which is what the plan
+in `## Model guidance` asks for. No per-dispatch override was named to me; if one
+was passed it resolved to the same model, and the name above is what this session
+reports for itself rather than what the agent file declares.
+
+### The file written
+
+| File | What it is |
+|---|---|
+| `src/server/seats/Projection.luau` | the whole story: `Projection.forPlayer(assignment, playerId) -> PublicSeatView`, an allowlist built field by field |
+| `.claude/tests/project-counters.test.sh` | `harness`, writable in GREEN: the counter literals 47/47/8 -> 48/48/9 and narrow 8/8 -> 9/9. See `## Regressions` |
+| `docs/backlog/stories/SEAT-002.md` | this section and the GREEN entry under `## Regressions` |
+
+Nothing else under `src/`. No dependency added. No test file touched - `git status`
+before the commit was exactly `?? src/server/seats/Projection.luau`,
+`M .claude/tests/project-counters.test.sh`, `M docs/backlog/stories/SEAT-002.md`.
+
+### Why it is shaped the way it is
+
+- **`local Ring = require("./Ring")`, the only `require` in the file** (PO-1, and
+  AC-4's third test counts them). `PublicSeatView` uses `Ring.PlayerId` and
+  `Ring.KeyClass`; `forPlayer` takes `Ring.Assignment`. Nothing is redeclared.
+- **The three ring relations are read through `Ring`** - `Ring.lensOf`,
+  `Ring.supplierOf`, `Ring.dependentOf`. No inverse-sigma here, for the reason
+  `Ring.luau`'s header gives: direction is the one error the ring's structure
+  cannot catch, and a second implementation of it in this file would be free to
+  disagree with the first.
+- **The refusal is Projection's own and it comes first** (PO-3, AC-5). A local
+  `isSeated` scans `assignment.players` and `error(..., 2)` is raised before any
+  `Ring` call, so `Ring.supplierOf`'s own refusal is never what the caller sees.
+  Written as a loop rather than `table.find` so the `nil` stranger AC-5 asks about
+  is *answered* rather than turned into `table.find`'s own argument error - which
+  would name neither this module nor the player.
+- **`seatOrder` is a `table.insert` loop** (PO-2, PO-7), so AC-4's ban can stay
+  flat. The assignment's own `players` table is never handed out and never cloned.
+- No banned symbol appears as code: no `table.clone`, `table.move`, `table.pack`,
+  `table.unpack`, `table.freeze`, `Deep.copy`, `pairs`, `next` or `setmetatable`.
+  The doc comment names three of them, which the guard blanks before matching -
+  `SourceScan.codeOnly` is what makes documenting the rule safe.
+
+### The three confirmations, measured against the shipped module
+
+All three were measured with a throwaway script under `build/` (gitignored, since
+deleted) that requires `ProjectionContract` and the **real** module, counts each
+property per case itself, and prints the contract's own counters out of a
+deliberately-leaky wrapper. Recorded-vs-measured:
+
+| What RED recorded | Measured in GREEN | Verdict |
+|---|---|---|
+| baseline: 144 (n, seed, p) cases | `cases (n, seed, p): 144` | **identical** |
+| baseline: 144/144 views clean | `AC-1 exact-allowlist diff clean: 144/144`; `AC-1 seatOrder not the assignment's: 144/144`; `AC-2 exactly two integer leaves: 144/144`; `AC-2 no foreign keyClass leaf: 144/144`; `AC-3 no sigma/players/keyClass table: 144/144`; `AC-6 seatOrder IS the ring order in: 0/123` | **identical** |
+| AC-6 discriminating: **123 of 144** | `AC-6 discriminating (seat ~= ring): 123/144`, computed independently; and the contract's **own** counter over the shipped module's views reported `(123 cases where the seat order and the ring order differ)` | **identical, by two independent routes** |
+| AC-2 control passes naive, fails AC-2 on 144/144 | `AC-2 control: naive passes = true; AC-2 passes = false`, message `AC-2: another player's key class appears in the flattened view in 144 of 144 views: n = 3, seed 2001, view of kim: keyClass[zed] = 2 at view.keyClass.zed; 3 integer-valued scalar(s)` | **identical**, down to the quoted case |
+
+The AC-6 number was taken twice on purpose. Once from my own
+`ringOrderFrom`/`isRotationOf` (an independent instrument - 123), and once from
+`ProjectionContract`'s own counter, forced to print by handing
+`pairwiseViewsRevealNothingOfEachOther` a wrapper that delegates to the real
+`forPlayer` and adds one leaked `supplierClass`: `AC-6: ... in 144 of 144 views
+(123 cases where the seat order and the ring order differ)`. The second route
+matters because it is the counter the suite's `discriminating >= 100` vacuity
+floor actually reads.
+
+**Every other row of RED's control table is re-confirmed by the suite itself**,
+not merely by "the tests pass": the control assertions carry the measured numbers
+as literal needles - `in 144 of 144 views`, `in 123 of 144 views (123 cases
+where`, `in 32 of 32 views at n = 4`, `3 integer-valued` - so the 14 green
+control tests are the measurement. They ran in RED against the stubs and they run
+unchanged now with the real module present.
+
+### The named mechanisms, checked rather than taken
+
+- **`Ring.supplierOf` raises for a stranger, and my check runs first.** Measured:
+  `Ring.supplierOf("sam")` -> `Ring.supplierOf: sam has no supplier - is that
+  player seated?`, while `Projection.forPlayer(a, "sam")` -> `Projection.forPlayer:
+  sam is not seated in this assignment`. Same for `"KIM"` and for `nil` (`nil` is
+  rendered, as AC-5 requires). PO-3 holds as stated.
+- **Level 2 attributes the refusal to the caller.** Called through a Luau function
+  rather than straight from `pcall`, so a location prefix exists to read:
+  `build/seat002_level:9: Projection.forPlayer: sam is not seated in this
+  assignment` - the call site, not `seats/Projection`. AC-5's
+  `[/\\]Projection$` needle is therefore live rather than decorative, and
+  RED's mutation row 5 (`error(..., 2)` -> `error(..., 1)`) will fire.
+- **PO-7 reproduced a third time, with my own probe** under `build/` and the same
+  `selene 0.31.0` the gate uses:
+
+      warning[manual_table_clone]: manual implementation of table.clone
+        > build/__probe_seat002_lint.luau:3:2
+      3 |     local out = {}
+      4 |     for i, id in players do
+      5 |         out[i] = id
+      6 |     end
+        = try `local out = table.clone(players)`
+      Results: 0 errors, 1 warnings
+      selene exit: 1
+
+  The `table.insert` variant in the same file drew nothing. The suggested fix is
+  the banned construct, and `selene` exits 1 on the warning, so the required
+  `lint` gate would have failed on the indexed loop. The decision was taken as
+  written; no `-- selene: allow(...)` was added.
+- **`SourceScan.hitsIn`'s ban list versus what I wrote.** Nothing in the module
+  trips it: generalised `for _, x in assignment.players do` uses no `pairs`,
+  `table.insert` and `tostring` are outside the ban, and `ipairs` is not used at
+  all (it would have been safe - the matcher's word-boundary rule rejects `pairs`
+  inside `ipairs` - but not using it removes the question). AC-4's own test is the
+  evidence: it is green, over a file list that provably contains its subject.
+
+### Commands, in the order they were run
+
+    $ lune run test
+    221 passed, 0 failed
+
+(211 passed / 10 failed on arrival, reproduced before writing anything; the ten
+were the seven `pcall`'d requires and PO-4's three vacuity assertions, exactly as
+RED recorded. 221 = 211 + the 10 that were red.)
+
+    $ bash scripts/gates.sh --fast
+    PASS         format (0s, observed 48)
+    PASS         lint (1s, observed 48, floor 1)
+    PASS         typecheck (3s, observed 9)
+    PASS         unit (21s, observed 221, floor 197)
+    UNCONFIGURED coverage
+    PASS         build (0s, observed 28826)
+    FAIL         harness (20s, exit 1)
+
+The `harness` failure at that point was the single stray-file assertion naming
+`?? src/server/seats/Projection.luau` - `project-counters: 39 passed, 1 failed`,
+the same precondition RED ended on, which only a commit can clear. It was
+committed and the suite re-run on the clean tree before the recorded full run;
+see `## Gate results` for that run, written by `gates.sh` itself.
+
+Nothing failed on a timeout, a threshold or a config error. `unit` ran 221 cases
+under the gate in 21 s; the `classify.sh` shell-out is still ~1 s, cached per
+pathspec, and the three AC-4 tests share one cached answer.
+
+### What I could not verify, and what is not mine
+
+- **`unit`'s floor is still 197** while the real count is 221. Not my edit:
+  `project.conf` is the Lead PO's at GATES, per `## Orchestrator checks at
+  PLANNED`. The gate passes today because 221 > 197; the floor is simply loose.
+- **`## Deferred verifications` is untouched.** Its owner is GATES and it says so.
+- **The mutation table is untouched.** GATES runs those against the shipped file.
+  What GREEN can say about them for free: mutation 5's needle is live (the level-2
+  measurement above), and mutations 1, 6, 7 and 10 all name constructs that are
+  absent from the file as written, so each is a real edit rather than a no-op.
+- **No CI timing exists for this suite size**; the 21 s `unit` figure is this
+  machine under instrumentation-free `--fast`, and `coverage` is unconfigured, so
+  there is no instrumented run to budget against. Unchanged from RED's note.
+- **No escalation.** Nothing in the frozen tests looked wrong, no criterion needed
+  amending, and every PO decision held up when checked. The one imperfection worth
+  naming in review: RED left two narrowing labels in the counters suite reading
+  "not 47" after moving the literals they describe; I renamed them along with the
+  numbers this story moved, and the probe above was run with the stale text
+  visible, which is why it appears in that output.
