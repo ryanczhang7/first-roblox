@@ -235,33 +235,90 @@ cmd_both() {
 
 # --- writing the plan into the story ----------------------------------------
 
+# The generated region's fence. `## Model guidance` has three owners, not one:
+# this command renders the policy into it, rules.md sends the AUTHOR into it -
+# "a story that wants a different answer says so in its own `## Model guidance`
+# with a success condition that could come out either way" - and it asks the
+# orchestrator to record underneath what each dispatch RESOLVED to. A writer
+# that replaced the whole section replaced all three, and that is what this one
+# did: NET-001 lost a RED brief and its success condition to a re-run, with
+# nothing but `git diff` to say so.
+GEN_BEGIN='<!-- plan.sh:generated:begin -->'
+GEN_END='<!-- plan.sh:generated:end -->'
+
+# strip_generated   A section body on stdin; what a person wrote on stdout.
+#
+# Between the markers when they are there. For a section written before they
+# existed, the two shapes the old writer emitted: its preamble paragraph, and
+# its table. The table is matched on ITS OWN HEADER rather than on a leading
+# pipe - an author who tabulates the story's negative controls in this section
+# writes table rows too, and a stripper that ate every line starting with `|`
+# would delete them while every assertion about prose still passed.
+strip_generated() {
+  awk -v b="$GEN_BEGIN" -v e="$GEN_END" '
+    $0 == b { g = 1; next }
+    g { if ($0 == e) g = 0; next }
+    index($0, "Planned by `bash scripts/plan.sh write") == 1 { p = 1; next }
+    p { if ($0 ~ /^[[:space:]]*$/) p = 0; next }
+    index($0, "| Phase | Agent | Planned | Why |") == 1 { t = 1; next }
+    t { if (index($0, "|") == 1) next; t = 0 }
+    { print }
+  ' | awk '
+    /^[[:space:]]*$/ { blank = 1; next }
+    { if (seen && blank) print ""; seen = 1; blank = 0; print }
+  '
+}
+
 # Run at the END of PLANNED, once the contract exists. Not at creation: the
 # no-contract exception would be baked in before anybody had a chance to write
 # one, and a plan that is wrong the moment it is written is worse than none.
 #
-# It replaces the section rather than appending to it, because the orchestrator
-# re-runs this after amending the contract and a section that grew a copy each
-# time would be read as a history of decisions nobody made.
+# It replaces the generated REGION, not the section. The orchestrator re-runs
+# this after amending the contract, so a region that grew a copy each time would
+# read as a history of decisions nobody made - but everything outside the
+# markers belongs to whoever wrote it and is carried through untouched.
 cmd_write() {
   local id="$1" file; file="$(story_file "$id")"
   local tmp="$ROOT/.claude/state/plan-write.$$.md"
   mkdir -p "$ROOT/.claude/state"
 
+  # A variable rather than a second scratch file: everything under
+  # .claude/state is accounted for in its README, with a column saying whether
+  # its contents are read as evidence, and a file that is neither evidence nor
+  # worth a row is a file better not created.
+  local keep; keep="$(section "$file" "Model guidance" | strip_generated)"
+
+  # Whether the author already has a `**Resolved...` heading, so that re-running
+  # does not lay a second one on top of it. `case`, not `grep -q`: a pipe into a
+  # command that exits at the first match kills the writer with SIGPIPE, and
+  # `pipefail` turns that into a false answer - the defect `has_content` above
+  # carries a paragraph about.
+  local NL resolved=0; NL=$'\n'
+  case "$keep" in '**Resolved'*|*"${NL}**Resolved"*) resolved=1 ;; esac
+
   {
     printf '## Model guidance\n\n'
+    printf '%s\n' "$GEN_BEGIN"
     printf 'Planned by `bash scripts/plan.sh write %s` from `.claude/harness/models.conf`.\n' "$id"
     printf 'A PLAN, not a record: a session setting or an explicit override can beat both\n'
     printf 'this and the agent'"'"'s own `model:` field, and nothing here can see which won.\n'
     printf 'The orchestrator still writes down the model each dispatch **resolved** to, by\n'
-    printf 'name, below the table.\n\n'
+    printf 'name, below the table. Only what lies BETWEEN these two markers is rewritten when\n'
+    printf 'this command runs again; the rest of the section is yours and is preserved.\n\n'
     printf '| Phase | Agent | Planned | Why |\n|---|---|---|---|\n'
     cmd_models "$id" | while IFS="$(printf '\t')" read -r ph agent model why; do
       printf '| %s | `%s` | `%s` | %s |\n' "$ph" "$agent" "$model" "$why"
     done
-    printf '\n**Resolved:**\n\n'
-    printf -- '<!-- One line per dispatch, as it happened: phase, agent, the model that\n'
-    printf -- '     actually ran, and — if a phase was planned for one model and ran on\n'
-    printf -- '     another — what that changed. A choice with no verdict is folklore. -->\n'
+    printf '%s\n' "$GEN_END"
+
+    [ -n "$keep" ] && printf '\n%s\n' "$keep"
+    if [ "$resolved" = 0 ]; then
+      printf '\n**Resolved:**\n\n'
+      printf -- '<!-- One line per dispatch, as it happened: phase, agent, the model that\n'
+      printf -- '     actually ran, and — if a phase was planned for one model and ran on\n'
+      printf -- '     another — what that changed. A choice with no verdict is folklore. -->\n'
+    fi
+    printf '\n'
   } > "$tmp"
 
   awk -v planfile="$tmp" '
@@ -270,7 +327,12 @@ cmd_write() {
     !skip { print }
   ' "$file" > "$file.new" && mv "$file.new" "$file"
   rm -f "$tmp"
+
   printf 'wrote the model plan into %s\n' "docs/backlog/stories/$id.md"
+  if [ -n "$keep" ]; then
+    printf '  kept %s line(s) of existing guidance from outside the generated region\n' \
+      "$(grep -c '' <<< "$keep")"
+  fi
 }
 
 case "${1:-}" in

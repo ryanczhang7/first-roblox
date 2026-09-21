@@ -142,11 +142,13 @@ None.
 
 ## Model guidance
 
+<!-- plan.sh:generated:begin -->
 Planned by `bash scripts/plan.sh write SEAT-001` from `.claude/harness/models.conf`.
 A PLAN, not a record: a session setting or an explicit override can beat both
 this and the agent's own `model:` field, and nothing here can see which won.
 The orchestrator still writes down the model each dispatch **resolved** to, by
-name, below the table.
+name, below the table. Only what lies BETWEEN these two markers is rewritten when
+this command runs again; the rest of the section is yours and is preserved.
 
 | Phase | Agent | Planned | Why |
 |---|---|---|---|
@@ -156,6 +158,22 @@ name, below the table.
 | GATES | `feature-developer` | `opus` | same risk as GREEN, and a gate failure is where "make it stop complaining" is most tempting |
 | REVIEW | `lead-po` | `opus` | reading review feedback against the contract is judgement, and a wrong call here ships |
 | SCAFFOLD | `lead-po` | `opus` | source, tests and config in one indivisible derivation, with no failing test in front of any of it |
+<!-- plan.sh:generated:end -->
+
+_Restored from `bea475b^`: the guidance below was deleted by `plan.sh write` in bea475b, which replaced the whole section instead of the generated block. Fixed in PR #20._
+
+Two things to put in the dispatch verbatim:
+
+1. **AC-5 is the criterion that catches the implementation which passes everything
+   else.** A constant ring satisfies no-fixed-point, single-cycle and seed
+   reproducibility. Without AC-5, this story could ship a generator with no variance
+   at all and the suite would be green.
+2. **AC-2's control needs enough samples.** At `n = 4` two-thirds of derangements
+   are single cycles, so a plain-derangement generator passes a one-seed test with
+   probability 2/3. State the sample size in the test and say why.
+
+**Success condition:** both controls demonstrated failing in the handoff, with the
+measured numbers — not described.
 
 **Resolved:**
 
@@ -167,6 +185,7 @@ name, below the table.
 <!-- One line per dispatch, as it happened: phase, agent, the model that
      actually ran, and — if a phase was planned for one model and ran on
      another — what that changed. A choice with no verdict is folklore. -->
+
 ## Out of scope
 
 - **Lens contents.** `Assignment` carries `σ` and key classes. The *pairings* a
