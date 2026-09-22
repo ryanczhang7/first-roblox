@@ -4,8 +4,8 @@ title: mutate.sh leaves a backup and no log when its output is piped
 slug: mutate-sh-leaves-a-backup-and-no-log-whe
 epic: 
 type: fix
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/HARNESS-012-mutate-sh-leaves-a-backup-and-no-log-whe
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -301,6 +301,56 @@ would carry. GATES may use any other recipe that restores the file and proves it
 
 Paste the result here: the expression, the red, and the restore.
 
+### Result — run at GATES by the orchestrator, 2026-09-22
+
+Run through a copy, because `mutate.sh` refuses to mutate itself; the *running*
+script is the copy and the *target* is the real one.
+
+    cp scripts/mutate.sh scripts/__mutate_probe.sh
+    bash scripts/__mutate_probe.sh scripts/mutate.sh \
+      's|rm -f "\$NEW" 2>/dev/null|rm -f "\$NEW" "\$BAK" 2>/dev/null|' \
+      -- bash scripts/selftest.sh mutate
+    rm -f scripts/__mutate_probe.sh
+
+The expression flips the cleanup at `scripts/mutate.sh:216` — the unverified
+branch inside `finish()` — from conditional to unconditional. One line changed,
+confirmed by the restored-line echo below.
+
+**The red, and it is exactly one:**
+
+```
+  a restore that cannot be verified is loud, and keeps the backup
+    FAIL and the backup is KEPT, which is what rules.md reads as the signal
+         expected: 1
+         actual:   0
+
+mutate: 75 passed, 1 failed
+
+1 of 1 harness suite(s) FAILED.
+```
+
+**The reading that matters.** Under this mutation the whole piped sweep — all 21
+assertions of AC-1, AC-2 and AC-3 — stayed **green**, and so did AC-5 and AC-6.
+An unconditional cleanup satisfies everything this story was written to fix and
+destroys the only signal the harness has for a mutation still sitting in the
+tree. Exactly one assertion stands between the fix and that outcome, and it is
+the one the Test Developer had to add in RED: the pre-existing `COULD NOT
+RESTORE` case provokes the failure by deleting the `.bak` itself, so it had
+nothing left to keep and could never have caught this.
+
+**The restore:**
+
+```
+=== mutate: command exited 1; restored (verified byte-for-byte against
+    .../.claude/state/mutations/scripts_mutate.sh.20260922T213452Z.530102.bak) ===
+  216:     rm -f "$NEW" 2>/dev/null
+```
+
+and afterwards `git diff --stat scripts/mutate.sh` is empty, no `.bak`/`.new`
+survives under `.claude/state/mutations/`, the log carries the run with
+`restored (verified)`, and `scripts/__mutate_probe.sh` is deleted —
+`git status --short` names only this story file.
+
 ## Model guidance
 
 <!-- plan.sh:generated:begin -->
@@ -360,6 +410,40 @@ criteria" — carry it into the dispatch prompt verbatim; it is the half of the
 brief that was measured to matter more than the model.
 
 **Resolved:**
+
+- **PLANNED** — `lead-po`, resolved `opus` (`claude-opus-5`). As planned.
+- **RED** — `test-developer`, resolved `opus` (`claude-opus-5`). The departure
+  above; no override was passed, so the agent definition's own `model: opus`
+  is what resolved it.
+- **GREEN** — `feature-developer`, resolved `opus` (`claude-opus-5`). As planned.
+- **GATES** — orchestrator ran the deferred control and the gates directly,
+  `opus` (`claude-opus-5`); no `feature-developer` dispatch was needed, because
+  every required gate passed on the first run.
+
+**Verdict on the RED departure: the departure bought nothing observable, and the
+next harness-only story should take the `fable` row and save the cost.** The
+success condition was written to come out either way and came out on the "no
+difference" side, in full:
+
+- `git status --short` at the end of RED named `.claude/tests/mutate.test.sh`
+  and this story file and nothing else, and `git diff --stat scripts/mutate.sh`
+  was empty — checked by the orchestrator, not reported by the agent. The lock
+  would have permitted the write; it was not taken.
+- The handoff's control table names AC-4's unconditional-cleanup mutation as the
+  control on the fix's shape, and declines it explicitly as GATES's.
+
+One thing the departure did produce, which is *not* attributable to the model
+and so does not change the verdict: RED found that the pre-existing `COULD NOT
+RESTORE` case deletes its own `.bak`, so "the backup is kept" was unasserted and
+the control could not have fired. That came from reading the existing suite
+against the criteria, which is what the brief asked for.
+
+**The real repair is `plan.sh`'s detector, not this story's model row** — as the
+departure predicted. `contract_unenforced()` greps every path-shaped token out
+of the `## Contract`, and one `source`-classified mention (`src/main.ts`, a
+throwaway fixture file this story never writes) suppressed the `unenforced`
+exception. The suppression falls on the weak side for precisely the stories the
+lock does not protect. Filed separately; not widened into this story.
 
 <!-- One line per dispatch, as it happened: phase, agent, the model that
      actually ran, and — if a phase was planned for one model and ran on
@@ -770,19 +854,19 @@ they are recorded here instead of as an amendment.
 
 <!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
 
-    run:    2026-09-22T20:03:00Z
-    commit: 97deb03 (working tree had uncommitted changes)
+    run:    2026-09-22T21:51:18Z
+    commit: e0cc9f4
     tree:   ce1cc65bc181a038267412ef20fc97efbff80fdc
     result: pass (6 ran, 3 unconfigured, 0 known)
 
     PASS         format (1s, observed 79)
     PASS         lint (1s, observed 79, floor 1)
-    PASS         typecheck (3s, observed 16)
-    PASS         unit (40s, observed 355, floor 355)
+    PASS         typecheck (5s, observed 16)
+    PASS         unit (82s, observed 355, floor 355)
     UNCONFIGURED coverage
     UNCONFIGURED integration
-    PASS         build (0s, observed 47816)
-    PASS         harness (25s, observed 40)
+    PASS         build (1s, observed 47816)
+    PASS         harness (37s, observed 40)
     UNCONFIGURED mutation
 
 ## Notes
