@@ -11,7 +11,7 @@
 	    1. identity - is the sender a seated player in this round?
 	    2. shape    - arity and types
 	    3. range    - numeric domains
-	    4. phase    - NET-002
+	    4. phase    - is the action legal in the round's current phase?
 	    5. rate     - NET-003
 
 	So an unseated player sending a malformed payload is rejected for
@@ -34,8 +34,9 @@
 
 	THE CONTEXT IS INJECTED - no `Players`, no RemoteEvent, no `game`, no
 	clock read here - which is what lets the whole pipeline be tested with none
-	of them. `phase` and `clock` are carried unread; NET-002 and NET-003 are
-	the stories that consume them.
+	of them. `phase` is read once per guarded call that reaches check 4 (see
+	below); `clock` is still carried unread, and NET-003 is the story that
+	consumes it.
 
 	`PlayerId` and `Phase` are re-declared rather than imported, per
 	`architecture.md` section 1: `src/net/` may not require `src/server/`, and
@@ -73,6 +74,20 @@ local function describeCaller(playerId: any): string
 		return `player "{playerId}"`
 	end
 	return `a caller sending {typeof(playerId)} as a player id`
+end
+
+--[[
+	The legal phases of a declaration, as a comma-separated list for a
+	rejection detail. Copied into a `{ string }` rather than concatenated in
+	place: `legalPhases` is a `{ Phase }`, and the copy is what makes the
+	widening to `string` explicit under `--!strict`.
+]]
+local function describePhases(phases: { Remotes.Phase }): string
+	local names: { string } = {}
+	for _, phase in phases do
+		table.insert(names, phase)
+	end
+	return table.concat(names, ", ")
 end
 
 --[[
@@ -121,6 +136,26 @@ function Wrapper.guard(
 				reason = "range"
 			end
 			local rejection: Rejection = { reason = reason, detail = detail }
+			return rejection
+		end
+
+		-- 4. phase (NET-002). READ AT THE MOMENT OF THE CALL, not when `guard`
+		-- was called: a guarded function outlives the phase it was built in,
+		-- and a phase captured at construction would accept a call the round
+		-- has already moved past. The read happens HERE and not earlier, so a
+		-- call identity, shape or range has already rejected never asks the
+		-- context for the phase - first failure wins, as it does above.
+		local currentPhase = context.phase()
+		if table.find(definition.legalPhases, currentPhase) == nil then
+			-- No `"phase: "` prefix: `reason` already names the check, and a
+			-- second encoding is one a later refactor can let drift. The
+			-- detail carries both halves an operator needs - the phase that
+			-- was current and every phase that was legal - and no other.
+			local legal = describePhases(definition.legalPhases)
+			local rejection: Rejection = {
+				reason = "phase",
+				detail = `the phase is {currentPhase}; legal in {legal}`,
+			}
 			return rejection
 		end
 

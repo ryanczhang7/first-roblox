@@ -12,18 +12,21 @@
 	`all()` RETURNS A COPY for the same reason read from the other side: a live
 	registry handed out is a registry any caller can edit.
 
-	`legalPhases` and `rateLimit` are DECLARED HERE AND ENFORCED BY THE NEXT
-	TWO STORIES - NET-002 and NET-003. Nothing in NET-001 reads either. They
-	are here so that those stories change one file each and no call site.
+	`legalPhases` IS ENFORCED FROM NET-002: it may not be empty (AC-5, below),
+	and `Wrapper.guard` rejects a call made in a phase it does not name.
+	`rateLimit` is still declared and unread; NET-003 is the story that
+	consumes it. Both were declared in NET-001 so that those stories change
+	one file each and no call site.
 
 	`Phase` IS RE-DECLARED, not imported. `docs/wiki/architecture.md` section 1
 	forbids `net` -> `server`, and `.luaurc` declares exactly one alias
 	(`shared`), so the require to `PhaseMachine` cannot even be spelled. Luau
 	string-literal unions are structural, so a `Phase` from the phase machine
 	is accepted where this one is wanted and the reverse holds too. The cost is
-	two copies that can drift; NET-002 is the first story that reads
-	`legalPhases` and therefore the first that needs them to agree (PO decision
-	3 in the story).
+	two copies that can drift, and the two never meet in an expression, so the
+	analyser has nothing to reject: NET-002 needs them to agree SEMANTICALLY
+	while giving the compiler nothing to check, which is why
+	`tests/net/phase_union_guard_test.luau` compares them textually (AC-7).
 ]]
 
 local Schema = require("./Schema")
@@ -62,6 +65,18 @@ function Remotes.define(name: string, spec: RemoteSpec): RemoteDefinition
 		error(
 			`Remotes.define: the remote "{name}" is already declared; a second declaration would `
 				.. `replace a validated remote with an unvalidated one`,
+			2
+		)
+	end
+
+	-- NET-002 AC-5. An empty `legalPhases` means "legal in no phase", which is
+	-- a remote every call to which is rejected - a silently dead wire that
+	-- nobody meant to declare. Refused HERE, BEFORE the name is registered, so
+	-- a refused declaration leaves the name free rather than poisoned.
+	if #spec.legalPhases == 0 then
+		error(
+			`Remotes.define: the remote "{name}" declares an empty legalPhases; a remote legal in no `
+				.. `phase is silently dead - name at least one phase it may be called in`,
 			2
 		)
 	end
