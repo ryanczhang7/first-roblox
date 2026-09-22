@@ -4,8 +4,8 @@ title: mutate.sh leaves a backup and no log when its output is piped
 slug: mutate-sh-leaves-a-backup-and-no-log-whe
 epic: 
 type: fix
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/HARNESS-012-mutate-sh-leaves-a-backup-and-no-log-whe
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -390,9 +390,381 @@ brief that was measured to matter more than the model.
 
 ## Test plan
 
+**Level.** Shell integration, and there is no cheaper level that can falsify any
+of this. The subject is what a *process* leaves on disk when a signal kills it
+mid-function; there is no unit beneath "a process, a pipe and a reader that stops
+reading". Every case runs the real `scripts/mutate.sh` inside a throwaway
+`make_project_fixture` repository, against `src/main.ts` holding
+`export const clamp = (v) => Math.min(90, v)` and the expression `s/90/-90/`,
+exactly as the Contract specifies.
+
+**Blocks, and which criterion each one carries.** All in
+`.claude/tests/mutate.test.sh`.
+
+| Block (`describe`) | AC | What it asserts |
+|---|---|---|
+| `a reader that closes the pipe early leaves no backup, and logs once` (new) | AC-1, AC-2, AC-3 | Swept over `N` in `1 2 3 4 5 6 30`: no `.bak`/`.new` survives; exactly one anchored log line names `src/main.ts` and `s/90/-90/`; `git hash-object src/main.ts` is unchanged |
+| `the sweep above really does close the pipe early` (new) | instrument | `head -1` lets exactly one line through, and an untruncated run of the same command is longer than one line |
+| `an ordinary unpiped run still logs once and cleans up` (new) | AC-5 | Exactly one anchored log line; exactly one whose final field is `restored (verified)`; no leftovers; file byte-identical |
+| `stdout is the command's output; mutate.sh's own goes to stderr` (new) | AC-6 | stdout contains the payload, contains zero `=== mutate: ` banners, and equals the payload exactly; stderr contains the banner, the verdict and the restored line |
+| `a restore that cannot be verified is loud, and keeps the backup` (extended in place) | AC-4 | The two existing assertions untouched, plus a second provocation in which the backup **survives**: exit 90, `COULD NOT RESTORE`, `.bak` count 1, `.new` count 0 |
+
+**Why AC-4 had to be extended rather than only re-read.** The existing case
+provokes the unverified restore with `rm -f .claude/state/mutations/*.bak`, so
+the backup is destroyed by the command itself and "the `.bak` is kept" is
+unassertable there - measured: zero `.bak` files after that run. The story's
+`## Deferred verifications` requires that an *unconditional* cleanup in GREEN's
+EXIT trap turn AC-4 red, and neither existing assertion moves under that
+mutation: exit 90 and the `COULD NOT RESTORE` message both survive it. So a
+second provocation sits beside the first - the command replaces `src/main.ts`
+with a *directory*, so the restoring `cp` lands inside it, `cmp` cannot verify,
+and the backup is still on disk to be kept or deleted. Without it the deferred
+verification could not have gone red and the suite would not have been
+discriminating. The original block's lines are unchanged.
+
+**Why the sweep needs its own invocation shape.** The suite's `mutate()` helper
+is a command substitution, which reads to EOF and never closes the pipe early.
+`piped_run <N> <command...>` runs `bash scripts/mutate.sh ... 2>&1 | head -N`
+and reads `${PIPESTATUS[0]}` *in the same shell as the pipeline*, writing it to a
+file so the value survives the command substitution. `2>&1` is deliberate: it is
+the shape an agent writes, and it is what keeps these cases exercising SIGPIPE
+after AC-6 moves the banners to stderr.
+
+**Anchoring.** The log needle is a two-end-anchored ERE over the three
+tab-separated leading fields every log line carries -
+`^[0-9]{8}T[0-9]{6}Z<TAB>src/main\.ts<TAB>s/90/-90/(<TAB>.*)?$` - and it is
+**counted** with `grep -cE` and compared with `assert_eq` to `1`.
+`assert_contains` on the log's text would be satisfied by two lines as happily as
+by one, and a fix that logs twice has replaced a missing record with a lying one.
+The AC-6 absence assertion (zero banners on stdout) is paired with two positive
+ones in the same case - the payload is on stdout, the banner and verdict are on
+stderr - so it cannot be satisfied by a `mutate.sh` that prints nothing anywhere.
+
+**Out of scope, honoured.** `mutate.sh`'s exit status through a pipe is recorded
+(`PIPED_ST`) and deliberately **not** asserted: a shell killed by SIGPIPE cannot
+choose what `head` reports. No assertion re-derives the width at which the cut
+falls, and none touches the banner text, the diff rendering, the `head -20` diff
+cap, the changed-line count or the exit-code contract.
+
 ## Handoff: RED -> GREEN
 
+### The command
+
+    bash scripts/selftest.sh mutate
+
+146 s on this machine (Windows, cygwin bash 5.3.15(2)); 55 s before this change,
+measured by running `git show HEAD:.claude/tests/mutate.test.sh` from a temporary
+copy. Do **not** run `bash scripts/selftest.sh` with no argument as an inner
+loop: it runs all 16 suites, takes 10-25 minutes here, and two overlapping runs
+corrupt each other.
+
+### The verbatim failure output
+
+Captured from `bash scripts/selftest.sh mutate` on 2026-09-22, exit 1. The run
+reproduces identically; the `.bak` filenames carry the stamp of the run shown.
+
+```
+=== mutate ===
+
+  the command sees the mutation
+
+  a failing command is the point, not an error
+
+  a mutation that mutates nothing proves nothing
+
+  how much it changed is reported, because one line is the useful case
+
+  usage errors happen before anything is touched
+
+  a restore that cannot be verified is loud, and keeps the backup
+
+  it refuses to mutate the script that is running
+
+  the log is what the story quotes
+
+  it works with the phase lock on, in every phase
+
+  a reader that closes the pipe early leaves no backup, and logs once
+    FAIL N=1: no .bak or .new is left behind
+         expected: 
+         actual:   src_main.ts.20260922T192040Z.127184.bak src_main.ts.20260922T192040Z.127184.new 
+    FAIL N=1: exactly one log line names the run
+         expected: 1
+         actual:   0
+    FAIL N=2: no .bak or .new is left behind
+         expected: 
+         actual:   src_main.ts.20260922T192044Z.127482.bak src_main.ts.20260922T192044Z.127482.new 
+    FAIL N=2: exactly one log line names the run
+         expected: 1
+         actual:   0
+    FAIL N=3: no .bak or .new is left behind
+         expected: 
+         actual:   src_main.ts.20260922T192050Z.127799.bak src_main.ts.20260922T192050Z.127799.new 
+    FAIL N=3: exactly one log line names the run
+         expected: 1
+         actual:   0
+    FAIL N=4: no .bak or .new is left behind
+         expected: 
+         actual:   src_main.ts.20260922T192052Z.128101.bak src_main.ts.20260922T192052Z.128101.new 
+    FAIL N=4: exactly one log line names the run
+         expected: 1
+         actual:   0
+    FAIL N=5: no .bak or .new is left behind
+         expected: 
+         actual:   src_main.ts.20260922T192057Z.128441.bak src_main.ts.20260922T192057Z.128441.new 
+    FAIL N=5: exactly one log line names the run
+         expected: 1
+         actual:   0
+
+  the sweep above really does close the pipe early
+
+  an ordinary unpiped run still logs once and cleans up
+
+  stdout is the command's output; mutate.sh's own goes to stderr
+    FAIL and no === mutate: banner is
+         expected: 0
+         actual:   3
+    FAIL and nothing else is either
+         expected: PAYLOAD-ON-STDOUT
+         actual:   === mutate: src/main.ts (1 line(s) changed by s/90/-90/) ===
+           1 - export const clamp = (v) => Math.min(90, v)
+           1 + export const clamp = (v) => Math.min(-90, v)
+         
+         === mutate: running sh -c echo PAYLOAD-ON-STDOUT ===
+         PAYLOAD-ON-STDOUT
+         
+         === mutate: command exited 0; restored (verified byte-for-byte against /tmp/tmp.WaIYoyYSe4/.claude/state/mutations/src_main.ts.20260922T192139Z.130854.bak) ===
+           1: export const clamp = (v) => Math.min(90, v)
+    FAIL the banner is on stderr
+         expected to contain: === mutate: 
+         actual:               
+    FAIL and so is the verdict
+         expected to contain: restored (verified byte-for-byte
+         actual:               
+    FAIL and so is the line put back
+         expected to contain: Math.min(90, v)
+         actual:               
+
+mutate: 61 passed, 15 failed
+
+1 of 1 harness suite(s) FAILED.
+```
+
+15 red, 61 green. The 39 assertions that existed before this story all still
+pass, which settles the Contract's claim that AC-6 breaks no existing caller:
+every one of them reads the merged stream through `mutate()` or discards both
+streams, so moving the banners cannot move them. RED confirmed that by running
+the suite rather than by taking the paragraph's word for it.
+
+### One line per assertion, and which AC it covers
+
+New, in `a reader that closes the pipe early leaves no backup, and logs once`
+(21 assertions, three per width `N` in `1 2 3 4 5 6 30`):
+
+- `N=$n: no .bak or .new is left behind` - **AC-1**. Lists the names of any
+  `*.bak`/`*.new` under `.claude/state/mutations/` after the run; expects none.
+- `N=$n: exactly one log line names the run` - **AC-2**. `grep -cE` of the
+  two-end-anchored stamp/file/expression line, compared to `1`.
+- `N=$n: src/main.ts is byte-identical after` - **AC-3**. `git hash-object`
+  before and after.
+
+New, in `the sweep above really does close the pipe early` (2):
+
+- `head -1 lets exactly one line through` - the **instrument**, not the subject.
+  If `piped_run` ever stopped truncating, all 21 sweep assertions would keep
+  passing and would have stopped testing anything.
+- `and an untruncated run of the same command is longer than that` - the other
+  half; without it, a `mutate.sh` that printed one line would satisfy the first.
+
+New, in `an ordinary unpiped run still logs once and cleans up` (4): **AC-5** -
+one anchored log line; one whose final field is `restored (verified)`; no
+leftovers; file byte-identical.
+
+New, in `stdout is the command's output; mutate.sh's own goes to stderr` (6):
+**AC-6** - payload present on stdout; zero `=== mutate: ` on stdout; stdout
+equals the payload exactly (the Contract's "and nothing else"); banner, verdict
+and restored line present on stderr.
+
+Added to the existing `a restore that cannot be verified is loud, and keeps the
+backup` (4): **AC-4** - exit 90, `COULD NOT RESTORE`, `.bak` count 1, `.new`
+count 0, under a provocation the backup survives.
+
+### Files touched
+
+- `.claude/tests/mutate.test.sh` - the only code file. +177 lines; no existing
+  line modified or deleted.
+- `docs/backlog/stories/HARNESS-012.md` - `## Test plan`,
+  `## Handoff: RED -> GREEN` and `## Regressions` only.
+
+`git diff --stat scripts/mutate.sh` is **empty**. Both files classify as
+`harness`, so the phase lock permitted RED to edit `scripts/mutate.sh` and would
+not have stopped it; the separation here is the agent's discipline, not the
+hook's, and this line is the record the Contract asked for.
+
+### The shape these tests already pin, as fact
+
+A test already exercises each of these, so a GREEN that contradicts one fails
+rather than merely disagreeing.
+
+**Invocation.** `bash scripts/mutate.sh <FILE> '<SED-EXPR>' -- <command> [args]`,
+with `$ROOT` the repository root, the command executed from `$ROOT`, and file
+paths resolved against `$ROOT`. Unchanged; no argument added or removed.
+
+**Artefacts.** The backup and working copy live under
+`$ROOT/.claude/state/mutations/` and end in `.bak` and `.new`. The tests delete
+that whole directory before each case, so `mutate.sh` must still create it
+(`mkdir -p`) before writing anything into it - including before appending the log
+on the interrupted path.
+
+**The log.** `$ROOT/.claude/state/mutations/log`, appended. Every line begins
+with exactly three tab-separated fields, in this order:
+`<STAMP><TAB><REL><TAB><EXPR><TAB>...`, where `STAMP` matches
+`[0-9]{8}T[0-9]{6}Z`, `REL` is the path as given on the command line
+(`src/main.ts`, not absolute) and `EXPR` is the expression verbatim
+(`s/90/-90/`). The tests match `^STAMP<TAB>REL<TAB>EXPR` and allow any tail or
+none, so the `INTERRUPTED` row of the Contract's table is free in its wording.
+One line per run - not two. The verified-completion line must still **end** with
+the field `restored (verified)`; nothing else about that line is pinned beyond
+the three leading fields.
+
+**Streams.** stdout carries the mutated command's output and nothing else - the
+AC-6 case asserts exact equality with the payload. stderr carries the
+`=== mutate: ` banners, the verdict text beginning `restored (verified
+byte-for-byte`, and the restored source line. `COULD NOT RESTORE` is asserted
+only through the *merged* stream, so it stays where it already is.
+
+**Exit codes.** 2 usage, 3 changed-nothing, 90 unverified restore, otherwise the
+command's own - all still asserted by the pre-existing blocks, which are frozen
+from here.
+
+**Not constrained, and therefore GREEN's choice.** How the trap is written and
+what it is called; whether the "already logged" flag is a variable or a marker
+file; the wording of the `INTERRUPTED` outcome field; where in the line the
+changed-line count and the command go; the order of the stderr lines; whether the
+diff still goes through `head -20`; and whether `mutate.sh` gains the
+header-comment line about `2>&1` and `${PIPESTATUS[0]}` (the Contract says it
+should; no test reads it).
+
+### Which assertions were observed red, and which were green on arrival
+
+`scripts/mutate.sh` already exists, so this is **not** an ordinary RED where the
+implementation is absent. Stated plainly:
+
+| Assertions | AC | Status in RED |
+|---|---|---|
+| 10 of the 21 sweep assertions (`N <= 5`, AC-1 and AC-2) | AC-1, AC-2 | **Observed red.** The bug, reproduced. |
+| 5 of the 6 stream assertions | AC-6 | **Observed red.** |
+| 7 sweep assertions (one per width, AC-3) | AC-3 | **Green from the start.** Today's `on_exit` trap already restores; written down so a restructured fix cannot lose it. |
+| 4 sweep assertions (`N = 6, 30`, AC-1 and AC-2) | AC-1, AC-2 | **Green from the start.** The widths where nothing truncates. |
+| 4 AC-4 assertions | AC-4 | **Green from the start.** The contract the fix must not break. |
+| 4 AC-5 assertions | AC-5 | **Green from the start.** |
+| 1 of the 6 stream assertions (payload on stdout) | AC-6 | **Green from the start.** Today the payload is on stdout along with everything else. |
+| 2 instrument assertions | - | **Green from the start.** They pin the test's own apparatus. |
+
+The green-from-the-start ones carry **no evidence yet**. They were not earned
+with a mutation of `scripts/mutate.sh`, deliberately: the story assigns that to
+GATES as a deferred verification, and mutating the file RED is forbidden to write
+would have muddied the RED diff. GREEN and GATES should treat them as unproven
+regression guards until the deferred control runs.
+
+One thing this RED does **not** inherit from the usual one: the suite is bash and
+nothing was missing, so it did **not** fail at import. All 76 assertions
+executed, and every number in the control table below was measured by the
+framework rather than claimed outside it - with the single exception marked as
+GATES's.
+
+### Negative controls, with their measured values
+
+| Control | Guards against | Expected | Measured in RED |
+|---|---|---|---|
+| `.bak` count after an unverifiable restore (directory provocation) | An unconditional `rm -f "$NEW" "$BAK"` in GREEN's EXIT trap | `1` | `1` |
+| `.new` count in the same run | The unverified path keeping the wrong file | `0` | `0` |
+| Anchored log-line count in the sweep | An absence assertion passing because the run never happened | `1` per run | `0` at `N <= 5`, `1` at `N = 6, 30` |
+| `lines_in "$PIPED_OUT"` at `N = 1` | `piped_run` silently ceasing to truncate | `1` | `1` |
+| Lines in an untruncated `-- true` run | The row above passing on a `mutate.sh` that prints one line | `> 1` | `8` |
+| `=== mutate: ` count on stdout | - | `0` | `3` |
+| Banner, verdict and restored line on stderr | A fix that satisfies AC-6 by printing nothing anywhere | present | **absent** - all three red today |
+| `${PIPESTATUS[0]}` of the piped run (recorded, never asserted) | Reading the pipeline's `$?`, which is `head`'s | - | `141` at `N = 1..5`, `0` at `N = 6, 30`; the pipeline's own `$?` is `0` at every width |
+
+The first two rows are the control the story's `## Deferred verifications`
+names. They are **green today and must go red under GATES's mutation**; if they
+do not, the suite is not discriminating and the fix has not been verified.
+
+### Declined: the deferred verification is GATES's, not RED's
+
+**I did not run the unconditional-cleanup control, and I am not claiming it.**
+There is no EXIT trap to make unconditional yet - the code being mutated is what
+GREEN is about to write. The story assigns it to GATES and it stays there.
+
+What RED did contribute is the only thing that makes it *runnable*: the two
+`.bak`/`.new` count assertions above, without which the mutation the story
+describes turns nothing red. GATES should expect the failure to read
+
+    FAIL and the backup is KEPT, which is what rules.md reads as the signal
+         expected: 1
+         actual:   0
+
+in the block `a restore that cannot be verified is loud, and keeps the backup`,
+and nowhere else.
+
+### What GREEN should know before starting
+
+- **The restore must COPY the backup back, not move it.** The AC-4 directory
+  provocation leaves `src/main.ts` as a directory, so `cp "$BAK" "$FILE"` lands
+  *inside* it; a `mv` would consume the backup and turn "the backup is KEPT" red
+  for a reason that has nothing to do with the cleanup.
+- **The interrupted path must log even when the command never ran.** Measured: at
+  `N <= 3` the payload (`touch ran-marker`) never executes, because the shell
+  dies at the banner before `cp "$NEW" "$FILE"`. AC-2 still demands one log line
+  there, which is what the Contract's `INTERRUPTED ... not mutated` row is for.
+- **The trap must create `.claude/state/mutations/` itself.** Every sweep
+  iteration deletes the directory first.
+- **Nothing before the printing may write to either stream.** The tests will
+  reproduce the bug inside the fix if the trap prints before it logs and cleans
+  up: `2>&1` merges both streams into the same closed pipe, so moving a write to
+  stderr does not by itself make it safe.
+- **Cost.** The suite went from 55 s to 146 s on this machine, all of it in the
+  seven extra `mutate.sh` processes - roughly 9 s per invocation here, which is
+  process-spawn cost on Windows. On CI it is cheap: `gates.yml` runs
+  `selftest.sh` on `ubuntu-latest` and records 31 s for **all** suites there
+  against 21-27 min on `windows-latest`, so the same seven processes should cost
+  a couple of seconds. The 146 s and 55 s are local measurements I took; the CI
+  figure is the workflow file's own recorded measurement, not one I ran. That job
+  has no `timeout-minutes`.
+- **No gate judges this file.** `bash scripts/gates.sh --fast` is fully green
+  with these tests red - `format`, `lint`, `typecheck`, `unit`, `build` and
+  `harness` all PASS, `coverage` UNCONFIGURED - because every gate judges the
+  Luau project and `harness` runs only `project-counters.test.sh`. That is PO
+  decision 2, confirmed rather than assumed: the shape of the RED failure lives
+  in `selftest.sh`, which CI runs as its own step, not in any gate. Nothing in
+  the new test file trips a lint rule or a timeout, so the tests are admissible
+  to everything that will judge them.
+
+### Contract amendments
+
+None. Every block of `## Contract` was buildable as written, and nothing in it
+contradicted what I measured. The baseline table was re-measured before being
+read out and reproduced exactly - no log line and a leftover pair at `N <= 5`,
+both clean at `N = 6` and `30`, `src/main.ts` byte-identical at every width, the
+command not running at `N <= 3`, `${PIPESTATUS[0]}` = 141 where the shell died.
+
+The one place I went beyond the Contract's "The test the story adds" - which
+describes a single new `describe` block - is the AC-4 extension and the AC-5 and
+AC-6 blocks. Those are required by the criteria rather than a change to them, so
+they are recorded here instead of as an amendment.
+
 ## Regressions
+
+<!-- Empty by design, and this is not an omission. `## Regressions` records a
+     test corrected on a RETURN from GREEN or GATES, earned with a reverted
+     mutation. HARNESS-012 is in its first RED and has never left it: no test
+     was corrected, no production behaviour was mutated, and `scripts/mutate.sh`
+     is untouched. The evidence for this phase is the verbatim failure output in
+     `## Handoff: RED -> GREEN` above.
+
+     The assertions that were green on arrival are listed there too, together
+     with the control that will earn them - the unconditional-cleanup mutation
+     the story assigns to GATES under `## Deferred verifications`. -->
 
 ## Gate results
 
