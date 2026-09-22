@@ -5,7 +5,7 @@ slug: mutate-sh-leaves-a-backup-and-no-log-whe
 epic: 
 type: fix
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/HARNESS-012-mutate-sh-leaves-a-backup-and-no-log-whe
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -768,6 +768,23 @@ they are recorded here instead of as an amendment.
 
 ## Gate results
 
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-22T20:03:00Z
+    commit: 97deb03 (working tree had uncommitted changes)
+    tree:   ce1cc65bc181a038267412ef20fc97efbff80fdc
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 79)
+    PASS         lint (1s, observed 79, floor 1)
+    PASS         typecheck (3s, observed 16)
+    PASS         unit (40s, observed 355, floor 355)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 47816)
+    PASS         harness (25s, observed 40)
+    UNCONFIGURED mutation
+
 ## Notes
 
 ### PO decisions made at PLANNED
@@ -832,3 +849,94 @@ the brief describes, at the same cut.
   and run the whole suite once, alone, before the PR.
 - `bash scripts/gates.sh --list` is minutes slow on this machine (seconds on CI).
   It is fork cost in the config parse, not a hang.
+
+### GREEN, by the Feature Developer
+
+**Resolved model: `opus` (`claude-opus-5`).** The planned model for GREEN, with
+no override in the dispatch. Recorded here because the dispatch asked; the
+`## Model guidance` **Resolved:** block belongs to the orchestrator.
+
+**The mechanism the whole fix rests on was measured, not assumed.** The Contract
+says an EXIT trap still fires when the shell dies of SIGPIPE, and the story reads
+today's leftover-free `src/main.ts` as evidence of it. That evidence does not
+actually separate the two hypotheses: at `N = 1..3` the file is never mutated and
+at `N = 4, 5` the straight-line `cp` at line 152 has already restored it, so
+AC-3 would hold at every width whether or not the trap ran. So it was probed
+directly, 5 runs out of 5, with a script whose trap touches a marker file before
+it prints:
+
+    run 1 writer=141 fired=yes trapprinted=no reachedend=no
+    ... (5/5 identical)
+
+Two facts, both load-bearing: bash **does** run the EXIT trap on a SIGPIPE death,
+and the trap then **dies at its own first write**. The second is why the
+Contract's "file work first, printing last" is the fix rather than a style
+preference - a trap that printed first would have produced `fired=yes` and
+nothing else, exactly as the straight-line code does today.
+
+**Negative controls from the handoff, re-measured against the shipped script.**
+All eight agree with RED; none diverged.
+
+| Control | RED | GREEN, measured against `scripts/mutate.sh` as shipped |
+|---|---|---|
+| `.bak` count, directory provocation | `1` | `1` |
+| `.new` count, same run | `0` | `0` |
+| Anchored log-line count in the sweep | `0` at `N <= 5`, `1` at `N = 6, 30` | `1` at every width `1 2 3 4 5 6 30` - the fix |
+| `lines_in "$PIPED_OUT"` at `N = 1` | `1` | `1` |
+| Lines in an untruncated `-- true` run | `8` | `8` |
+| `=== mutate: ` count on stdout | `3` | `0` |
+| Banner, verdict, restored line on stderr | absent | present (all three) |
+| `${PIPESTATUS[0]}` of the piped run | `141` at `N = 1..5`, `0` at `N = 6, 30` | identical |
+
+The last row is worth a sentence: AC-6 moved every banner to stderr, and the cut
+did **not** move, because the sweep captures with `2>&1`. That is the Contract's
+stated reason for `2>&1` and it held.
+
+The handoff's claim about the older AC-4 provocation was also checked rather
+than taken: `-- sh -c 'rm -f .claude/state/mutations/*.bak'` leaves `bak=0`
+against the shipped fix, so it could never have caught an unconditional cleanup.
+The directory provocation beside it reports `bak=1 new=0`, which is the control
+that can.
+
+**For GATES: where to apply the unconditional-cleanup mutation.** The
+conditional cleanup is one identifiable place, `scripts/mutate.sh:216` - the
+unverified branch inside `finish()`:
+
+        if [ "$restore" = "COULD NOT RESTORE" ]; then
+          rm -f "$NEW" 2>/dev/null          # <- line 216
+        else
+          rm -f "$NEW" "$BAK" 2>/dev/null
+        fi
+
+Suggested expression, which makes the unverified path delete the backup too:
+
+    s|rm -f "\$NEW" 2>/dev/null|rm -f "\$NEW" "\$BAK" 2>/dev/null|
+
+It matches exactly one line - checked with `sed` into a scratch copy and
+`diff`, which reported `216c216` and nothing else. **I did not run the control**
+and am not claiming it: that is the story's deferred verification and it is
+GATES's. Use the copy recipe in `## Deferred verifications`; `mutate.sh` still
+refuses to mutate itself.
+
+**One residual, reported rather than fixed, and reproducible.** The `exit 3`
+"the expression changed nothing" path still prints before it cleans up, and it
+sits **above** the trap - which is where the Contract's "shape of the fix" put
+the trap boundary, explicitly and by line number. Against a reader that closes
+the pipe before reading anything it leaks the same false alarm this story
+exists to remove, 3 runs out of 3:
+
+    $ bash scripts/mutate.sh src/main.ts 's/NOPE/x/' -- true 2>&1 | head -0
+    exit-3 writer=141 leftovers=[src_main.ts.<stamp>.<pid>.bak
+                                 src_main.ts.<stamp>.<pid>.new ] loglines=0
+
+    the same run on the mutating expression, for contrast:
+    normal writer=141 leftovers=[] loglines=1 file-restored=yes
+
+It does **not** reproduce at `head -1..5`, the widths AC-1 sweeps: that path
+writes only four short lines, which fit the pipe buffer before the reader exits.
+No criterion covers it, and the repair is either a three-line reorder in the
+exit-3 block (log, `rm`, then print) or moving the trap above the changed-nothing
+check - the second of which the Contract ruled out by naming the insertion point.
+Left alone deliberately, since GREEN adding production behaviour no test demands
+is the thing this harness asks GREEN not to do. It is a one-commit follow-up
+story if the product owner wants the invariant closed.
