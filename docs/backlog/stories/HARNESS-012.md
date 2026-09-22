@@ -439,11 +439,33 @@ the control could not have fired. That came from reading the existing suite
 against the criteria, which is what the brief asked for.
 
 **The real repair is `plan.sh`'s detector, not this story's model row** — as the
-departure predicted. `contract_unenforced()` greps every path-shaped token out
-of the `## Contract`, and one `source`-classified mention (`src/main.ts`, a
-throwaway fixture file this story never writes) suppressed the `unenforced`
-exception. The suppression falls on the weak side for precisely the stories the
-lock does not protect. Filed separately; not widened into this story.
+departure predicted, though for a blunter reason than either the departure or
+the orchestrator first recorded. Filed as `HARNESS-014`; not widened into this
+story.
+
+**Correction, measured at REVIEW.** Both the departure block above and the first
+version of this paragraph said the exception was suppressed by *one* mention —
+`src/main.ts`, the throwaway fixture file. That understates it. Replaying
+`contract_unenforced()`'s own extraction over this story's committed `## Contract`
+yields sixteen tokens, of which **five** classify as `source`:
+
+    source  5.3.15        a bash version number, out of a measurement note
+    source  classify.sh   a harness script, named without its directory
+    source  i.e           an English abbreviation
+    source  mutate.sh     a harness script, named without its directory
+    source  src/main.ts   the fixture file
+
+So **deleting `src/main.ts` from the Contract would not have changed the
+verdict.** The defect is not that a fixture path leaked into the scan; it is
+that the extractor's notion of "a path" is loose enough that ordinary prose — a
+version number, an abbreviation, a filename whose directory the sentence omitted
+— defeats the exception on its own. That is why `HARNESS-014` fixes it by having
+a story *declare* the paths it writes, rather than by narrowing the regex: a
+stricter pattern would still have to classify `classify.sh` and `mutate.sh`
+correctly, and those are real filenames of real harness scripts.
+
+The suppression still falls on the weak side for precisely the stories the lock
+does not protect, which is the part that made this worth filing.
 
 <!-- One line per dispatch, as it happened: phase, agent, the model that
      actually ran, and — if a phase was planned for one model and ran on
@@ -1024,3 +1046,31 @@ check - the second of which the Contract ruled out by naming the insertion point
 Left alone deliberately, since GREEN adding production behaviour no test demands
 is the thing this harness asks GREEN not to do. It is a one-commit follow-up
 story if the product owner wants the invariant closed.
+
+### PR #25's CI timings, read rather than assumed
+
+`https://github.com/ryanczhang7/first-roblox/pull/25` — both jobs green on the
+first run: `boundaries` 8 s, `gates` 2 m 07 s (runs 35789719161 and
+35789719303, 2026-09-22).
+
+The step that carries this story's artifact is `Harness self-test`, because no
+gate reads `.claude/tests/**` (PO decision 2). Its step timings, and the three
+most recent `main` runs for comparison:
+
+| Run | `Harness self-test` |
+|---|---|
+| **PR #25** | **88 s** |
+| main 35768469538 | 103 s |
+| main 35768332297 | 101 s |
+| main 35749574856 | 84 s |
+
+**The 21 new assertions and the seven extra `mutate.sh` processes cost nothing
+measurable on CI** — 88 s sits inside the existing spread rather than above it.
+That settles RED's recorded doubt about cost: the local 55 s -> 146 s jump is
+Windows process-spawn overhead, not work, and it does not follow the suite to
+`ubuntu-latest`.
+
+Nothing is near a limit. The other `gates` steps were `Show configured gates`
+2 s, `Audit the gate manifest` 3 s, `Run gates` 17 s; the job declares no
+`timeout-minutes`, so the only ceiling is GitHub's 6 h default. No hook or gate
+is within 10 % of anything.
