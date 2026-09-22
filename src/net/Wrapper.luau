@@ -12,7 +12,7 @@
 	    2. shape    - arity and types
 	    3. range    - numeric domains
 	    4. phase    - is the action legal in the round's current phase?
-	    5. rate     - NET-003
+	    5. rate     - has this player called this remote too recently?
 
 	So an unseated player sending a malformed payload is rejected for
 	`identity`, and nothing after the failed check runs - the schema is not
@@ -32,11 +32,12 @@
 	the caller thread. The handler is NOT wrapped: containing a handler error
 	is a driver concern and this story does not claim it.
 
-	THE CONTEXT IS INJECTED - no `Players`, no RemoteEvent, no `game`, no
+	THE CONTEXT IS INJECTED - no `Players`, no RemoteEvent, no `game`, no real
 	clock read here - which is what lets the whole pipeline be tested with none
-	of them. `phase` is read once per guarded call that reaches check 4 (see
-	below); `clock` is still carried unread, and NET-003 is the story that
-	consumes it.
+	of them. `phase` is read once per guarded call that reaches check 4 and
+	`clock.now()` once per call that reaches check 5 (see below); neither is
+	read by a call an earlier check has already rejected, and neither is read
+	at construction.
 
 	`PlayerId` and `Phase` are re-declared rather than imported, per
 	`architecture.md` section 1: `src/net/` may not require `src/server/`, and
@@ -45,6 +46,7 @@
 ]]
 
 local Clock = require("@shared/Clock")
+local RateLimiter = require("./RateLimiter")
 local Remotes = require("./Remotes")
 
 local Wrapper = {}
@@ -101,6 +103,16 @@ function Wrapper.guard(
 	context: GuardContext,
 	handler: (playerId: PlayerId, args: any) -> ()
 ): (playerId: PlayerId, rawArgs: any) -> Rejection?
+	-- ONE LIMITER PER `guard()` CALL, here in the enclosing scope of the
+	-- returned closure rather than inside it: a limiter built per call would
+	-- be new every time and could never refuse anything. It is built when and
+	-- only when the remote declares a `rateLimit` - a remote that declares
+	-- none gets no limiter, never consults the clock, and is never limited
+	-- (AC-4). No clock is read here; the value compared is the one the call
+	-- itself reads.
+	local rateLimit = definition.rateLimit
+	local limiter = if rateLimit ~= nil then RateLimiter.new(rateLimit.minIntervalSeconds) else nil
+
 	return function(playerId: PlayerId, rawArgs: any): Rejection?
 		-- 1. identity. First, and short-circuiting: an unseated caller never
 		-- reaches the schema, so a malformed payload from one is `identity`.
@@ -157,6 +169,28 @@ function Wrapper.guard(
 				detail = `the phase is {currentPhase}; legal in {legal}`,
 			}
 			return rejection
+		end
+
+		-- 5. rate (NET-003). LAST, so a malformed or out-of-phase flood is
+		-- rejected for what it is and never consumes the caller's own budget
+		-- (AC-5) - and so TEL-003 counts it as malformed rather than losing it
+		-- behind a rate rejection. The clock is read HERE, at the moment of
+		-- the call: a value captured when `guard` was called sees zero seconds
+		-- elapsed forever and refuses every call after the first.
+		if limiter ~= nil and rateLimit ~= nil then
+			if limiter:allow(playerId, definition.name, context.clock.now()) ~= true then
+				-- No `"rate: "` prefix, for the reason the phase detail gives
+				-- above. What an operator reading a spike needs is the remote
+				-- and the interval it is held to; how long this caller
+				-- actually waited is deliberately left out, being a float
+				-- difference whose formatting would pin a rounding error.
+				local rejection: Rejection = {
+					reason = "rate",
+					detail = `"{definition.name}" is limited to one call per `
+						.. `{rateLimit.minIntervalSeconds} s per player`,
+				}
+				return rejection
+			end
 		end
 
 		handler(playerId, rawArgs)

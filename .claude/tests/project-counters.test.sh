@@ -70,7 +70,19 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # Read the number out of each command's own evidence line; do not count files
 # yourself, for the same reason the suite does not.
 #
-# LAST MEASURED: NET-002 (RED), which added six test files (tests/helpers/
+# LAST MEASURED: NET-003 (GREEN), which added one source file,
+# src/net/RateLimiter.luau, on top of the six test files its own RED added:
+# 78/78/15 -> 79/79/16, narrow format/lint 15 -> 16, NARROW_TYPECHECK
+# unchanged at 7 because src/shared gained nothing. Read from this suite's own
+# failure lines - `expected count: 78 / actual count: 79` against
+# `stylua over 79 files`, and `expected count: 15 / actual count: 16` against
+# `analyze over 16 files` - not counted by hand. The narrow typecheck assertion
+# did NOT fail, which is the measurement that it did not move.
+# BEFORE THAT: NET-003 (RED), which added six test files (tests/helpers/
+# RateContract.luau, RateStubs.luau, RateLimitSpec.luau and three
+# tests/net/rate_*_test.luau) and no source: 72/72/15 -> 78/78/15, narrow
+# unchanged at 15/15/7.
+# BEFORE THAT: NET-002 (RED), which added six test files (tests/helpers/
 # PhaseContract.luau, PhaseStubs.luau, PhaseUnion.luau and three
 # tests/net/phase_*_test.luau) and no source: 66/66/15 -> 72/72/15, narrow
 # unchanged at 15/15/7. Read from the harness gate.s own failure lines in
@@ -113,11 +125,11 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-BASE_FORMAT=72     # stylua  over src tests lune   (72 = 15 src + 57 tests/lune)
-BASE_LINT=72       # selene  over src tests lune
-BASE_TYPECHECK=15  # analyze over src (NET-001 probe included; src/net/ is three modules now)
-NARROW_FORMAT=15   # stylua  over src alone
-NARROW_LINT=15     # selene  over src alone
+BASE_FORMAT=79     # stylua  over src tests lune   (79 = 16 src + 63 tests/lune)
+BASE_LINT=79       # selene  over src tests lune
+BASE_TYPECHECK=16  # analyze over src (NET-001 probe included; src/net/ is four modules from NET-003)
+NARROW_FORMAT=16   # stylua  over src alone
+NARROW_LINT=16     # selene  over src alone
 NARROW_TYPECHECK=7 # analyze over src/shared alone (moved by TEL-001's two modules)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`
@@ -305,15 +317,15 @@ describe "AC-7: the three gates report the settled counts for this tree"
 
 run_conf_cmd "$CMD_FORMAT"
 assert_zero     "the format gate passes on the unmodified tree"     "$RC" "$OUT"
-assert_observed "format reports 72 files on the unmodified tree"    "$BASE_FORMAT" "$OUT" "$EV_FORMAT"
+assert_observed "format reports 79 files on the unmodified tree"    "$BASE_FORMAT" "$OUT" "$EV_FORMAT"
 
 run_conf_cmd "$CMD_LINT"
 assert_zero     "the lint gate passes on the unmodified tree"       "$RC" "$OUT"
-assert_observed "lint reports 72 files on the unmodified tree"      "$BASE_LINT" "$OUT" "$EV_LINT"
+assert_observed "lint reports 79 files on the unmodified tree"      "$BASE_LINT" "$OUT" "$EV_LINT"
 
 run_conf_cmd "$CMD_TYPECHECK"
 assert_zero     "the typecheck gate passes on the unmodified tree"  "$RC" "$OUT"
-assert_observed "typecheck reports 15 files on the unmodified tree"  "$BASE_TYPECHECK" "$OUT" "$EV_TYPECHECK"
+assert_observed "typecheck reports 16 files on the unmodified tree"  "$BASE_TYPECHECK" "$OUT" "$EV_TYPECHECK"
 
 # ---------------------------------------------------------------------------
 # AC-1 / AC-3 / AC-5, structural half. "The two cannot disagree if there is
@@ -353,7 +365,7 @@ done
 # ---------------------------------------------------------------------------
 describe "AC-1: the format count is the number of files stylua read"
 
-assert_narrowed_count "narrowing the format target to src reports 15, not 72" \
+assert_narrowed_count "narrowing the format target to src reports 16, not 79" \
   "$CMD_FORMAT" "$EV_FORMAT" 'src tests lune' 'src' "$NARROW_FORMAT"
 
 # The empty boundary, and the BOOT-001 invariant it collides with: every stage
@@ -371,7 +383,7 @@ assert_no_evidence "does not report a count it did not read" "$OUT" "$EV_FORMAT"
 # ---------------------------------------------------------------------------
 describe "AC-3: the lint count moves with the target selene was handed"
 
-assert_narrowed_count "narrowing the lint target to src reports 15, not 72" \
+assert_narrowed_count "narrowing the lint target to src reports 16, not 79" \
   "$CMD_LINT" "$EV_LINT" 'src tests lune' 'src' "$NARROW_LINT"
 
 # ---------------------------------------------------------------------------
@@ -394,17 +406,17 @@ assert_eq "the scratch file is not ignored (precondition)" "1" \
 
 run_conf_cmd "$CMD_FORMAT"
 assert_zero     "AC-2: the format gate still passes with the untracked file present" "$RC" "$OUT"
-assert_observed "AC-2: format counts the untracked file (72 -> 73)" "$((BASE_FORMAT + 1))" "$OUT" "$EV_FORMAT"
+assert_observed "AC-2: format counts the untracked file (79 -> 80)" "$((BASE_FORMAT + 1))" "$OUT" "$EV_FORMAT"
 
 run_conf_cmd "$CMD_LINT"
 assert_zero     "AC-4: the lint gate still passes with the untracked file present"   "$RC" "$OUT"
-assert_observed "AC-4: lint counts the untracked file (72 -> 73)"   "$((BASE_LINT + 1))" "$OUT" "$EV_LINT"
+assert_observed "AC-4: lint counts the untracked file (79 -> 80)"   "$((BASE_LINT + 1))" "$OUT" "$EV_LINT"
 
 # The Contract applies the same `--cached --others --exclude-standard` rule to
 # typecheck; luau-lsp walks src the same way selene walks its target.
 run_conf_cmd "$CMD_TYPECHECK"
 assert_zero     "the typecheck gate still passes with the untracked file present"    "$RC" "$OUT"
-assert_observed "typecheck counts the untracked file (15 -> 16)"      "$((BASE_TYPECHECK + 1))" "$OUT" "$EV_TYPECHECK"
+assert_observed "typecheck counts the untracked file (16 -> 17)"      "$((BASE_TYPECHECK + 1))" "$OUT" "$EV_TYPECHECK"
 
 rm -f "$UNTRACKED"
 
@@ -421,15 +433,15 @@ assert_eq "the scratch file really is ignored (precondition - otherwise this cas
 
 run_conf_cmd "$CMD_FORMAT"
 assert_zero     "the format gate still passes with an ignored .luau file present"    "$RC" "$OUT"
-assert_observed "format does not count the ignored file (still 72)"    "$BASE_FORMAT" "$OUT" "$EV_FORMAT"
+assert_observed "format does not count the ignored file (still 79)"    "$BASE_FORMAT" "$OUT" "$EV_FORMAT"
 
 run_conf_cmd "$CMD_LINT"
 assert_zero     "the lint gate still passes with an ignored .luau file present"      "$RC" "$OUT"
-assert_observed "lint does not count the ignored file (still 72)"      "$BASE_LINT" "$OUT" "$EV_LINT"
+assert_observed "lint does not count the ignored file (still 79)"      "$BASE_LINT" "$OUT" "$EV_LINT"
 
 run_conf_cmd "$CMD_TYPECHECK"
 assert_zero     "the typecheck gate still passes with an ignored .luau file present" "$RC" "$OUT"
-assert_observed "typecheck does not count the ignored file (still 15)"  "$BASE_TYPECHECK" "$OUT" "$EV_TYPECHECK"
+assert_observed "typecheck does not count the ignored file (still 16)"  "$BASE_TYPECHECK" "$OUT" "$EV_TYPECHECK"
 
 rm -f "$IGNORED"; rmdir "$IGNORED_DIR" 2>/dev/null
 
