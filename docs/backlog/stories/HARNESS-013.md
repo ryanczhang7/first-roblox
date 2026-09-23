@@ -5,7 +5,7 @@ slug: mutate-sh-s-early-exit-paths-leak-the-ba
 epic: 
 type: fix
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/HARNESS-013-mutate-sh-s-early-exit-paths-leak-the-ba
 depends_on: [HARNESS-012]   # its finish() trap and its piped test helpers are what this builds on
 required_gates: []          # gate ids that are optional for the repo but binding for THIS story
@@ -1047,10 +1047,22 @@ noted above.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-23T23:19:50Z
+    commit: d8e9af3 (working tree had uncommitted changes)
+    tree:   7b4e82c33c939d877675e07f3fa1a49535846b2b
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 79)
+    PASS         lint (0s, observed 79, floor 1)
+    PASS         typecheck (3s, observed 16)
+    PASS         unit (33s, observed 355, floor 355)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 47816)
+    PASS         harness (20s, observed 40)
+    UNCONFIGURED mutation
 
 ## Notes
 
@@ -1316,3 +1328,72 @@ Beyond the conditions, RED probed two written-down mechanisms and reported that
 one of them did not hold. The `fable` row in `models.conf` stands for harness
 stories, and no departure should be proposed on the next one without a success
 condition of its own.
+
+### GREEN, by the Feature Developer
+
+**Model.** `feature-developer`, resolved `opus` (`claude-opus-5`), as planned;
+no override was passed to this dispatch, and the agent definition's own
+`model: opus` is what resolved it.
+
+**What changed.** `scripts/mutate.sh` only, 23 insertions and 5 deletions, of
+which the moved statements are 3 lines in the `exit 3` block and 3 in the
+`exit 2` block; the rest is comment explaining why the order is the fix. The
+shape is PO decision 1's, unmodified: log append -> `rm -f` -> the four
+`printf`s in the `exit 3` block; `SEDERR="$(cat "$NEW.err" 2>/dev/null)"` ->
+`rm -f "$NEW" "$NEW.err" "$BAK"` -> heading -> `printf '%s\n' "$SEDERR" | sed
+-e 's/^/  /' >&2` in the `exit 2` block. `finish()`, the trap's installation
+point, every message's wording and stream, the log vocabulary and the exit
+statuses are untouched. `.claude/tests/mutate.test.sh` was not edited -
+`git diff --stat` on it is empty, although the lock would have permitted it.
+
+**Baseline reproduced before any edit, not read out of the handoff.**
+`bash scripts/selftest.sh mutate` on the untouched script: **125 passed, 8
+failed** - AC-1/AC-2 at `head -0`, `true` and (the race) `head -1`; AC-3 at
+`head -0` and `true`. After the fix: **133 passed, 0 failed**.
+
+**The negative controls confirmed against the SHIPPED module**, in a fixture
+built from scratch for this purpose rather than with the suite's own helpers,
+so that a control cannot pass because the instrument agrees with itself. Every
+value matches RED's table; nothing diverged.
+
+| Control | RED | GREEN, shipped code |
+|---|---|---|
+| AC-4 control: a changed-nothing run in the same directory logs its one line | 1 | **1** |
+| Total log lines after the unpiped P-S in that directory | 1 | **1** (not 2 - the rejected path still writes nothing) |
+| `REJECTED_LINE` anchored, beside one ordinary `s/90/-90/` line | 0 | **0** |
+| floating `grep -cF 's/90/-90'` on that same log | 1 | **1** (the false alarm the anchor prevents) |
+| `RUN_LINE` / `NOTHING_LINE` on that log, total lines | 1 / 1, 2 | **1 / 1, 2** |
+| sed's own complaint, non-empty | ``sed: -e expression #1, char 8: unterminated `s' command`` | **identical, and rendered indented by exactly two spaces** |
+| exit statuses: P-N unpiped / P-S unpiped / command's own / usage | 3 / 2 / - / 2 | **3 / 2 / 7 / 2** |
+
+**The `head -1` race is gone, measured rather than assumed.** The fix is only
+claimed to make every reader deterministic; that claim was tested under the
+same 6-way CPU contention the orchestrator used to make the race fire 16/25 at
+baseline. Against the shipped code, 20 runs per cell:
+
+    P-N head -1  n=20  leftovers 0/20  missing-log 0/20
+    P-N head -0  n=20  leftovers 0/20  missing-log 0/20
+    P-S head -1  n=20  leftovers 0/20  missing-log 0/20
+    P-S head -0  n=20  leftovers 0/20  missing-log 0/20
+
+The sweep is still exercising SIGPIPE rather than having stopped reaching it:
+`${PIPESTATUS[0]}` is **141** at `head -0` and at `true` on all three paths
+(P-N, P-S and the ordinary one) after the fix, exactly as at baseline. The
+shell still dies of SIGPIPE; it now dies after the file work instead of before
+it.
+
+**One correction to a mechanism named in the dispatch brief, for GATES.** The
+brief (and the Contract's table) describes the `exit 2` block as "2 `printf`s,
+one of which *reads* `$NEW.err`". The second write was not a `printf` but a
+child `sed -e 's/^/  /' "$NEW.err"`. That detail is the reason the P-S path
+never showed the `head -1` race - a SIGPIPE on the second write killed the
+*child*, not the parent shell, which then reached its `rm` - and it is already
+recorded correctly in "Independent reproduction of RED's two escalations" above.
+Nothing in the criteria or in the fix's shape depends on it. The line numbers
+in the Contract (116-121 and 126-134) were accurate.
+
+**For GATES, on mutation 3.** The captured text lives in `SEDERR`; blanking it
+is `s/^  SEDERR=.*/  SEDERR=""/` on `scripts/mutate.sh`. The assertion that must
+go red is `and sed's own complaint, indented by two spaces`; the one that must
+stay green is `and stderr carries the heading, entire`. For mutations 1 and 2,
+read `head -4` as the row that must stay green, not `head -1`.

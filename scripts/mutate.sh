@@ -114,9 +114,22 @@ cp "$FILE" "$BAK" || die "cannot back up $REL to $BAK"
 # the same path truncates it, and this script's whole claim is that it does not
 # lose the original.
 if ! sed -e "$EXPR" "$BAK" > "$NEW" 2>"$NEW.err"; then
-  printf 'mutate: sed rejected the expression:\n' >&2
-  sed -e 's/^/  /' "$NEW.err" >&2
+  # File work first, printing last - the same ordering finish() uses below, and
+  # for the same measured reason: this block exits ABOVE the trap, so a reader
+  # that closes the pipe before reading a byte (`... 2>&1 | head -0`) used to
+  # kill this shell with SIGPIPE at the first printf and leave $BAK, $NEW and
+  # $NEW.err behind with nothing in the log to say so - a false alarm in the one
+  # signal the harness has for a mutation still sitting in the tree. `2>&1` puts
+  # both streams down the same closed pipe, so printing to stderr is no safer.
+  #
+  # And sed's own complaint is captured BEFORE the rm that deletes the file it
+  # lives in. Moving the rm up without this line keeps every file clean, still
+  # exits 2, and silently drops the only line that says WHY the expression was
+  # refused.
+  SEDERR="$(cat "$NEW.err" 2>/dev/null)"
   rm -f "$NEW" "$NEW.err" "$BAK"
+  printf 'mutate: sed rejected the expression:\n' >&2
+  printf '%s\n' "$SEDERR" | sed -e 's/^/  /' >&2
   exit 2
 fi
 rm -f "$NEW.err"
@@ -124,12 +137,17 @@ rm -f "$NEW.err"
 # A mutation that mutates nothing. Refused here, before the command runs, so
 # that nobody reads the resulting green as a probe that passed.
 if cmp -s "$BAK" "$NEW"; then
+  # Log, clean up, and only THEN explain - for the reason spelled out in the
+  # sed-rejected block above. All four lines below are this shell's own writes,
+  # so a reader that stops between any two of them used to kill the run above
+  # the log append and the rm; with the file work done first there is nothing
+  # left to lose whenever the pipe closes.
+  printf '%s\t%s\t%s\tCHANGED NOTHING - command not run\n' "$STAMP" "$REL" "$EXPR" >> "$LOG" 2>/dev/null || true
+  rm -f "$NEW" "$BAK"
   printf 'mutate: the expression changed nothing in %s.\n' "$REL" >&2
   printf '  A probe that does not alter behaviour cannot show a test discriminates:\n' >&2
   printf '  the command would have passed for the same reason it passes now. Check the\n' >&2
   printf '  expression against the file and try again.\n' >&2
-  printf '%s\t%s\t%s\tCHANGED NOTHING - command not run\n' "$STAMP" "$REL" "$EXPR" >> "$LOG" 2>/dev/null || true
-  rm -f "$NEW" "$BAK"
   exit 3
 fi
 
