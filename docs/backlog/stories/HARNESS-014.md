@@ -4,8 +4,8 @@ title: plan.sh's unenforced exception is suppressed by any path a story merely m
 slug: plan-sh-s-unenforced-exception-is-suppre
 epic: 
 type: fix
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-014-plan-sh-s-unenforced-exception-is-suppre
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -1309,3 +1309,44 @@ per `plan.sh` call and GREEN's 39 s. So the discrepancy is contention and
 nothing else, and the practical rule for GATES is the one that follows from it:
 **run one thing at a time on this machine.** Three mutation suites that would be
 ~19 minutes each alone become something closer to 40 if anything is racing them.
+
+### REVIEW: PR #26, and its CI read as timings rather than a verdict
+
+https://github.com/ryanczhang7/first-roblox/pull/26 — merged 2026-09-23T20:10:29Z
+as `ab83e8f`. Both required checks passed first time; no review feedback, no
+return to RED from REVIEW.
+
+    boundaries   pass    5s
+    gates        pass    2m36s
+
+Per-step, from the gates job (run 35903196744), because the verdict alone is not
+the thing to read:
+
+    2. checkout                                    2s
+    6. install the pinned toolchain                8s
+    8. Harness self-test (bash scripts/selftest.sh)  1m53s   <- this story's own artifact
+    9. Show configured gates (--list)              3s
+   10. Audit the gate manifest (--audit)           4s
+   11. Run gates (bash scripts/gates.sh)          22s
+
+**The step worth watching is 8, and this story grew it.** `.github/workflows/gates.yml`
+carries a comment naming the self-test as "the one thing in the repository
+guaranteed to grow", with a worked case of a `windows-latest` job reaching 87% of
+a 45-minute cap. This story took the `plan` suite from 48 to 84 assertions and
+from ~20 to 29 `plan.sh` calls — roughly a 75% increase in the slowest suite —
+and step 8 still ran in 1m53s for all 19 suites.
+
+Two reasons that headroom is real rather than luck, both checked:
+
+- **The runner is `ubuntu-latest`** (`gates.yml:10`), not the `windows-latest`
+  the comment's worked case is about. The ~40x factor that comment measures is
+  process-spawn cost on Windows, which is exactly what this suite is made of —
+  it is why the same suite is ~19 minutes on the development machine and 113
+  seconds here.
+- **No `timeout-minutes` is set on the job**, so the cap is the runner default of
+  360 minutes. 2m36s is well under 1% of it.
+
+So the growth this story added is not a pending failure, and the thing that
+would make it one is a change of `runs-on` rather than another story's worth of
+assertions. Recorded here so the next story that grows the suite has a baseline
+to compare against instead of re-deriving one.
