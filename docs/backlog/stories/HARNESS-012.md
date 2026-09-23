@@ -4,8 +4,8 @@ title: mutate.sh leaves a backup and no log when its output is piped
 slug: mutate-sh-leaves-a-backup-and-no-log-whe
 epic: 
 type: fix
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-012-mutate-sh-leaves-a-backup-and-no-log-whe
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
