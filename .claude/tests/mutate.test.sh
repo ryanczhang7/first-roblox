@@ -88,6 +88,65 @@ piped_run() {
 # much a reader let through.
 lines_in() { printf '%s' "$1" | grep -c ''; }
 
+# --- what the early-exit cases need (HARNESS-013) ---------------------------
+#
+# The two paths that exit ABOVE the finish() trap - sed rejected the
+# expression (exit 2) and the expression changed nothing (exit 3) - print first
+# and clean up afterwards. piped_run cannot reach them: its expression is
+# hardwired to s/90/-90/ and its reader is always head -N, and two of the four
+# readers these cases sweep are not head -N at all.
+
+# piped_expr_run <READER> <EXPR> <command...>
+#
+# The sibling of piped_run, with the expression and the reader as arguments.
+# READER is a command word list - 'head -0', 'head -4', 'true' - split on
+# whitespace at the point of use. Same merged stream (2>&1: the shape an agent
+# writes, and after HARNESS-012 the only shape that still sends these paths'
+# output down the pipe at all), same scratch-file capture of PIPESTATUS[0] in
+# the same shell as the pipeline, same PIPED_OUT / PIPED_ST, and PIPED_ST is
+# still recorded and never asserted: mutate.sh's status through a pipe is out
+# of scope, because a shell killed by SIGPIPE cannot choose it.
+piped_expr_run() {
+  local reader="$1" expr="$2"; shift 2
+  # shellcheck disable=SC2086  # $reader is split on purpose: it is a word list
+  PIPED_OUT="$( cd "$FIX" && { bash scripts/mutate.sh src/main.ts "$expr" -- "$@" 2>&1 | $reader
+                               printf '%s' "${PIPESTATUS[0]}" > "$STFILE"; } )"
+  PIPED_ST="$(cat "$STFILE" 2>/dev/null)"
+}
+
+# EVERYTHING under the mutations directory except the log, by name. Not
+# leftovers(): its pattern is \.(bak|new)$, and the sed-rejected path leaves a
+# third file, `.new.err`, that the pattern cannot see - and an assertion that
+# cannot see the file it is about is a needle that cannot fail. Empty means
+# clean; anything else is what was left behind, named.
+entries_but_log() { ls "$MUTDIR" 2>/dev/null | grep -v '^log$' | tr '\n' ' '; }
+
+# Whole-line matches in a captured stream, for the messages the early-exit
+# paths print: -x so that a line is matched entire, -F so that the message is
+# quoted rather than turned into a pattern. Counted, so that a line printed
+# twice or not at all reads as 2 or 0 rather than "contains".
+count_exact() { printf '%s\n' "$1" | grep -cxF -- "$2"; }
+
+# The changed-nothing line, anchored at both ends against the three leading
+# tab-separated fields and the verbatim outcome. Counted, never searched for.
+NOTHING_LINE="^${STAMP_RE}"$'\t'"src/main\.ts"$'\t'"s/NOT_IN_THE_FILE/x/"$'\t'"CHANGED NOTHING - command not run$"
+
+# The line the sed-rejected path must NOT write. s/90/-90 (unterminated) is a
+# proper prefix of the ordinary expression s/90/-90/, so a floating needle for
+# this absence counts the ORDINARY path's log line and reports a leak that is
+# not there. The trailing (\t.*)?$ is load-bearing: the expression field ends
+# at a tab or at end of line, never at a slash. Demonstrated to count 0 beside
+# an ordinary line in "the needle for the rejected path does not match the
+# ordinary one" below.
+REJECTED_LINE="^${STAMP_RE}"$'\t'"src/main\.ts"$'\t'"s/90/-90("$'\t'".*)?$"
+
+# The four readers every early-exit case is swept through. The first two close
+# the pipe before reading a byte; the last two are the widths that already
+# pass, swept rather than dropped so that a fix cannot hold at one end by
+# breaking the other. Measured at PLANNED, reproduced independently at
+# PLANNED->RED, read out here rather than re-derived.
+EARLY_READERS=('head -0' 'true' 'head -1' 'head -4')
+
 # ---------------------------------------------------------------------------
 describe "the command sees the mutation"
 
@@ -135,6 +194,40 @@ assert_eq "and the file is untouched"                    "$before" "$(sha "$SRC"
 if [ -e "$FIX/ran-marker" ]; then
   _bad "and the command never ran" "ran-marker exists"
 else _ok "and the command never ran"; fi
+
+# ---------------------------------------------------------------------------
+describe "and says so in full: the whole explanation, on stderr, before exit 3"
+
+# HARNESS-013 AC-6. The block above pins "changed nothing" as a substring and
+# nothing about the rest of the explanation; this one pins all four lines, each
+# matched entire, on the stream they belong to. It sits beside the block above
+# rather than replacing it because the two are meant to differ: delete one of
+# the four printfs and this block goes red while "it says the expression
+# changed nothing" stays green. That contrast is what shows this is sharper
+# than a restatement.
+#
+# Green before this story starts. It is the contract the reorder must not
+# break: the fix moves the log append and the rm above these four printfs, and
+# a reorder that dropped or garbled a line would satisfy every file assertion
+# in this suite and change only what the agent is told.
+reset_src
+before="$(sha "$SRC")"
+rm -f "$FIX/ran-marker"
+err="$( cd "$FIX" && bash scripts/mutate.sh src/main.ts 's/NOT_IN_THE_FILE/x/' -- touch ran-marker 2>&1 1>/dev/null )"; rc=$?
+assert_eq "unpiped, it still exits 3" "3" "$rc"
+assert_eq "line 1 of 4 is on stderr, entire" "1" \
+  "$(count_exact "$err" 'mutate: the expression changed nothing in src/main.ts.')"
+assert_eq "line 2 of 4 is on stderr, entire" "1" \
+  "$(count_exact "$err" '  A probe that does not alter behaviour cannot show a test discriminates:')"
+assert_eq "line 3 of 4 is on stderr, entire" "1" \
+  "$(count_exact "$err" '  the command would have passed for the same reason it passes now. Check the')"
+assert_eq "line 4 of 4 is on stderr, entire" "1" \
+  "$(count_exact "$err" '  expression against the file and try again.')"
+assert_eq "and src/main.ts is byte-identical" "$before" "$(sha "$SRC")"
+if [ -e "$FIX/ran-marker" ]; then
+  _bad "and the command never ran" "ran-marker exists"
+else _ok "and the command never ran"; fi
+rm -f "$FIX/ran-marker"
 
 # ---------------------------------------------------------------------------
 describe "how much it changed is reported, because one line is the useful case"
@@ -346,6 +439,150 @@ assert_eq "and nothing else is either"   "PAYLOAD-ON-STDOUT" "$sout"
 assert_contains "the banner is on stderr"     "=== mutate: " "$serr"
 assert_contains "and so is the verdict"       "restored (verified byte-for-byte" "$serr"
 assert_contains "and so is the line put back" "Math.min(90, v)" "$serr"
+rm -rf "$MUTDIR"
+
+# ===========================================================================
+# HARNESS-013: the two paths that exit ABOVE the trap.
+#
+# HARNESS-012 moved the restore, the log append and the clean-up into an EXIT
+# trap installed before the first byte is printed - for every path that reaches
+# the trap. Two do not: sed rejecting the expression (exit 2) and the
+# expression changing nothing (exit 3) both print first and clean up after, so
+# a reader that closes the pipe before ANY byte gets through kills the shell at
+# the first printf and leaves the backup, the working copy and (on the exit 2
+# path) the .err file behind with no log line - the exact false alarm
+# HARNESS-012 removed, on two paths where nothing was ever mutated.
+#
+# `head -30` never trips this: both blocks print two to four short lines, which
+# fit the pipe buffer. It takes `head -0`, or a reader that exits without
+# reading. So the four readers below are the story's, read out rather than
+# re-derived; `head -1` and `head -4` pass today and are swept so a fix cannot
+# hold at one end by breaking the other. Every log assertion is a COUNT with
+# a needle anchored at both ends. The command is `true` throughout, because
+# neither path reaches it.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+describe "an expression that changes nothing leaves no backup through a closed pipe, and logs once"
+
+# AC-1 and AC-2. The post-condition at every reader: the mutations directory
+# holds the log and nothing else, and the log holds exactly one line for this
+# run - file, expression, and the verbatim outcome. Enumerated and counted:
+# "no .bak" is an absence, and an absence is equally what a run that died
+# before touching anything produces; the one log line can only come from this
+# run. Today the head -0 and true rows leave a .bak/.new pair and no log file.
+for reader in "${EARLY_READERS[@]}"; do
+  rm -rf "$MUTDIR"
+  reset_src
+  before="$(sha "$SRC")"
+  piped_expr_run "$reader" 's/NOT_IN_THE_FILE/x/' true
+  assert_eq "reader '$reader': nothing but the log is left under mutations/" \
+    "" "$(entries_but_log)"
+  assert_eq "reader '$reader': exactly one log line says CHANGED NOTHING - command not run" \
+    "1" "$(count_lines "$NOTHING_LINE")"
+  assert_eq "reader '$reader': src/main.ts is byte-identical after" \
+    "$before" "$(sha "$SRC")"
+done
+rm -rf "$MUTDIR"
+
+# ---------------------------------------------------------------------------
+describe "an expression sed rejects leaves no backup, no working copy and no .err through a closed pipe"
+
+# AC-3 and AC-4. This path leaves one file MORE than the other - the .new.err
+# that sed's complaint was captured into - which is why the directory is
+# enumerated rather than pattern-matched. And this path writes NO log line, by
+# decision (PO decision 2): the count of lines naming this expression is zero
+# at every reader. Today the head -0 and true rows leave all three files.
+for reader in "${EARLY_READERS[@]}"; do
+  rm -rf "$MUTDIR"
+  reset_src
+  before="$(sha "$SRC")"
+  piped_expr_run "$reader" 's/90/-90' true
+  assert_eq "reader '$reader': nothing but the log is left under mutations/ - no .bak, .new or .new.err" \
+    "" "$(entries_but_log)"
+  assert_eq "reader '$reader': no log line names the rejected expression" \
+    "0" "$(count_lines "$REJECTED_LINE")"
+  assert_eq "reader '$reader': src/main.ts is byte-identical after" \
+    "$before" "$(sha "$SRC")"
+done
+
+# The control on that zero, and AC-5 with it. A count of 0 is also what a
+# missing or unwritable log produces, so in ONE directory: a changed-nothing
+# run first, which must leave its one line - proof the log is there and takes
+# writes - then the rejected expression unpiped, which must add none.
+rm -rf "$MUTDIR"; reset_src
+mutate src/main.ts 's/NOT_IN_THE_FILE/x/' -- true >/dev/null 2>&1
+assert_eq "control: a changed-nothing run in the same directory logs its one line" \
+  "1" "$(count_lines "$NOTHING_LINE")"
+
+# What sed itself says about this expression, measured directly, so that the
+# assertion below quotes THIS machine's sed rather than a transcript of one.
+# Non-empty is asserted first: an empty complaint would make "  " the needle.
+sed_complaint="$( cd "$FIX" && sed -e 's/90/-90' src/main.ts 2>&1 >/dev/null | head -1 )"
+if [ -n "$sed_complaint" ]; then _ok "sed's own complaint about s/90/-90 is non-empty"
+else _bad "sed's own complaint about s/90/-90 is non-empty" "sed printed nothing on stderr"; fi
+
+before="$(sha "$SRC")"
+err="$( cd "$FIX" && bash scripts/mutate.sh src/main.ts 's/90/-90' -- true 2>&1 1>/dev/null )"; rc=$?
+# AC-5. The negative control on the SHAPE of the fix: the second line below is
+# rendered from $NEW.err, and the reorder deletes that file before printing. A
+# fix that moves the rm up without first capturing the text keeps every file
+# assertion above green and silently drops the only line that says WHY the
+# expression was refused.
+assert_eq "unpiped, the rejected expression still exits 2" "2" "$rc"
+assert_eq "and stderr carries the heading, entire" \
+  "1" "$(count_exact "$err" 'mutate: sed rejected the expression:')"
+assert_eq "and sed's own complaint, indented by two spaces" \
+  "1" "$(count_exact "$err" "  $sed_complaint")"
+assert_eq "and src/main.ts is byte-identical after" "$before" "$(sha "$SRC")"
+# AC-4, the unpiped run, against a log that is present and writable.
+assert_eq "and still no log line names the rejected expression" \
+  "0" "$(count_lines "$REJECTED_LINE")"
+assert_eq "while the control's line is still the only one in the log" \
+  "1" "$(grep -c '' "$LOG" 2>/dev/null)"
+assert_eq "and nothing but the log is left under mutations/" "" "$(entries_but_log)"
+rm -rf "$MUTDIR"
+
+# ---------------------------------------------------------------------------
+describe "the ordinary mutating run stays clean at the readers that close the pipe unread"
+
+# AC-7. HARNESS-012's fix, at the two readers its sweep did not use - head -0
+# and true, which close the pipe before the banner - and at two it did. Green
+# today; written down here so that a story reordering the code above the trap
+# cannot quietly undo it, and earned by moving the trap back below the banner
+# (deferred verification 6), which must turn the head -0 and true rows red.
+for reader in "${EARLY_READERS[@]}"; do
+  rm -rf "$MUTDIR"
+  reset_src
+  before="$(sha "$SRC")"
+  piped_expr_run "$reader" 's/90/-90/' true
+  assert_eq "reader '$reader': nothing but the log is left under mutations/" \
+    "" "$(entries_but_log)"
+  assert_eq "reader '$reader': exactly one log line names the run" \
+    "1" "$(count_lines "$RUN_LINE")"
+  assert_eq "reader '$reader': src/main.ts is byte-identical after" \
+    "$before" "$(sha "$SRC")"
+done
+
+# ---------------------------------------------------------------------------
+describe "the needle for the rejected path does not match the ordinary one"
+
+# The instrument, not the subject. s/90/-90 is a proper prefix of s/90/-90/,
+# so a needle for the rejected expression that floats - or that anchors only
+# at the front - counts the ORDINARY path's line and reports a leak that is not
+# there. The log left by the sweep above holds one ordinary line; a
+# changed-nothing run is added to it, and the three anchored needles must then
+# read 1, 1 and 0 against a log of exactly two lines. The floating count is
+# asserted too, at 1: it is the false alarm the anchor prevents, and if it ever
+# reads 0 the log no longer contains the prefix and the demonstration is empty.
+reset_src
+mutate src/main.ts 's/NOT_IN_THE_FILE/x/' -- true >/dev/null 2>&1
+assert_eq "the log holds exactly two lines" "2" "$(grep -c '' "$LOG" 2>/dev/null)"
+assert_eq "RUN_LINE counts the ordinary run once"        "1" "$(count_lines "$RUN_LINE")"
+assert_eq "NOTHING_LINE counts the changed-nothing run once" "1" "$(count_lines "$NOTHING_LINE")"
+assert_eq "REJECTED_LINE, anchored, counts zero beside them" "0" "$(count_lines "$REJECTED_LINE")"
+assert_eq "whereas a floating grep -F for s/90/-90 would count the ordinary line" \
+  "1" "$(grep -cF 's/90/-90' "$LOG" 2>/dev/null)"
 rm -rf "$MUTDIR"
 
 summary "mutate"

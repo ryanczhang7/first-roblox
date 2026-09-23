@@ -4,8 +4,8 @@ title: mutate.sh's early-exit paths leak the backup they print about
 slug: mutate-sh-s-early-exit-paths-leak-the-ba
 epic: 
 type: fix
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/HARNESS-013-mutate-sh-s-early-exit-paths-leak-the-ba
 depends_on: [HARNESS-012]   # its finish() trap and its piped test helpers are what this builds on
 required_gates: []          # gate ids that are optional for the repo but binding for THIS story
@@ -305,6 +305,37 @@ Three readings of that table matter and all three are in the criteria:
   through a pipe is not fixable from inside `mutate.sh` and is out of scope; it
   is recorded so nobody reads a 141 as evidence of a leak.
 
+**Amended by RED, 2026-09-23 — the `head -1` rows are a race, not a settled
+value.** The first run of the finished suite went red at P-N through `head -1`
+as well as at `head -0` and `true`:
+
+    FAIL reader 'head -1': nothing but the log is left under mutations/
+         expected:
+         actual:   src_main.ts.20260923T203350Z.62501.bak src_main.ts.20260923T203350Z.62501.new
+    FAIL reader 'head -1': exactly one log line says CHANGED NOTHING - command not run
+         expected: 1
+         actual:   0
+
+Re-measured outside the framework, in a fresh `make_project_fixture`, five runs
+per provocation: P-N through `head -1` was clean with one log line 5/5, P-S
+through `head -1` clean 5/5. So the table's `head -1` rows are the *usual*
+outcome, not a guaranteed one. The mechanism: `head -1` exits after the first
+line, and today both blocks print their first line **before** the file work; if
+`head` is scheduled and exits between the writer's first and second `printf`,
+the second write is SIGPIPE and the block dies above its log append and its
+`rm`. "Four short lines fit the pipe buffer" is true and is about blocking; it
+does not cover a reader that closes the pipe between two writes. `head -4`
+cannot trip either way — it reads every line both blocks print and then waits
+for EOF, so the writer has nothing left to write when the pipe closes.
+
+What this changes: **nothing in the criteria** — AC-1 to AC-4 already demand
+the post-condition at all four readers, and after the fix every reader is
+deterministic because nothing is printed before the file work is done. What it
+changes for **GATES** is deferred verifications 1 and 2: "`head -1` ... must
+stay green" under the un-reorder is not a reliable control on this machine;
+`head -4` is, and is the row to read as "stays green". A `head -1` red under
+mutation 1 or 2 is this race, not a defect in the sweep.
+
 ### Oracle partition of the criteria
 
 | Criteria | Kind | Instruction to RED |
@@ -340,11 +371,263 @@ corruption — and the third here is a *corruption*, not a missing file.
    the failure the reorder invites. If AC-5 does not catch it, the story has
    traded a leaked backup for a silent refusal.
 
-**Why RED cannot run any of them.** There is nothing to un-reorder in RED: the
+
+**Mutations 4-6, added by the Lead PO at PLANNED. Owner: RED.** The three above
+earn the *fix*: each breaks something this story builds, and a file assertion
+catches it. They leave four criteria unearned. AC-4, AC-5's first assertion,
+AC-6 and AC-7 all **pass today**, which `rules.md` says is the shape of an
+assertion that could be asserting nothing and nothing would notice — and
+mutations 1-3 do not move any of them.
+
+**These three are RED's, not GATES's, and the difference is not bookkeeping.**
+Mutations 1-3 cannot run in RED because they un-reorder code GREEN has not
+written yet. Mutations 4-6 mutate code that exists **today**, pinning assertions
+that pass **today** — which is exactly `rules.md`'s recipe for a test written
+while the implementation already exists: mutate the specific production
+behaviour it claims to pin, watch that one assertion go red, revert. That recipe
+belongs to the phase that writes the assertion. Run them through
+`scripts/mutate.sh` by the copy recipe below, one mutation and one run each, and
+paste the red into `## Handoff` as well as here.
+
+4. **The `sed`-rejected path given a log line.** With a `printf ... >> "$LOG"`
+   added to the `exit 2` block, AC-4's zero-count **must** go to 1 and go red,
+   and AC-2's count must stay at 1. This earns PO decision 2 — the decision that
+   this path writes nothing — and it is the only thing that does: an absence
+   assertion against a path that has never written a line is satisfied by a
+   `grep` pointed at the wrong file, by a misspelled needle, and by the needle
+   the Contract warns about. It also proves the anchoring from the other side:
+   if AC-4 goes to 1 only when the *ordinary* expression is in the log too, the
+   trailing `(\t.*)?$` is not doing its job.
+
+   **Result (RED, 2026-09-23, this machine).** Expression, through the copy
+   recipe:
+
+       $ cp scripts/mutate.sh scripts/__mutate_probe.sh
+       $ bash scripts/__mutate_probe.sh scripts/mutate.sh 's/^  exit 2$/  printf "%s\t%s\t%s\tREJECTED\n" "$STAMP" "$REL" "$EXPR" >> "$LOG"; exit 2/' -- bash scripts/selftest.sh mutate
+       === mutate: scripts/mutate.sh (155 line(s) changed by ...) ===
+         120 -   exit 2
+         120 +   printf "%s	%s	%s	REJECTED
+         121 - fi
+         121 + " "$STAMP" "$REL" "$EXPR" >> "$LOG"; exit 2
+       (GNU sed rendered `\t` and `\n` in the replacement as a literal tab and
+        newline inside the double-quoted format, which is still one valid
+        `printf` writing one tab-separated line; the "155 lines changed" is the
+        line shift that newline causes, not 155 edits.)
+
+   The red — the four assertions that moved, and only those:
+
+       an expression sed rejects leaves no backup, no working copy and no .err through a closed pipe
+         FAIL reader 'head -1': no log line names the rejected expression
+              expected: 0
+              actual:   1
+         FAIL reader 'head -4': no log line names the rejected expression
+              expected: 0
+              actual:   1
+         FAIL and still no log line names the rejected expression
+              expected: 0
+              actual:   1
+         FAIL while the control's line is still the only one in the log
+              expected: 1
+              actual:   2
+
+       mutate: 121 passed, 12 failed
+
+   Read against the prediction: AC-4's zero went to 1 wherever the mutated
+   block reached its log write (`head -1`, `head -4`, unpiped) and stayed 0 at
+   `head -0` and `true`, where SIGPIPE at the first `printf` still kills the
+   block above the write — the file assertions there stayed red as at
+   baseline. AC-2's count stayed at 1 (no new failure in the changed-nothing
+   block). The needle block `the needle for the rejected path does not match
+   the ordinary one` stayed green: `REJECTED_LINE` moved only in the block
+   where a rejected-expression line was actually written, so the trailing
+   `(\t.*)?$` is doing its job from this side too. The other 8 of the 12
+   failures are the baseline reds (AC-1/2 at `head -0`, `true` and — the race,
+   see the Contract amendment — at `head -1`; AC-3 at `head -0`, `true`).
+
+   Restore: `=== mutate: command exited 1; restored (verified byte-for-byte
+   against .../scripts_mutate.sh.20260923T203911Z.73001.bak) ===`;
+   `git diff --stat scripts/mutate.sh` empty; `git status --short` shows only
+   `.claude/tests/mutate.test.sh` and this story; no `scripts/__mutate_probe.sh`.
+
+5. **One of the four "changed nothing" lines deleted.** With the third `printf`
+   of the `exit 3` block removed, AC-6's four-line assertion **must** go red —
+   *and the existing `assert_contains "changed nothing"` at
+   `mutate.test.sh:132` must stay green.* Both halves are the point: the second
+   is what shows AC-6 is sharper than the assertion it sits beside, rather than
+   a fourth restatement of it.
+
+   **Result (RED, 2026-09-23, this machine).**
+
+       $ cp scripts/mutate.sh scripts/__mutate_probe.sh
+       $ bash scripts/__mutate_probe.sh scripts/mutate.sh '/the command would have passed for the same reason it passes now/d' -- bash scripts/selftest.sh mutate
+       === mutate: scripts/mutate.sh (144 line(s) changed by /the command would have passed for the same reason it passes now/d) ===
+         129 -   printf '  the command would have passed for the same reason it passes now. Check the\n' >&2
+         129 +   printf '  expression against the file and try again.\n' >&2
+       (one line deleted; the count is the shift of everything below it)
+
+   The red — one assertion, and the one beside it green:
+
+       a mutation that mutates nothing proves nothing
+                                               <- no FAIL: `it says the expression changed nothing` stayed green
+
+       and says so in full: the whole explanation, on stderr, before exit 3
+         FAIL line 3 of 4 is on stderr, entire
+              expected: 1
+              actual:   0
+
+       mutate: 126 passed, 7 failed
+
+   Both halves as required: AC-6's third-line assertion went red, the existing
+   `assert_contains "changed nothing"` did not, and nothing else moved — the
+   other 6 failures are the baseline reds at `head -0` and `true` (in this run
+   the `head -1` race did not fire). Lines 1, 2 and 4 stayed at 1, so the
+   assertion that moved is the one naming the deleted line.
+
+   Restore: `=== mutate: command exited 1; restored (verified byte-for-byte
+   against .../scripts_mutate.sh.20260923T205039Z.93356.bak) ===`;
+   `git diff --stat scripts/mutate.sh` empty; no `scripts/__mutate_probe.sh`.
+
+**Correction to mutation 6, by the orchestrator at the end of RED — the second
+clause of this entry was wrong, and RED was right to probe it rather than follow
+it.** As written, the entry predicted that moving the trap back below the banner
+would turn *both* AC-7's `head -0`/`true` rows **and** the existing width sweep
+red. RED reported that it turns only the former. Reproduced independently, in a
+throwaway fixture whose **own copy** of `mutate.sh` was edited (the repository's
+was never touched), five runs per cell, `s/90/-90/`:
+
+    UNMUTATED                        trap 256, banner 258, running 267
+        head -0   leftovers=0/5
+        head -1   leftovers=0/5
+        head -3   leftovers=0/5
+    MUT-6   (trap below banner+diff) trap 261, banner 257, running 267
+        head -0   leftovers=5/5      <- AC-7 red, as the entry says
+        head -1   leftovers=0/5      <- the sweep stays GREEN
+        head -3   leftovers=0/5
+    MUT-6b  (trap below `running`)   trap 267, banner 257, running 266
+        head -0   leftovers=5/5
+        head -1   leftovers=5/5      <- the sweep goes red here, not under MUT-6
+        head -3   leftovers=5/5
+
+Why: with the trap below the banner and the diff, the shell's **next own write**
+is the `running` line at `mutate.sh:267`, by which time the trap exists. A
+`head -N` with N >= 1 takes the banner without the writer blocking, so no SIGPIPE
+lands in the unprotected window at all. Only a reader that takes **nothing** —
+`head -0`, `true` — dies in it. That is exactly the property AC-7's two new rows
+were added to pin and the sweep's widths 1..30 cannot reach, which is the point
+of AC-7 rather than an argument against it.
+
+**So the entry now reads:** under mutation 6, AC-7's `head -0` and `true`
+assertions must go red, and **the existing width sweep must stay green** — its
+staying green is part of the evidence, not a failure. Mutation **6b** (the trap
+moved below the `running` line) is the variant that reddens the sweep, and RED
+ran it too; both outputs are below. Either is acceptable as the earning probe.
+A PO instruction that names a mechanism is checkable, not sacred; this one did
+not hold, and the report is the valuable half of the exchange.
+
+6. **The trap installed late again — HARNESS-012's own defect.** With the
+   `trap ... EXIT` line moved back below the banner, AC-7's assertions at
+   `head -0` and at `true` **must** go red, and the existing width sweep at
+   `mutate.test.sh:276` must go red with them. AC-7 is a regression pin on
+   another story's fix, so nothing this story writes can make it fail; without
+   this it is an assertion with no demonstrated failure mode at all. Restoring
+   the line is the whole revert — do not "fix" anything else while it is moved.
+
+   **Result (RED, 2026-09-23, this machine) — two runs, because the entry
+   makes two predictions and the first placement confirmed only one.**
+
+   *Run 6, the mutation as written — the `trap` line moved to directly below
+   the banner (after the `awk ... | head -20 >&2` line):*
+
+       $ cp scripts/mutate.sh scripts/__mutate_probe.sh
+       $ bash scripts/__mutate_probe.sh scripts/mutate.sh '/^trap finish EXIT INT TERM$/d; /| head -20 >&2$/a trap finish EXIT INT TERM' -- bash scripts/selftest.sh mutate
+       === mutate: scripts/mutate.sh (5 line(s) changed by ...) ===
+         256 - trap finish EXIT INT TERM
+         ...
+         260 + trap finish EXIT INT TERM
+
+       the ordinary mutating run stays clean at the readers that close the pipe unread
+         FAIL reader 'head -0': nothing but the log is left under mutations/
+              expected:
+              actual:   src_main.ts.20260923T210147Z.113805.bak src_main.ts.20260923T210147Z.113805.new
+         FAIL reader 'head -0': exactly one log line names the run
+              expected: 1
+              actual:   0
+         FAIL reader 'true': nothing but the log is left under mutations/
+              expected:
+              actual:   src_main.ts.20260923T210152Z.114046.bak src_main.ts.20260923T210152Z.114046.new
+         FAIL reader 'true': exactly one log line names the run
+              expected: 1
+              actual:   0
+
+       mutate: 121 passed, 12 failed
+
+   AC-7's `head -0` and `true` assertions went red, as required. **The
+   existing width sweep did not**, contrary to this entry's second sentence,
+   and the reason is mechanical rather than a defect in the sweep: with the
+   trap installed after the banner's `awk | head -20`, the shell's own next
+   write is the `=== mutate: running ... ===` line, and the trap exists by
+   then. `head -1` reads the banner and closes the pipe; the `awk`/`head -20`
+   children die of SIGPIPE, not the shell; the shell dies at the `running`
+   write **inside** the trap's protection, after the file work — clean. Only
+   a reader that closes the pipe before the very first write reaches the
+   unprotected banner `printf`. So AC-7's two readers pin something the sweep
+   cannot: "installed before the first byte", not "installed before the
+   shell's second own write". The remaining 8 failures are the baseline reds.
+
+   *Run 6b, the trap moved below the `running` line instead, to measure the
+   entry's second claim rather than explain it away:*
+
+       $ cp scripts/mutate.sh scripts/__mutate_probe.sh
+       $ bash scripts/__mutate_probe.sh scripts/mutate.sh '/^trap finish EXIT INT TERM$/d; /=== mutate: running %s ===/a trap finish EXIT INT TERM' -- bash scripts/selftest.sh mutate
+       === mutate: scripts/mutate.sh (12 line(s) changed by ...) ===
+         256 - trap finish EXIT INT TERM
+         ...
+
+       a reader that closes the pipe early leaves no backup, and logs once
+         FAIL N=1: no .bak or .new is left behind
+              expected:
+              actual:   src_main.ts.20260923T210532Z.122149.bak src_main.ts.20260923T210532Z.122149.new
+         FAIL N=1: exactly one log line names the run
+              expected: 1
+              actual:   0
+         FAIL N=1: src/main.ts is byte-identical after
+              expected: 4788c78ab31d1ca7cfae8570c7e6840852dddbd1
+              actual:   7c6b75ddfa588f69017b7d61a75d0c8701f848fe
+         FAIL N=2: ... (same three)
+         FAIL N=3: ... (same three)
+         (N=4, 5, 6, 30 green)
+
+       the ordinary mutating run stays clean at the readers that close the pipe unread
+         FAIL reader 'head -0': nothing but the log is left under mutations/
+         FAIL reader 'head -0': exactly one log line names the run
+         FAIL reader 'true': nothing but the log is left under mutations/
+         FAIL reader 'true': exactly one log line names the run
+         FAIL reader 'head -1': nothing but the log is left under mutations/
+         FAIL reader 'head -1': exactly one log line names the run
+         FAIL reader 'head -1': src/main.ts is byte-identical after
+              expected: 4788c78ab31d1ca7cfae8570c7e6840852dddbd1
+              actual:   7c6b75ddfa588f69017b7d61a75d0c8701f848fe
+
+       mutate: 109 passed, 24 failed
+
+   This is HARNESS-012's defect in full — the mutated file left in the tree
+   with no log line — and both the sweep (N ≤ 3, where `head` closes the pipe
+   before the `running` write; clean from N = 4, where that write has already
+   landed) and AC-7 (now at `head -1` too) catch it. The needle block and the
+   unpiped-run block stayed green in both runs; the other 8 failures are the
+   baseline reds.
+
+   Restore, both runs: `restored (verified byte-for-byte against
+   .../scripts_mutate.sh.20260923T205811Z.106293.bak)` and
+   `.../scripts_mutate.sh.20260923T210342Z.118288.bak)`; `git diff --stat
+   scripts/mutate.sh` empty after each; no `scripts/__mutate_probe.sh`.
+
+**Why RED cannot run mutations 1-3.** There is nothing to un-reorder in RED: the
 reordered code is what GREEN is about to write, and `scripts/mutate.sh` is not
 RED's to edit under the law even though the lock would permit it.
 
-**Owner: GATES.**
+**Owner: GATES** — mutations 1, 2 and 3. **Owner: RED** — mutations 4, 5
+and 6, for the reason above.
 
 One workable recipe, written down because `mutate.sh` refuses to mutate itself
 (`scripts/mutate.sh:100-102`) and the obvious invocation therefore exits 2 —
@@ -438,6 +721,14 @@ brief that was measured to matter more than the model.
   override was passed, so the agent definition's own `model: opus` is what
   resolved it.
 
+- **RED** — `test-developer`, resolved `fable` (`claude-fable-5-1`). As planned:
+  the dispatch passed `model: fable` explicitly, so the plan and the resolution
+  agree and neither a session setting nor the agent definition decided it. The
+  agent confirmed the same name from inside the dispatch. All three success
+  conditions above were met — see "Verdict on the `fable` experiment" in
+  `## Notes`, where they are checked against the tree rather than against the
+  report.
+
 <!-- One line per dispatch, as it happened: phase, agent, the model that
      actually ran, and — if a phase was planned for one model and ran on
      another — what that changed. A choice with no verdict is folklore. -->
@@ -483,17 +774,267 @@ brief that was measured to matter more than the model.
 
 ## Test plan
 
-<!-- Filled by the Test Developer during RED: which tests, at which level,
-     and which AC each one covers. -->
+All in `.claude/tests/mutate.test.sh`, at the level the contract lives: the real
+`scripts/mutate.sh` copied into a `make_project_fixture`, driven through a real
+pipe, judged by what is left on disk and in the log. Bash, git and coreutils
+only. Nothing existing was rewritten; `piped_run`, `leftovers()`, the width
+sweep and the `a mutation that mutates nothing proves nothing` block keep their
+exact text.
+
+**Helpers and needles added** (after `lines_in`):
+
+| Name | What it is |
+|---|---|
+| `piped_expr_run <READER> <EXPR> <command...>` | sibling of `piped_run`: expression and reader as arguments, same `2>&1` merged stream, same `${PIPESTATUS[0]}` captured in the same shell via `$STFILE`; `PIPED_OUT`, `PIPED_ST` (recorded, never asserted) |
+| `entries_but_log` | `ls "$MUTDIR" \| grep -v '^log$'` — everything under `mutations/` except the log, by name; sees `.new.err` |
+| `count_exact <str> <line>` | whole-line, literal count (`grep -cxF`) in a captured stream |
+| `NOTHING_LINE` | `^<STAMP_RE>\tsrc/main\.ts\ts/NOT_IN_THE_FILE/x/\tCHANGED NOTHING - command not run$` |
+| `REJECTED_LINE` | `^<STAMP_RE>\tsrc/main\.ts\ts/90/-90(\t.*)?$` — the trailing `(\t.*)?$` is what stops it matching `s/90/-90/` |
+| `EARLY_READERS` | `('head -0' 'true' 'head -1' 'head -4')`, read out from the Contract |
+
+**Blocks** (describe → assertions → AC):
+
+| Block | Assertions | AC |
+|---|---|---|
+| `and says so in full: the whole explanation, on stderr, before exit 3` — sits directly after the existing changed-nothing block; P-N unpiped, stderr captured alone (`2>&1 1>/dev/null`) | exit 3; each of the four lines counted entire on stderr = 1; `src/main.ts` sha unchanged; `ran-marker` absent | AC-6 |
+| `an expression that changes nothing leaves no backup through a closed pipe, and logs once` — P-N × 4 readers, `mutations/` removed before each | `entries_but_log` = ""; `count_lines NOTHING_LINE` = 1; sha unchanged | AC-1, AC-2 |
+| `an expression sed rejects leaves no backup, no working copy and no .err through a closed pipe` — P-S × 4 readers, then in ONE directory: P-N unpiped (control), sed's own complaint measured directly, P-S unpiped with stderr captured alone | per reader: `entries_but_log` = ""; `count_lines REJECTED_LINE` = 0; sha unchanged. Then: control `NOTHING_LINE` = 1; sed complaint non-empty; exit 2; heading line entire = 1; `"  $sed_complaint"` entire = 1; sha unchanged; `REJECTED_LINE` = 0; total log lines = 1; `entries_but_log` = "" | AC-3, AC-4 (with its control), AC-5 |
+| `the ordinary mutating run stays clean at the readers that close the pipe unread` — `s/90/-90/` × 4 readers | `entries_but_log` = ""; `count_lines RUN_LINE` = 1; sha unchanged | AC-7 |
+| `the needle for the rejected path does not match the ordinary one` — P-N added to the log the AC-7 sweep left (one ordinary line) | total lines = 2; `RUN_LINE` = 1; `NOTHING_LINE` = 1; `REJECTED_LINE` = 0; floating `grep -cF 's/90/-90'` = 1 (the false alarm the anchor prevents) | the instrument for AC-4; Model-guidance success condition 3 |
+
+**Cost.** 16 new `mutate.sh` processes. Suite went from ~146 s to 402 s on this
+machine (one full run, nothing else running). No per-test timeout exists in this
+runner; the ceiling that matters is the orchestrator's 600 s foreground cap on a
+single `bash scripts/selftest.sh mutate`, and 402 s sits under it with margin.
+Each of the three probes below is one full suite under the copy recipe, ~7 min.
+
+**Passes on arrival, and what earns each** — see `## Deferred verifications`
+4, 5 and 6 and the handoff: AC-4 (mutation 4), AC-5's first assertion and AC-6
+(mutation 5; mutation 3, GATES's, earns AC-5's second), AC-7 (mutation 6). The
+needle-demonstration block passes on arrival too and is an instrument check,
+earned by mutation 4's other half: the `REJECTED_LINE` count moves to 1 only
+when a line with the rejected expression is actually written, not because an
+ordinary line is present.
 
 ## Handoff: RED -> GREEN
 
-<!-- Filled by the Test Developer at the end of RED. This is the ONLY channel
-     to the Feature Developer, whose context is fresh. Must contain the exact
-     command, the verbatim failure output, every file touched and which AC each
-     test covers, the shape the tests already pin, any test that passed on
-     arrival together with the probe that earns it, and the expected value of
-     every negative control as a table. -->
+**Model.** RED ran on `fable` (`claude-fable-5-1`), as planned; no override was
+passed to this dispatch.
+
+### The command
+
+    bash scripts/selftest.sh mutate
+
+One suite, 402 s on this machine with nothing else running (was ~146 s after
+HARNESS-012; 16 new `mutate.sh` processes). Do not run bare
+`bash scripts/selftest.sh` as the inner loop.
+
+### Files touched
+
+| File | What |
+|---|---|
+| `.claude/tests/mutate.test.sh` | the only test file: helpers `piped_expr_run`, `entries_but_log`, `count_exact`; needles `NOTHING_LINE`, `REJECTED_LINE`; array `EARLY_READERS`; one block after the existing changed-nothing block (AC-6); four blocks at the end (AC-1/2, AC-3/4/5, AC-7, needle demonstration). Nothing existing was edited. |
+| `docs/backlog/stories/HARNESS-013.md` | `## Contract` amended (baseline table: the `head -1` race), `## Test plan`, this section, `## Deferred verifications` 4, 5, 6 results |
+
+**`scripts/mutate.sh` was not edited.** The lock would have allowed it — both
+files classify as `harness` — and the law still applies. Checked against the
+tree after the last probe's restore:
+
+    $ git diff --stat scripts/mutate.sh
+    $ git status --short
+     M .claude/tests/mutate.test.sh
+     M docs/backlog/stories/HARNESS-013.md
+
+No `scripts/__mutate_probe.sh` remains. The four probe runs each restored the
+file and verified it with `cmp` (their verdict lines are pasted under
+`## Deferred verifications`).
+
+### Verbatim failure output — first run of the finished suite, untouched `mutate.sh`
+
+    === mutate ===
+    ...
+      an expression that changes nothing leaves no backup through a closed pipe, and logs once
+        FAIL reader 'head -0': nothing but the log is left under mutations/
+             expected:
+             actual:   src_main.ts.20260923T203329Z.61895.bak src_main.ts.20260923T203329Z.61895.new
+        FAIL reader 'head -0': exactly one log line says CHANGED NOTHING - command not run
+             expected: 1
+             actual:   0
+        FAIL reader 'true': nothing but the log is left under mutations/
+             expected:
+             actual:   src_main.ts.20260923T203339Z.62193.bak src_main.ts.20260923T203339Z.62193.new
+        FAIL reader 'true': exactly one log line says CHANGED NOTHING - command not run
+             expected: 1
+             actual:   0
+        FAIL reader 'head -1': nothing but the log is left under mutations/
+             expected:
+             actual:   src_main.ts.20260923T203350Z.62501.bak src_main.ts.20260923T203350Z.62501.new
+        FAIL reader 'head -1': exactly one log line says CHANGED NOTHING - command not run
+             expected: 1
+             actual:   0
+
+      an expression sed rejects leaves no backup, no working copy and no .err through a closed pipe
+        FAIL reader 'head -0': nothing but the log is left under mutations/ - no .bak, .new or .new.err
+             expected:
+             actual:   src_main.ts.20260923T203410Z.63063.bak src_main.ts.20260923T203410Z.63063.new src_main.ts.20260923T203410Z.63063.new.err
+        FAIL reader 'true': nothing but the log is left under mutations/ - no .bak, .new or .new.err
+             expected:
+             actual:   src_main.ts.20260923T203416Z.63301.bak src_main.ts.20260923T203416Z.63301.new src_main.ts.20260923T203416Z.63301.new.err
+
+      the ordinary mutating run stays clean at the readers that close the pipe unread
+
+      the needle for the rejected path does not match the ordinary one
+
+    mutate: 125 passed, 8 failed
+
+    1 of 1 harness suite(s) FAILED.
+
+Every failure is a file left behind or a log line missing after a run that
+never mutated anything — the assertion, not an error in the harness. Six of the
+eight are the Contract's table exactly. The two at P-N `head -1` are a **race**
+the table does not show (see "What I found" and the Contract amendment): 5/5
+clean outside the suite, red in 4 of the 5 suite runs today. The
+`src/main.ts is byte-identical` assertions passed at every reader on both
+paths, which is the table's `src_ok=yes`.
+
+### One line per test, and the AC it covers
+
+| Assertion (as printed) | Asserts | AC |
+|---|---|---|
+| `unpiped, it still exits 3` | rc = 3 for P-N unpiped | AC-6 |
+| `line N of 4 is on stderr, entire` (×4) | each of the four changed-nothing lines, matched entire on stderr alone, count = 1 | AC-6 |
+| `and src/main.ts is byte-identical` / `and the command never ran` | sha unchanged; `ran-marker` absent | AC-6 |
+| `reader 'R': nothing but the log is left under mutations/` (P-N, ×4) | `ls mutations/ \| grep -v '^log$'` empty | AC-1 |
+| `reader 'R': exactly one log line says CHANGED NOTHING - command not run` (×4) | `count_lines NOTHING_LINE` = 1 | AC-2 |
+| `reader 'R': src/main.ts is byte-identical after` (P-N, ×4) | sha unchanged | AC-1 (the table's `src_ok`) |
+| `reader 'R': nothing but the log is left under mutations/ - no .bak, .new or .new.err` (P-S, ×4) | directory enumeration empty | AC-3 |
+| `reader 'R': no log line names the rejected expression` (×4) | `count_lines REJECTED_LINE` = 0 | AC-4 |
+| `control: a changed-nothing run in the same directory logs its one line` | `NOTHING_LINE` = 1 in the directory the P-S unpiped run then uses | AC-4 control |
+| `sed's own complaint about s/90/-90 is non-empty` | guard on the AC-5 needle | AC-5 |
+| `unpiped, the rejected expression still exits 2` | rc = 2 | AC-5 |
+| `and stderr carries the heading, entire` | `mutate: sed rejected the expression:` count = 1 on stderr | AC-5 |
+| `and sed's own complaint, indented by two spaces` | `"  " + sed's own first line` count = 1 on stderr | AC-5 (target of GATES's mutation 3) |
+| `and still no log line names the rejected expression` / `while the control's line is still the only one in the log` | `REJECTED_LINE` = 0; total lines = 1 | AC-4 (unpiped) |
+| `and nothing but the log is left under mutations/` | enumeration empty after the unpiped P-S | AC-3 (unpiped) |
+| `reader 'R': nothing but the log is left under mutations/` / `exactly one log line names the run` / `src/main.ts is byte-identical after` (`s/90/-90/`, ×4) | enumeration empty; `RUN_LINE` = 1; sha unchanged | AC-7 |
+| `the log holds exactly two lines` / `RUN_LINE counts the ordinary run once` / `NOTHING_LINE counts the changed-nothing run once` / `REJECTED_LINE, anchored, counts zero beside them` / `whereas a floating grep -F for s/90/-90 would count the ordinary line` | 2 / 1 / 1 / 0 / 1 | instrument for AC-4; success condition 3 |
+
+### The shape the tests pin (stated as fact — a test already depends on it)
+
+- **Invocation**: `bash scripts/mutate.sh src/main.ts '<EXPR>' -- <command...>`, run from the fixture root. Unchanged.
+- **Exit statuses**: 2 for a `sed`-rejected expression, 3 for changed-nothing, unpiped. Unchanged.
+- **Streams**: both explanations on **stderr** (the tests capture stderr alone with `2>&1 1>/dev/null`; a line moved to stdout fails `count_exact`). Unchanged.
+- **The four changed-nothing lines, verbatim and entire**, in this order is not asserted, but each line is:
+  `mutate: the expression changed nothing in src/main.ts.` /
+  `  A probe that does not alter behaviour cannot show a test discriminates:` /
+  `  the command would have passed for the same reason it passes now. Check the` /
+  `  expression against the file and try again.`
+- **The rejected-expression heading, entire**: `mutate: sed rejected the expression:`; then a line that is exactly two spaces followed by the first line `sed -e 's/90/-90' src/main.ts` itself writes to stderr on the machine running the suite (measured in the test, not transcribed — on GNU sed 4.9 here: `sed: -e expression #1, char 8: unterminated `s' command`). If GREEN captures `$NEW.err` into a variable and prints it with `printf '  %s\n'` per line, or `sed -e 's/^/  /' <<< "$captured"`, this holds. A trailing newline dropped by `$(...)` is fine; an extra blank line is fine; the text altered or missing is not.
+- **The log line for changed-nothing, entire**: `<STAMP>\tsrc/main.ts\ts/NOT_IN_THE_FILE/x/\tCHANGED NOTHING - command not run` — same three leading fields, same outcome text, exactly one per run, at every reader and unpiped.
+- **No log line for the rejected path** — nothing whose first three fields are `<STAMP>\tsrc/main.ts\ts/90/-90` — at every reader and unpiped.
+- **Post-condition of `.claude/state/mutations/` after either early exit, at every reader**: contains `log` and nothing else (P-N), or nothing but optionally `log` (P-S). `.bak`, `.new`, `.new.err` all gone.
+- **`src/main.ts` byte-identical** after every run in this story.
+
+**Not constrained**, so still GREEN's choice: how the `.err` text is captured
+(variable, `$(cat)`, `mapfile`), whether `rm -f` precedes or follows the log
+append within the block, the exact ordering of the two `rm`s, `finish()` and the
+trap (the story says do not touch them; nothing here asserts on them either
+way), and `mutate.sh`'s exit status through a pipe (`PIPED_ST` is recorded in
+the helper and never asserted).
+
+### Negative controls — expected values
+
+The suite does not fail at import (it is bash; every assertion ran), so these
+were all **observed in the first run**, not only computed. "Wrong
+implementation" is what a plausible bad fix would produce.
+
+| Control | Where | Expected | Observed, RED | A wrong implementation would give |
+|---|---|---|---|---|
+| P-N run logs its one line in the directory the P-S run then uses | AC-4 control | `NOTHING_LINE` = 1 | 1 | 0 if the log were missing/unwritable — then AC-4's 0 would be vacuous |
+| Total lines in that log after the unpiped P-S | AC-4 | 1 | 1 | 2 if the rejected path gained a log line (mutation 4 measured: **2**) |
+| `REJECTED_LINE` beside one ordinary `s/90/-90/` line and one P-N line | needle block | 0 | 0 | 1 with a floating or front-only anchor |
+| floating `grep -cF 's/90/-90'` on that same log | needle block | 1 | 1 | 0 would mean the prefix is absent and the demonstration empty |
+| `RUN_LINE` / `NOTHING_LINE` on that log | needle block | 1 / 1 | 1 / 1 | — |
+| sed's own complaint is non-empty | AC-5 | non-empty | `sed: -e expression #1, char 8: unterminated `s' command` | empty would make `"  "` the needle |
+| `line 3 of 4` under mutation 5 | AC-6 | 0, others 1, old `assert_contains` green | **0; 1,1,1; green** | — |
+| AC-7 `head -0` / `true` under mutation 6 | AC-7 | red (leftovers, log 0) | **red, 4 assertions** | — |
+| Existing sweep under mutation 6 (trap after banner) | sweep | story said red | **green** — see "What I found" | — |
+| Existing sweep under mutation 6b (trap after `running`) | sweep | red N ≤ 3, green N ≥ 4 | **red 1,2,3 (9 assertions); green 4,5,6,30** | — |
+
+### Tests that passed on arrival, and what earns each
+
+| Passed on arrival | Earned by | Red produced |
+|---|---|---|
+| AC-4 (`no log line names the rejected expression`, ×4 + unpiped) | mutation 4 (RED, done) | 0 → 1 at `head -1`, `head -4`, unpiped; control total 1 → 2; AC-2 unmoved; needle block unmoved |
+| AC-5 first assertion (exit 2) and heading | not separately earnable without breaking the path itself; the heading's `count_exact` is exercised by the same instrument mutation 5 exercises on AC-6 | — |
+| AC-5 second assertion (sed's complaint) | **mutation 3 — GATES's**, declined here | — |
+| AC-6 (four lines entire) | mutation 5 (RED, done) | `line 3 of 4` 1 → 0; `it says the expression changed nothing` stayed green |
+| AC-7 (`s/90/-90/` at `head -0`, `true`, `head -1`, `head -4`) | mutation 6 (RED, done; plus 6b) | `head -0` and `true` red under 6; `head -1` red as well under 6b |
+| needle demonstration block | mutation 4's other half | `REJECTED_LINE` moved only in the block where a rejected line was written |
+
+Full output for 4, 5, 6 and 6b is under `## Deferred verifications`.
+
+### Declined: mutations 1, 2 and 3 are GATES's
+
+They un-reorder the `exit 3` block, un-reorder the `exit 2` block, and blank
+the captured `$NEW.err` text — code GREEN has not written yet. There is nothing
+in today's `mutate.sh` to mutate for them, and `scripts/mutate.sh` is not RED's
+to edit. Not attempted, not claimed. For mutation 3 specifically: the assertion
+it must turn red is `and sed's own complaint, indented by two spaces`, and the
+one that must stay green is `and stderr carries the heading, entire` — both in
+the block `an expression sed rejects leaves no backup, no working copy and no
+.err through a closed pipe`.
+
+### What I found that GREEN and GATES should know
+
+1. **P-N through `head -1` is a race today, not a settled pass.** Red in the
+   first suite run and in 3 of the 4 probe runs; 5/5 clean standalone. It fires
+   when `head` exits between the block's first and second `printf`. After the
+   fix — file work before any write — every reader is deterministic, so GREEN
+   need do nothing extra. GATES: under mutations 1 and 2, "`head -1` must stay
+   green" is not reliable here; `head -4` is the row that must stay green.
+2. **Mutation 6 as specified does not turn the old sweep red** (trap after the
+   banner protects the shell's second own write); mutation 6b (trap after the
+   `running` line) does, at N ≤ 3. AC-7's `head -0`/`true` rows are what pin
+   "before the first byte". Neither finding changes any criterion.
+3. **The `.err` capture is where the fix can go quietly wrong.** The AC-5 needle
+   is sed's real message, measured in the test, indented by exactly two spaces
+   and matched entire. Capture the text before the `rm`, print it after.
+4. **Timing.** Suite 402 s alone, 425–564 s under a probe (the machine was
+   busier). The orchestrator's foreground cap is 600 s; a detached launch was
+   used for the probes and is safe here (`nohup ... &` inside `( )` survives
+   the tool returning).
+
+### `bash scripts/gates.sh --fast`
+
+Run at the end of RED, 652 s on this machine (the `--list` parse is the slow
+part here, as `## Notes` warns):
+
+    --- gate summary ---
+    PASS         format (2s, observed 79)
+    PASS         lint (2s, observed 79, floor 1)
+    PASS         typecheck (5s, observed 16)
+    PASS         unit (77s, observed 355, floor 355)
+    UNCONFIGURED coverage
+    PASS         build (1s, observed 47816)
+    PASS         harness (31s, observed 40)
+
+    --fast skipped: integration mutation
+    This is a subset, not a verdict. The full run before REVIEW is what judges the story.
+
+    (not recorded in the story: a partial run is not evidence of anything)
+
+    All required gates passed (6 ran, 1 unconfigured, 0 known).
+
+The shape is the one the story predicts (PO decisions 3 and 8): **no gate is
+red, because no gate runs this suite** — `harness` runs
+`project-counters.test.sh` only, and `.claude/tests/mutate.test.sh` classifies
+as `harness`, not `source`, so no `covers` line bites. The red for this story is
+`bash scripts/selftest.sh mutate`, which CI runs at
+`.github/workflows/gates.yml:108`. Format, lint and typecheck are green with the
+new test file in the tree, so nothing about the tests is inadmissible; there is
+no timeout in this runner to budget against beyond the 600 s foreground cap
+noted above.
 
 ## Regressions
 
@@ -601,3 +1142,177 @@ contrast and was clean at every reader, including `head -0`.
   CI). That is fork cost in the config parse, not a hang.
 - **The phase lock will not enforce this story's RED→GREEN separation.** Both
   files are `harness`. The law still does.
+
+### PO decisions made at PLANNED→RED, by the orchestrator
+
+**PO decision 7 — three more deferred verifications, owned by RED.** Written up
+in `## Deferred verifications` as mutations 4, 5 and 6. The block as planned
+earned the *fix* and left four criteria — AC-4, AC-5's first assertion, AC-6 and
+AC-7 — passing on their first run with no demonstrated failure mode. `rules.md`
+is explicit that such an assertion "could assert nothing at all and nothing would
+notice". They are RED's rather than GATES's because the behaviour each one pins
+exists today, so the mutation can be made today; mutations 1-3 cannot, which is
+the whole difference. Cost: three `scripts/mutate.sh` runs in RED at roughly two
+and a half minutes each.
+
+**PO decision 8 — no change to `required_gates`, and the reasoning was checked
+rather than inherited.** PO decision 3's claim was verified against the tree at
+dispatch, not taken on trust:
+
+    $ grep -E '^(gate|covers) ' .claude/harness/project.conf
+    gate | harness | required | . | bash .claude/tests/project-counters.test.sh
+    ... no `covers` line names .claude/** or scripts/** ...
+    $ bash scripts/classify.sh scripts/mutate.sh .claude/tests/mutate.test.sh
+    harness scripts/mutate.sh
+    harness .claude/tests/mutate.test.sh
+    $ grep -rn selftest .github/workflows/
+    .github/workflows/gates.yml:108:        run: bash scripts/selftest.sh
+
+So `gates.sh`'s `covers` check cannot bite on either file, the `harness` gate
+runs a different suite, and `gates.yml:108` is what actually executes this
+story's artifact on every PR. `required_gates: []` stands.
+
+### Callers of every signature this story changes
+
+Required before dispatch, because during RED the old shape still exists and its
+callers still pass — so a missed one surfaces only after GREEN. Enumerated with
+`grep -rn` over the tree (stale copies under `.claude/worktrees/**` excluded;
+they are not on any branch this story merges into):
+
+| Symbol | Callers found | Consequence |
+|---|---|---|
+| `piped_run` | `.claude/tests/mutate.test.sh:280` (the 7-width sweep, 21 assertions) and `:298` (the instrument check) — nowhere else in the repo | **Its signature must not change.** The Contract's "add a sibling helper" is what keeps those 22 assertions at their exact invocation. |
+| `leftovers()` | `mutate.test.sh:281`, `:321` | Unchanged. AC-1 and AC-3 enumerate the directory instead, because `leftovers()`'s `\.(bak\|new)$` cannot see `.new.err`. |
+| `mutate.sh`'s CLI shape | `.claude/hooks/lib.sh` (`mutate_targets`), `.claude/hooks/phase-guard.sh:221`, asserted in `.claude/tests/lib.test.sh:418-425` | Untouched: this story changes the **order of statements inside two blocks**, not the argument grammar. |
+| the `exit 2` stderr text | **nothing asserts it today** | Which is why AC-5 is new, passes on arrival, and is the target of deferred verification 3. |
+| the `exit 3` stderr text | `mutate.test.sh:132`, `assert_contains "changed nothing"` | AC-6 sits beside it and is sharper; deferred verification 5 requires the old one to stay green while the new one goes red. |
+
+No exported signature changes, so there is no call site to update — the risk this
+check exists to catch is absent here, and that is now a recorded fact rather than
+an assumption.
+
+### Independent reproduction of the baseline, by the orchestrator at PLANNED→RED
+
+The Contract's baseline table is a **settled oracle** RED is told to read out
+rather than re-derive, so it was re-measured here with a probe written from
+scratch — not the PO's script — in a fresh `make_project_fixture`, `pipefail`
+off, `${PIPESTATUS[0]}` captured in the same shell as the pipeline,
+`.claude/state/mutations/` removed before every run:
+
+    == P-N  s/NOT_IN_THE_FILE/x/ ==
+      reader=head -0  writer=141  leftovers=[.bak .new]  loglines=0  src_ok=yes
+      reader=true     writer=141  leftovers=[.bak .new]  loglines=0  src_ok=yes
+      reader=head -1  writer=3    leftovers=[]           loglines=1  src_ok=yes
+      reader=head -4  writer=3    leftovers=[]           loglines=1  src_ok=yes
+      UNPIPED         status=3    leftovers=[]           loglines=1
+           | mutate: the expression changed nothing in src/main.ts.
+           |   A probe that does not alter behaviour cannot show a test discriminates:
+           |   the command would have passed for the same reason it passes now. Check the
+           |   expression against the file and try again.
+
+    == P-S  s/90/-90 (unterminated) ==
+      reader=head -0  writer=141  leftovers=[.bak .new .new.err]  loglines=0
+      reader=true     writer=141  leftovers=[.bak .new .new.err]  loglines=0
+      reader=head -1  writer=2    leftovers=[]                    loglines=0
+      reader=head -4  writer=2    leftovers=[]                    loglines=0
+      UNPIPED         status=2    leftovers=[]                    loglines=0
+           | mutate: sed rejected the expression:
+           |   sed: -e expression #1, char 8: unterminated `s' command
+
+    == contrast: ordinary s/90/-90/ ==
+      head -0 / true / head -1 / head -4   writer=141  leftovers=[]  loglines=1
+
+Every cell matches the Contract, including the three readings the criteria rest
+on: the working file is intact on both leaking paths (`src_ok=yes`), `head -1`
+already hides the defect, and the ordinary path reports `writer=141` while being
+completely clean.
+
+The needle hazard was reproduced too — both expressions into one log:
+
+    20260923T201850Z  src/main.ts  s/90/-90/            1 line(s) ... restored (verified)
+    20260923T201853Z  src/main.ts  s/NOT_IN_THE_FILE/x/ CHANGED NOTHING - command not run
+
+    anchored REJECTED_LINE  ^<STAMP>\tsrc/main\.ts\ts/90/-90(\t.*)?$   = 0   correct
+    floating  grep -F 's/90/-90'                                        = 1   the false alarm
+    anchored NOTHING_LINE                                               = 1   correct
+
+So the Contract's warning is not hypothetical: a floating needle for AC-4 reports
+a leak that does not exist, and the trailing `(\t.*)?$` is what prevents it.
+This is the reproduction RED is expected to redo in its own suite (success
+condition 3), and it is recorded here so that "1 and 0, not 1 and 1" is a
+measured fact before RED starts rather than a claim checked only afterwards.
+
+### Independent reproduction of RED's two escalations, by the orchestrator
+
+RED returned with two claims that contradicted something written down before it
+started: one against the Contract's own baseline table, one against a mechanism
+named in a PO-written deferred verification. `rules.md` and the orchestrator's
+standing rules require both to be reproduced on **different inputs, without
+reusing the subagent's code**, before they are accepted. Both were, and both
+hold. Neither changes an acceptance criterion, so this story still carries no
+`## Amendments` section.
+
+**1. The `head -1` race is real, and it is a load effect.** RED measured 5/5
+clean standalone and red in 4 of 5 suite runs, which on its own is a
+frequency claim with no mechanism attached. The orchestrator's probe — written
+before dispatch, for the PLANNED baseline, and reused unchanged — was run idle
+and then again under deliberate 6-way CPU contention:
+
+    idle, no other load
+      P-N  s/NOT_IN_THE_FILE/x/  head -1   n=40   leftovers 0/40   no-log 0/40
+      P-N  s/NOT_IN_THE_FILE/x/  head -2   n=40   leftovers 0/40   no-log 0/40
+
+    under 6-way CPU contention
+      P-N  s/NOT_IN_THE_FILE/x/  head -1   n=25   leftovers 16/25  no-log 16/25
+      P-S  s/90/-90              head -1   n=25   leftovers  0/25  no-log 25/25
+      P-N  s/NOT_IN_THE_FILE/x/  head -4   n=15   leftovers  0/15  no-log  0/15
+
+16 of 25 against 0 of 40 settles it: the `head -1` row is scheduling-dependent,
+not settled, and RED's amendment of the baseline table is correct.
+
+**The `head -4` row is the part that matters**, because it is RED's *mechanism*
+rather than its observation, and it could have come out either way. RED said
+`head -4` "cannot trip either way — it reads every line both blocks print and
+then waits for EOF". Under the same contention that made `head -1` fail 64 % of
+the time, `head -4` was clean 15/15. The explanation survives a test that could
+have falsified it.
+
+**One refinement the orchestrator's data adds, and GATES should have it.** The
+race needs the **shell's own** second write to be the one that meets the closed
+pipe. That is why `P-S` at `head -1` shows `leftovers 0/25` above while `P-N`
+shows 16/25: the `exit 2` block's second write is `sed -e 's/^/  /' "$NEW.err"`,
+a *child process*, so the SIGPIPE kills the child and the parent shell survives
+to reach its `rm`. The `exit 3` block's four writes are all the shell's own.
+So, for deferred verifications 1 and 2:
+
+| Row | Under un-reorder | Reliable control? |
+|---|---|---|
+| P-N `head -0`, `true` | red | **yes** |
+| P-N `head -1` | red or green, load-dependent | **no** — read `head -4` instead |
+| P-N `head -4` | green | **yes** |
+| P-S `head -0`, `true` | red | **yes** |
+| P-S `head -1`, `head -4` | green | **yes** (not subject to the race, for the reason above) |
+
+**2. Mutation 6's second clause was wrong.** Reproduced and corrected in place
+under `## Deferred verifications`; the measurement is pasted there. The entry
+was the orchestrator's own, RED probed the mechanism instead of following it,
+and the mechanism did not hold.
+
+**Verdict on the `fable` experiment — `HARNESS-012`'s verdict is confirmed a
+second time.** All three success conditions in `## Model guidance` were met, and
+checked against the tree rather than taken from the report:
+
+1. `git status --short` named `.claude/tests/mutate.test.sh` and this story file
+   and nothing else; `git diff --stat scripts/mutate.sh` was empty; the diff is
+   **237 insertions, 0 deletions**, so nothing existing was rewritten either.
+2. The handoff's control table names all three GATES mutations and declines them
+   explicitly, with the assertion each must move.
+3. `REJECTED_LINE` carries its trailing `(\t.*)?$`, and the demonstration is in
+   the **suite** rather than only in the handoff — a block asserting 2 / 1 / 1 /
+   0 against one log, plus the floating `grep -cF` at 1 to show the false alarm
+   the anchor prevents.
+
+Beyond the conditions, RED probed two written-down mechanisms and reported that
+one of them did not hold. The `fable` row in `models.conf` stands for harness
+stories, and no departure should be proposed on the next one without a success
+condition of its own.
