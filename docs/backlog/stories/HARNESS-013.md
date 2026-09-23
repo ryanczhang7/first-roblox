@@ -4,8 +4,8 @@ title: mutate.sh's early-exit paths leak the backup they print about
 slug: mutate-sh-s-early-exit-paths-leak-the-ba
 epic: 
 type: fix
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/HARNESS-013-mutate-sh-s-early-exit-paths-leak-the-ba
 depends_on: [HARNESS-012]   # its finish() trap and its piped test helpers are what this builds on
 required_gates: []          # gate ids that are optional for the repo but binding for THIS story
@@ -648,6 +648,64 @@ use any other recipe that restores the file and proves it.
 Paste the results here: for each of the three, the expression, the red, and the
 restore.
 
+### Results for mutations 1-3, run by the orchestrator in GATES
+
+All three were run through `scripts/mutate.sh` with the copy recipe above, against
+`bash scripts/selftest.sh mutate`. Each was first checked in a throwaway fixture to
+confirm it breaks only its own block. Every restore was verified by `mutate.sh`, and
+`git status --short scripts/` was empty after each run.
+
+**How mutations 1 and 2 were expressed.** Both entries say "the reorder undone".
+Moving three lines is not reliably one `sed` expression: the first attempt used
+hold space and moved only the `rm`, which the fixture check caught before it cost a
+suite run. So each mutation breaks the invariant the Contract states in item 3 —
+*nothing above the printing writes to either stream* — by putting a single stderr
+write as the first statement of the block, above the file work. At a reader that
+takes nothing, this dies at exactly the point the original code died. At `head -4`
+the file work has finished before the pipe closes, so that row stays green, as the
+entry requires.
+
+**Mutation 1 — `exit 3` block, a write above the file work.**
+
+    expr: s/^if cmp -s "\$BAK" "\$NEW"; then$/&\n  printf "probe: a write above the file work\n" >\&2/
+        FAIL reader 'head -0': nothing but the log is left under mutations/
+        FAIL reader 'head -0': exactly one log line says CHANGED NOTHING - command not run
+        FAIL reader 'true': nothing but the log is left under mutations/
+        FAIL reader 'true': exactly one log line says CHANGED NOTHING - command not run
+    mutate: 129 passed, 4 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../scripts_mutate.sh.20260923T234146Z.14074.bak) ===
+
+AC-1 and AC-2 went red at `head -0` and `true`; `head -4` stayed green. As predicted.
+(`head -1` also stayed green in this run; per the race table it is not a reliable
+control either way.)
+
+**Mutation 2 — `exit 2` block, a write above the file work.**
+
+    expr: s/^if ! sed -e "\$EXPR" "\$BAK" > "\$NEW" 2>"\$NEW.err"; then$/&\n  printf "probe: a write above the file work\n" >\&2/
+        FAIL reader 'head -0': nothing but the log is left under mutations/ - no .bak, .new or .new.err
+        FAIL reader 'true': nothing but the log is left under mutations/ - no .bak, .new or .new.err
+    mutate: 131 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../scripts_mutate.sh.20260923T234447Z.19013.bak) ===
+
+AC-3 went red at `head -0` and `true`, and at no other reader. As predicted.
+
+**Mutation 3 — the captured `$NEW.err` text thrown away.**
+
+    expr: s/^  SEDERR=.*/  SEDERR=""/
+      129 -   SEDERR="$(cat "$NEW.err" 2>/dev/null)"
+      129 +   SEDERR=""
+        FAIL and sed's own complaint, indented by two spaces
+    mutate: 132 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../scripts_mutate.sh.20260923T234813Z.24344.bak) ===
+
+**Only one assertion went red: AC-5's second one.** The heading assertion, the exit
+code and every file assertion stayed green. This is the corruption the entry warned
+about: the files are clean and only what the user is told is wrong. AC-5 catches it.
+
+The line counts `mutate.sh` printed for mutations 1 and 2 (154 and 177) are
+positional. Inserting one line shifts every line after it, and the count compares
+line by line. The diffs above show that one line was inserted each time.
+
 ## Model guidance
 
 <!-- plan.sh:generated:begin -->
@@ -728,6 +786,15 @@ brief that was measured to matter more than the model.
   conditions above were met — see "Verdict on the `fable` experiment" in
   `## Notes`, where they are checked against the tree rather than against the
   report.
+
+- **GREEN** — `feature-developer`, resolved `opus` (`claude-opus-5`). As planned;
+  `model: opus` was passed explicitly. It did not touch the test file (checked:
+  `git diff --stat .claude/tests/mutate.test.sh` was empty). It also reported one
+  mechanism in the dispatch that did not hold: the `exit 2` block's second write
+  is a child `sed`, not a `printf`.
+- **GATES** — no dispatch. No gate failed, so there was nothing to hand to the
+  `feature-developer`. The orchestrator (`opus`) ran deferred verifications 1-3
+  and the full `gates.sh` itself.
 
 <!-- One line per dispatch, as it happened: phase, agent, the model that
      actually ran, and — if a phase was planned for one model and ran on
@@ -1049,15 +1116,15 @@ noted above.
 
 <!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
 
-    run:    2026-09-23T23:19:50Z
-    commit: d8e9af3 (working tree had uncommitted changes)
+    run:    2026-09-23T23:56:59Z
+    commit: b55700a
     tree:   7b4e82c33c939d877675e07f3fa1a49535846b2b
     result: pass (6 ran, 3 unconfigured, 0 known)
 
-    PASS         format (1s, observed 79)
-    PASS         lint (0s, observed 79, floor 1)
-    PASS         typecheck (3s, observed 16)
-    PASS         unit (33s, observed 355, floor 355)
+    PASS         format (0s, observed 79)
+    PASS         lint (1s, observed 79, floor 1)
+    PASS         typecheck (4s, observed 16)
+    PASS         unit (35s, observed 355, floor 355)
     UNCONFIGURED coverage
     UNCONFIGURED integration
     PASS         build (0s, observed 47816)
