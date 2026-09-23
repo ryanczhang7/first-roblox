@@ -132,6 +132,101 @@ out="$(plan models T-5)"
 assert_contains "but one source path is enough for the lock to bite" \
   "RED	test-developer	fable" "$out"
 
+# THE DECLARATION, and why the scan behind the two cases above is not the whole
+# answer (HARNESS-014). The scan asks "does the Contract MENTION a path the lock
+# freezes?" when the question it stands in for is "does this story WRITE one?",
+# and the two differ for every story whose contract names a fixture, a tool's
+# output or a measurement. HARNESS-012 - both of whose files are `harness` -
+# was scanned into sixteen tokens of which five classified as `source`:
+# `src/main.ts` (a fixture inside a throwaway repository), `5.3.15` (a bash
+# version out of a measurement note), `i.e` (English), and the bare filenames
+# `classify.sh` and `mutate.sh`. Measured by the Lead PO at PLANNED; read out
+# here, not re-derived. The exception fell silently on the WEAK side, for
+# exactly the story it was written for.
+#
+# So when the Contract carries a `### Files` table, the decision is made from
+# that table's first column and from nothing else in the section. T-7 is
+# HARNESS-012's Contract in miniature, the four non-path tokens included: they
+# are the reproduction, not decoration. Note the header row - this repository's
+# convention puts `classify.sh` in its second column, so an implementation that
+# scans the whole table rather than its first column reproduces the bug it is
+# fixing.
+#
+# Captured from stdout ALONE, not `plan` (which merges stderr): the same capture
+# is measured for its shape further down, and the three parsers that shape
+# protects read only stdout.
+models_stdout() { ( cd "$FIX" && bash scripts/plan.sh models "$1" 2>/dev/null ); }
+
+# red_row <needle-after-RED> <out>   How many rows are `RED<TAB>test-developer
+# <TAB><model><TAB><why...>`, anchored at the line start and counted. `opus` on
+# its own would not say WHICH exception fired - `no-contract` renders the same
+# model - so where the point is that the lock is what is missing, the needle
+# runs on into the `unenforced` row's own reason.
+red_row() { printf '%s\n' "$2" | grep -c "^RED	test-developer	$1"; }
+
+story_with T-7 fix PLANNED 2 <<'EOF'
+CONTRACT:### Files
+CONTRACT:
+CONTRACT:| Path | `classify.sh` says | Who writes it |
+CONTRACT:|---|---|---|
+CONTRACT:| `scripts/mutate.sh` | `harness` | GREEN |
+CONTRACT:| `.claude/tests/mutate.test.sh` | `harness` | RED |
+CONTRACT:
+CONTRACT:### Measurement
+CONTRACT:
+CONTRACT:The fixture writes `src/main.ts` inside a throwaway repository; measured under
+CONTRACT:`bash 5.3.15(2)`, i.e. the shell the runner ships, and put through classify.sh once.
+EOF
+decl_harness="$(models_stdout T-7)"
+assert_eq "a story that DECLARES only harness paths keeps RED on the stronger model, whatever its prose mentions" 1 \
+  "$(red_row "opus	the lock freezes none of the paths" "$decl_harness")"
+
+# THE CONTROL on the declaration, and the reason the fix is not "ignore declared
+# paths": one declared path the lock freezes is still enough for it to bite.
+story_with T-8 fix PLANNED 2 <<'EOF'
+CONTRACT:### Files
+CONTRACT:
+CONTRACT:| Path | `classify.sh` says | Who writes it |
+CONTRACT:|---|---|---|
+CONTRACT:| `src/core/world.ts` | `source` | GREEN |
+CONTRACT:| `scripts/task.sh` | `harness` | GREEN |
+CONTRACT:
+CONTRACT:The world builder gains a seed argument and the task runner a target for it.
+EOF
+decl_source="$(models_stdout T-8)"
+assert_eq "but one DECLARED source path is enough for the lock to bite" 1 \
+  "$(red_row "fable	" "$decl_source")"
+
+# THE FALLBACK'S THIRD ROW. T-4 and T-5 above are the first two: with no table,
+# the decision is the whole-section scan, byte for byte. A contract that names
+# no paths at all does not trigger the exception - there is nothing for the
+# lock to have declined to freeze - and it is not the no-contract case either,
+# because there IS a contract.
+story_with T-9 fix PLANNED 2 <<'EOF'
+CONTRACT:The runner learns a seed target and the world builder honours it; nothing else moves.
+EOF
+nopaths="$(models_stdout T-9)"
+assert_eq "a contract naming no paths at all follows the plain plan" 1 \
+  "$(red_row "fable	" "$nopaths")"
+
+# THE SHAPE OF THE STREAM, on every verdict the decision can reach. Three
+# callers parse `plan models` field-wise and would swallow a stray line without
+# complaining: cmd_both and cmd_write both `while IFS=$'\t' read -r ph agent
+# model why`, and phase.sh runs `awk -F'\t' '$1 == p { print $3 }'`. A note
+# leaking into this stream is a junk row in every rendered table and a blank
+# model in `phase.sh show`. The row count near the top of this file counts
+# lines CONTAINING A TAB, and a leaked note carries none - so it is blind to
+# exactly this, and the count here is of ALL lines. This is the negative
+# control on the human-readable line asserted further down.
+assert_tsv_shape() { # <what> <stdout>
+  assert_eq "$1: stdout is exactly six lines" 6 "$(printf '%s\n' "$2" | grep -c '')"
+  assert_eq "$1: and every one of them is PHASE<TAB>agent<TAB>model<TAB>why" 0 \
+    "$(printf '%s\n' "$2" | awk -F'\t' 'NF != 4 || $1 == "" || $2 == "" || $3 == "" || $4 == "" { n++ } END { print n + 0 }')"
+}
+assert_tsv_shape "when the exception applies" "$decl_harness"
+assert_tsv_shape "when it is suppressed"      "$decl_source"
+assert_tsv_shape "when it is not considered"  "$nopaths"
+
 # A CONTRACT TOO BIG TO READ IS STILL A CONTRACT. `has_content` here was lifted
 # from check-boundaries.sh when this script was written, and the defect came with
 # it: `strip_comments | grep -q` has an awk that buffers to END feeding a grep
@@ -401,5 +496,136 @@ assert_contains "the criteria are untouched" "**AC-1**" \
   "$(cat "$FIX/docs/backlog/stories/T-51.md")"
 assert_contains "and so is the contract" "buildWorld" \
   "$(cat "$FIX/docs/backlog/stories/T-51.md")"
+
+# ---------------------------------------------------------------------------
+describe "the lock-coverage decision is said out loud"
+
+# HARNESS-014's other half. The `unenforced` decision was invisible: nothing in
+# plan.sh's output said whether the exception was considered, applied or
+# suppressed, or by what - so a wrong verdict had to be found by reading the
+# source, and HARNESS-012's departure was written into `## Model guidance` by
+# hand. The fallback scan is still allowed to be wrong (narrowing its regex is
+# out of scope), and what makes that safe is that it now SAYS what it decided:
+# a story whose prose mentions `i.e.` reads "SUPPRESSED by `i.e` (source)",
+# which is the cheapest possible signal that the heuristic misfired.
+#
+# One line, three verdicts, and the keywords are mutually non-matching
+# substrings on purpose. rules.md carries four real cases of a needle that
+# could not fail, one satisfied by the string meaning the opposite - so every
+# assertion here is ANCHORED at the line start and COUNTED, never a floating
+# `assert_contains` on a multi-paragraph output, where the word SUPPRESSED
+# somewhere is no evidence the line was emitted once, in the right place, about
+# the right path.
+APPLIES='^[[:space:]]*Lock coverage: APPLIES'
+SUPPRESSED='^[[:space:]]*Lock coverage: SUPPRESSED by '
+NOT_CONSIDERED='^[[:space:]]*Lock coverage: NOT CONSIDERED'
+ANY_VERDICT='^[[:space:]]*Lock coverage: '
+DECLARED="declared in the Contract's ### Files table"
+SCANNED='scanned from the Contract text'
+lines_matching() { printf '%s\n' "$2" | grep -cE "$1"; }
+
+# THE INSTRUMENT, checked before it is pointed at anything. The three verdict
+# needles against the three verbatim forms from the story's Contract, plus a
+# fourth line that means the opposite of one of them: each needle must count 1
+# on its own line and 0 on every other. This is the demonstration the story
+# asks for - not a claim that the keywords differ, but the matrix.
+verdict_matrix=""
+while IFS= read -r line; do
+  verdict_matrix="$verdict_matrix$(lines_matching "$APPLIES" "$line")$(lines_matching "$SUPPRESSED" "$line")$(lines_matching "$NOT_CONSIDERED" "$line") "
+done <<'EOF'
+Lock coverage: APPLIES — all 2 path(s) declared in the Contract's ### Files table are harness/docs/ignored, so RED stays on the stronger model.
+Lock coverage: SUPPRESSED by `src/core/world.ts` (source), scanned from the Contract text — the phase lock freezes it, so RED follows the plain plan.
+Lock coverage: NOT CONSIDERED — this contract names no paths.
+    Lock coverage: NOT SUPPRESSED by anything — the opposite of a verdict, which an unanchored needle would accept.
+EOF
+assert_eq "no verdict needle matches another verdict's line, nor its own negation" \
+  "100 010 001 000 " "$verdict_matrix"
+
+# F-DECL-HARNESS (T-7): the paths were DECLARED, and the exception applied.
+both="$(plan T-7)"
+assert_eq "F-DECL-HARNESS: the human plan carries exactly one lock-coverage line" 1 \
+  "$(lines_matching "$ANY_VERDICT" "$both")"
+assert_eq "and it says the exception APPLIES" 1 "$(lines_matching "$APPLIES" "$both")"
+assert_eq "to all 2 paths declared in the ### Files table, not scanned from the text" 1 \
+  "$(lines_matching "$APPLIES.*all 2 path[(]s[)] $DECLARED" "$both")"
+assert_eq "not SUPPRESSED" 0 "$(lines_matching "$SUPPRESSED" "$both")"
+assert_eq "not NOT CONSIDERED" 0 "$(lines_matching "$NOT_CONSIDERED" "$both")"
+
+# F-NODECL-SOURCE (T-5): no table, so the text was SCANNED, and one source path
+# suppressed it. The line has to name that path and the category classify.sh
+# gave it - the whole point is that a bad fallback verdict shows its working.
+both="$(plan T-5)"
+assert_eq "F-NODECL-SOURCE: exactly one lock-coverage line" 1 \
+  "$(lines_matching "$ANY_VERDICT" "$both")"
+assert_eq "and it says the exception was SUPPRESSED" 1 "$(lines_matching "$SUPPRESSED" "$both")"
+assert_eq "by the source path, with the category classify.sh gave it" 1 \
+  "$(lines_matching "$SUPPRESSED"'.*`src/core/world.ts` [(]source[)]' "$both")"
+assert_eq "and says the paths were scanned from the text, there being no table" 1 \
+  "$(lines_matching "$SUPPRESSED.*$SCANNED" "$both")"
+assert_eq "not APPLIES" 0 "$(lines_matching "$APPLIES" "$both")"
+assert_eq "not NOT CONSIDERED" 0 "$(lines_matching "$NOT_CONSIDERED" "$both")"
+
+# F-NOPATHS (T-9): a contract, but nothing in it for the lock to decline.
+both="$(plan T-9)"
+assert_eq "F-NOPATHS: exactly one lock-coverage line" 1 \
+  "$(lines_matching "$ANY_VERDICT" "$both")"
+assert_eq "and it says the exception was NOT CONSIDERED" 1 \
+  "$(lines_matching "$NOT_CONSIDERED" "$both")"
+assert_eq "not APPLIES" 0 "$(lines_matching "$APPLIES" "$both")"
+assert_eq "not SUPPRESSED" 0 "$(lines_matching "$SUPPRESSED" "$both")"
+
+# F-DECL-SOURCE (T-8): the visible half of the AC-2 control. A DECLARED source
+# path suppresses the exception and the line says so, naming the table as its
+# source - which is what separates "read what the story declares" from "assume
+# a story with a table is harness-only".
+both="$(plan T-8)"
+assert_eq "F-DECL-SOURCE: exactly one lock-coverage line" 1 \
+  "$(lines_matching "$ANY_VERDICT" "$both")"
+assert_eq "SUPPRESSED by the declared source path, and the paths came from the table" 1 \
+  "$(lines_matching "$SUPPRESSED"'.*`src/core/world.ts` [(]source[)].*'"$DECLARED" "$both")"
+assert_eq "not APPLIES" 0 "$(lines_matching "$APPLIES" "$both")"
+
+# ---------------------------------------------------------------------------
+describe "and written into the story with the plan"
+
+# Where it has to land. HARNESS-012's departure was written by hand into
+# `## Model guidance` because nothing put it there; the next agent reads that
+# section, not a terminal. Inside the generated region, beneath the table, so
+# that a re-run replaces it rather than stacking a copy - and counted in THAT
+# slice, not in the whole file, because a line written outside the markers
+# would survive `strip_generated` and be duplicated by the second write.
+GEN_BEGIN='<!-- plan.sh:generated:begin -->'
+GEN_END='<!-- plan.sh:generated:end -->'
+
+# generated <id>   What lies between the markers in the story's `## Model
+# guidance`, and nothing outside them.
+generated() {
+  awk -v b="$GEN_BEGIN" -v e="$GEN_END" '$0 == e { exit } g { print } $0 == b { g = 1 }' \
+    "$FIX/docs/backlog/stories/$1.md"
+}
+
+put_guidance T-7 <<'EOF'
+Brief RED that both files here are `harness`: the lock will permit the write the
+law forbids, so the contract is the only enforcement there is.
+EOF
+plan write T-7 >/dev/null
+region="$(generated T-7)"
+assert_eq "the generated region carries the lock-coverage line, once" 1 \
+  "$(lines_matching "$ANY_VERDICT" "$region")"
+assert_eq "and it is the same verdict the human plan gave" 1 \
+  "$(lines_matching "$APPLIES.*all 2 path[(]s[)] $DECLARED" "$region")"
+assert_eq "at column 0, beneath the table" after \
+  "$(printf '%s\n' "$region" | awk '/^\|/ { t = NR } /^Lock coverage: / { l = NR } END { print (l && l > t) ? "after" : "not-after" }')"
+assert_eq "and nowhere else in the story file" 1 \
+  "$(grep -cE "$ANY_VERDICT" "$FIX/docs/backlog/stories/T-7.md")"
+
+# Writing twice is writing once, for the line as for the table.
+plan write T-7 >/dev/null
+assert_eq "writing again leaves exactly one copy in the file" 1 \
+  "$(grep -cE "$ANY_VERDICT" "$FIX/docs/backlog/stories/T-7.md")"
+assert_eq "still inside the generated region" 1 \
+  "$(lines_matching "$ANY_VERDICT" "$(generated T-7)")"
+assert_eq "and the brief outside the markers is untouched" 1 \
+  "$(grep -c 'the contract is the only enforcement there is' "$FIX/docs/backlog/stories/T-7.md")"
 
 summary "plan"

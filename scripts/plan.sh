@@ -93,20 +93,154 @@ field() { printf '%s' "$1" | awk -F'|' -v n="$2" '{ gsub(/^[[:space:]]+|[[:space
 #
 # One source path is enough for the lock to bite, so this needs ALL of them:
 # otherwise every story that touches a helper script would trip it.
-contract_unenforced() { # <file>
-  local paths p found=0 enforced=0
-  paths="$(section "$1" "Contract" | strip_comments \
-    | grep -oE '\.claude/[A-Za-z0-9_./-]+|[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+' | sort -u)"
-  [ -n "$paths" ] || return 1
-  while IFS= read -r p; do
+#
+# WHICH PATHS (HARNESS-014). The scan below answers "does the Contract MENTION a
+# path that classifies as source?" when the question it stands in for is "does
+# this story WRITE one?". HARNESS-012 - both of whose files are `harness` - was
+# scanned into sixteen tokens of which five classified as `source`: `src/main.ts`
+# (a fixture inside a throwaway repository), `5.3.15` (a bash version out of a
+# measurement note), `i.e` (English), and the bare filenames `classify.sh` and
+# `mutate.sh`. The exception fell silently on the WEAK side, for exactly the
+# story it was written for.
+#
+# So when the Contract carries a `### Files` table, the path list is that
+# table's FIRST COLUMN and nothing else in the section - the repository's own
+# header row has `classify.sh` in its second column, so a reader of the whole
+# table reproduces the bug. With no table the fallback scan stands, byte for
+# byte, because it is what every story written before this one relies on.
+# Narrowing its regex is a separate question; what makes it safe to leave alone
+# is that the verdict is now SAID OUT LOUD - see lock_coverage_line.
+
+# classify_many   One repo-relative path per line on stdin, "<category><TAB><path>"
+# per line out. classify() from lib.sh, in one awk for the whole list rather than
+# four processes per path: a fork costs ~50ms on this machine and a contract can
+# name sixteen paths. The `ignored` check is classify()'s, not classify_stdin's,
+# and only a `source` verdict can become one.
+classify_many() {
+  local cat p
+  classify_stdin | while IFS=$'\t' read -r cat p; do
+    [ "$cat" = "source" ] && is_ignored "$p" && cat=ignored
+    printf '%s\t%s\n' "$cat" "$p"
+  done
+}
+
+# declared_paths <contract-body>   The first column of the `### Files` table's
+# body rows. Rows are skipped BY CONTENT, not by position: a header whose first
+# cell is `Path`, a `|---|` separator, an empty cell. `### Files` is not a
+# section terminator - section() splits on `^## `, so the heading is inside the
+# Contract body already - and the table ends at the next `###` heading.
+declared_paths() {
+  printf '%s\n' "$1" | awk '
+    /^###[[:space:]]/ { infiles = ($0 ~ /^###[[:space:]]+Files([[:space:]]|$)/); next }
+    !infiles { next }
+    {
+      line = $0; gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+      if (index(line, "|") != 1) next
+      sub(/^\|/, "", line)
+      col = line; sub(/\|.*/, "", col)
+      gsub(/`/, "", col)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", col)
+      if (col == "" || col == "Path") next
+      if (col ~ /^:?-{3,}:?$/) next
+      print col
+    }'
+}
+
+# The decision, computed once per story file and cached: cmd_both and cmd_write
+# each need both the verdict (through cmd_models) and the line, and the scan
+# costs a classify pass.
+LC_FILE=""        # the file these values describe, or "" for none yet
+LC_ORIGIN=none    # declared | scanned | none
+LC_COUNT=0        # how many paths were considered
+LC_OFFENDERS=""   # "<path><TAB><category>" per line, in path-list order
+LC_OFFCOUNT=0     # how many of them there are
+LC_UNENFORCED=0
+
+lock_scan() { # <file>
+  [ "$LC_FILE" = "$1" ] && return 0
+  LC_FILE="$1"; LC_ORIGIN=none; LC_COUNT=0; LC_OFFENDERS=""; LC_OFFCOUNT=0; LC_UNENFORCED=0
+
+  local body paths p c enforced=0 TAB NL; TAB=$'\t'; NL=$'\n'
+  body="$(section "$1" "Contract" | strip_comments)"
+  paths="$(declared_paths "$body")"
+  if [ -n "$paths" ]; then
+    LC_ORIGIN=declared
+  else
+    paths="$(printf '%s\n' "$body" \
+      | grep -oE '\.claude/[A-Za-z0-9_./-]+|[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+' | sort -u)"
+    LC_ORIGIN=scanned
+  fi
+
+  while IFS=$'\t' read -r c p; do
     [ -n "$p" ] || continue
-    found=1
-    case "$(classify "$p")" in
+    LC_COUNT=$((LC_COUNT + 1))
+    case "$c" in
       harness|docs|ignored) ;;
-      *) enforced=1 ;;
+      *) enforced=1; LC_OFFCOUNT=$((LC_OFFCOUNT + 1))
+         LC_OFFENDERS="$LC_OFFENDERS$p$TAB$c$NL" ;;
     esac
-  done <<< "$paths"
-  [ "$found" = 1 ] && [ "$enforced" = 0 ]
+  done <<< "$(printf '%s\n' "$paths" | classify_many)"
+
+  # The fallback's own rule, unchanged in effect: a contract naming no paths at
+  # all does not trigger the exception. It is ONE line rather than an early
+  # `[ -n "$paths" ] || return 1` as well - two guards for one rule means either
+  # can be mutated with the other still returning the right verdict, and a rule
+  # no mutation can break is a rule no test pins. Break this one and T-9 goes
+  # red, which is the probe RED ran.
+  [ "$LC_COUNT" -gt 0 ] || { LC_ORIGIN=none; return 0; }
+  [ "$enforced" = 0 ] && LC_UNENFORCED=1
+  return 0
+}
+
+contract_unenforced() { # <file>
+  lock_scan "$1"
+  [ "$LC_UNENFORCED" = 1 ]
+}
+
+# lock_offenders   Up to three `path` (category), then ` (+N more)`.
+lock_offenders() {
+  local p c n=0 extra=0 out=""
+  while IFS=$'\t' read -r p c; do
+    [ -n "$p" ] || continue
+    n=$((n + 1))
+    if [ "$n" -le 3 ]; then
+      [ -n "$out" ] && out="$out, "
+      out="$out\`$p\` ($c)"
+    else
+      extra=$((extra + 1))
+    fi
+  done <<< "$LC_OFFENDERS"
+  [ "$extra" -gt 0 ] && out="$out (+$extra more)"
+  printf '%s' "$out"
+}
+
+# lock_coverage_line <file>   One sentence, no indentation, saying which of the
+# two sources the paths came from, whether the exception applied or was
+# suppressed, and - when suppressed - what suppressed it and what classify.sh
+# called it. ONE function, called by cmd_both and cmd_write, so the two cannot
+# drift; never by cmd_models, whose stdout three callers parse field-wise and
+# would take a note for a row.
+#
+# The three verdict keywords are mutually non-matching substrings on purpose:
+# rules.md carries four cases of a needle satisfied by a string meaning the
+# opposite, so `APPLIES`, `SUPPRESSED by ` and `NOT CONSIDERED` are chosen so
+# that no anchored needle for one can match another.
+lock_coverage_line() { # <file>
+  lock_scan "$1"
+  local src
+  case "$LC_ORIGIN" in
+    declared) src="declared in the Contract's ### Files table" ;;
+    scanned)  src="scanned from the Contract text" ;;
+    *) printf 'Lock coverage: NOT CONSIDERED — this contract names no paths.\n'; return 0 ;;
+  esac
+  if [ "$LC_UNENFORCED" = 1 ]; then
+    printf 'Lock coverage: APPLIES — all %s path(s) %s are harness/docs/ignored, so RED stays on the stronger model.\n' \
+      "$LC_COUNT" "$src"
+  else
+    local subj=it; [ "$LC_OFFCOUNT" -gt 1 ] && subj=them
+    printf 'Lock coverage: SUPPRESSED by %s, %s — the phase lock freezes %s, so RED follows the plain plan.\n' \
+      "$(lock_offenders)" "$src" "$subj"
+  fi
 }
 
 cmd_models() {
@@ -218,7 +352,11 @@ cmd_next() {
 # --- both, for a human ------------------------------------------------------
 
 cmd_both() {
-  local id="$1" nxt cmd why
+  local id="$1" nxt cmd why file; file="$(story_file "$id")"
+  # Before the pipeline below, not inside it: the scan caches in THIS shell and
+  # the subshell inherits it, so cmd_models and the line cost one scan between
+  # them rather than two.
+  lock_scan "$file"
   nxt="$(cmd_next "$id")"
   cmd="$(printf '%s' "$nxt" | cut -f1)"; why="$(printf '%s' "$nxt" | cut -f2-)"
   printf 'Story %s\n\n' "$id"
@@ -231,6 +369,10 @@ cmd_both() {
   cmd_models "$id" | while IFS="$(printf '\t')" read -r ph agent model why; do
     printf '    %-9s %-18s %-6s %s\n' "$ph" "$agent" "$model" "$why"
   done
+  # Under the plan, where a human reads it, and indented to sit with it. The
+  # decision the RED row rests on is otherwise invisible: HARNESS-012's
+  # departure had to be reasoned out by hand and written into the story.
+  printf '\n    %s\n' "$(lock_coverage_line "$file")"
 }
 
 # --- writing the plan into the story ----------------------------------------
@@ -281,6 +423,9 @@ cmd_write() {
   local id="$1" file; file="$(story_file "$id")"
   local tmp="$ROOT/.claude/state/plan-write.$$.md"
   mkdir -p "$ROOT/.claude/state"
+  # Same scan the rendered rows rest on, taken once here so that the pipeline
+  # below and the line beneath the table agree by construction.
+  lock_scan "$file"
 
   # A variable rather than a second scratch file: everything under
   # .claude/state is accounted for in its README, with a column saying whether
@@ -309,6 +454,12 @@ cmd_write() {
     cmd_models "$id" | while IFS="$(printf '\t')" read -r ph agent model why; do
       printf '| %s | `%s` | `%s` | %s |\n' "$ph" "$agent" "$model" "$why"
     done
+    # Beneath the table and INSIDE the region, at column 0. Inside, because
+    # strip_generated keeps everything outside the markers and a second write
+    # would then leave two copies; beneath, because it is the decision the row
+    # above it rests on, and the next agent reads this section, not a terminal.
+    printf '\n'
+    lock_coverage_line "$file"
     printf '%s\n' "$GEN_END"
 
     [ -n "$keep" ] && printf '\n%s\n' "$keep"
