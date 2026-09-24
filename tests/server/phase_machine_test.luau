@@ -52,6 +52,8 @@ local CONFIG = {
 
 local SEED = 20260915
 local ROUND_ID = "round-ROUND-003-a"
+-- TEL-002: `initial` takes the driver's session id as its 4th argument.
+local SESSION_ID = "session-ROUND-003-a"
 local PLAYERS = { "p1", "p2", "p3", "p4" }
 
 --[[
@@ -83,7 +85,7 @@ end
 -- A fresh Lobby with `playersMin` players seated, entered at t = 0.
 local function seatedLobby(): any
 	local machine = Machine()
-	local state = machine.initial(CONFIG, SEED, ROUND_ID)
+	local state = machine.initial(CONFIG, SEED, ROUND_ID, SESSION_ID)
 	for _, id in PLAYERS do
 		state = machine.step(state, joined(id), 0)
 	end
@@ -153,7 +155,7 @@ type Lifecycle = {
 local function runLifecycle(seed: number, roundId: string): Lifecycle
 	local machine = Machine()
 	local clock = Clock.manual(0)
-	local state = machine.initial(CONFIG, seed, roundId)
+	local state = machine.initial(CONFIG, seed, roundId, SESSION_ID)
 
 	local phases: { string } = { state.phase }
 	local effects: { string } = {}
@@ -164,7 +166,10 @@ local function runLifecycle(seed: number, roundId: string): Lifecycle
 			typeof(produced) == "table",
 			`step returned {typeof(produced)} for its effect list at t = {clock.now()}`
 		)
-		for _, kind in Deep.kinds(produced) do
+		-- TEL-002 Contract §5: AC-8 pins the CONTROL sequence. The joins and
+		-- the step entering Resolution now also carry telemetry `Emit` effects,
+		-- which TelemetryEmitContract pins and this lifecycle excludes.
+		for _, kind in Deep.controlKinds(produced) do
 			table.insert(effects, kind)
 		end
 		if nextState.phase ~= state.phase then
@@ -212,7 +217,7 @@ return {
 	end,
 
 	["Contract: initial returns a Lobby entered at 0, with no players, no outcome, and the seed and round id it was given"] = function()
-		local state = Machine().initial(CONFIG, SEED, ROUND_ID)
+		local state = Machine().initial(CONFIG, SEED, ROUND_ID, SESSION_ID)
 		assert(state.phase == "Lobby", `a fresh machine is in {tostring(state.phase)}`)
 		assert(
 			state.phaseEnteredAt == 0,
@@ -757,7 +762,8 @@ return {
 		local expected = { "AssignSeats", "ComputeTrace", "PromptRematch" }
 		assert(
 			Deep.equal(lifecycle.effects, expected),
-			`the lifecycle emitted {Deep.show(lifecycle.effects)}, wanted {Deep.show(expected)}`
+			`the lifecycle emitted control effects {Deep.show(lifecycle.effects)}, wanted `
+				.. `{Deep.show(expected)} (telemetry Emit effects excluded; TEL-002 pins those)`
 		)
 	end,
 }

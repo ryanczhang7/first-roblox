@@ -48,6 +48,8 @@ local RoundEndingContract = {}
 
 RoundEndingContract.SEED = 20260917
 RoundEndingContract.ROUND_ID = "round-ROUND-005-a"
+-- TEL-002: `initial` takes the driver's session id as its 4th argument.
+RoundEndingContract.SESSION_ID = "session-ROUND-005-a"
 
 --[[
 	The two outcomes THIS story owns, and the one it does not.
@@ -118,7 +120,12 @@ function RoundEndingContract.roundOf(machine: any, config: any, count: number): 
 			.. `playersMax is {config.playersMax}`
 	)
 
-	local state = machine.initial(config, RoundEndingContract.SEED, RoundEndingContract.ROUND_ID)
+	local state = machine.initial(
+		config,
+		RoundEndingContract.SEED,
+		RoundEndingContract.ROUND_ID,
+		RoundEndingContract.SESSION_ID
+	)
 	for _, id in RoundEndingContract.roster(count) do
 		state = machine.step(state, RoundEndingContract.joined(id), 0)
 	end
@@ -383,7 +390,15 @@ function RoundEndingContract.roundContinuesAtExactlyTheThreshold(machine: any, c
 			`AC-7: an outcome ({Deep.show(after.outcome)}) was recorded with {remaining} seated `
 				.. `against minPlayersToContinue {config.minPlayersToContinue}`
 		)
-		assert(#effects == 0, `AC-7: a continuing round emitted {Deep.show(Deep.kinds(effects))}`)
+		-- TEL-002 Contract §5: the departure itself carries a
+		-- `bounce_before_resolution` Emit, which TelemetryEmitContract pins.
+		-- This assertion is about CONTROL effects and excludes telemetry.
+		local control = Deep.controlKinds(effects)
+		assert(
+			#control == 0,
+			`AC-7: a continuing round emitted control effect(s) {Deep.show(control)} `
+				.. `(telemetry Emit effects excluded)`
+		)
 		state = after
 	end
 
@@ -828,19 +843,30 @@ function RoundEndingContract.endingSequenceEmitsExactlyOneComputeTrace(machine: 
 				.. `{Deep.show(traces[1].roundId)}, and the round is `
 				.. `{Deep.show(ending.ended.roundId)}`
 		)
+		--[[
+			TEL-002 Contract §5: the step that enters Resolution carries
+			`round_complete` and `first_round_complete` Emits, pinned by
+			TelemetryEmitContract. Pin 3 is about CONTROL effects - the one
+			ComputeTrace belongs to Resolution -> Post - so both assertions below
+			exclude telemetry through the one shared filter.
+		]]
+		local endingControl = Deep.controlKinds(ending.effects)
 		assert(
-			#ending.effects == 0,
+			#endingControl == 0,
 			`AC-6 (Contract pin 3): the step that ended the round by {ending.label} emitted `
-				.. `{Deep.show(Deep.kinds(ending.effects))}. The ending step emits nothing; the `
-				.. `single ComputeTrace is emitted by Resolution -> Post (ROUND-003 AC-4)`
+				.. `control effect(s) {Deep.show(endingControl)} (telemetry Emit effects `
+				.. `excluded). The ending step emits no control effect; the single ComputeTrace `
+				.. `is emitted by Resolution -> Post (ROUND-003 AC-4)`
 		)
 
 		local wanted = { "ComputeTrace", "PromptRematch" }
+		local collectedControl = Deep.controlKinds(collected)
 		assert(
-			Deep.equal(Deep.kinds(collected), wanted),
-			`AC-6: the {ending.label} ending sequence emitted `
-				.. `{Deep.show(Deep.kinds(collected))}, wanted {Deep.show(wanted)} (ROUND-003 `
-				.. `AC-8, minus the AssignSeats that started the round)`
+			Deep.equal(collectedControl, wanted),
+			`AC-6: the {ending.label} ending sequence emitted control effects `
+				.. `{Deep.show(collectedControl)}, wanted {Deep.show(wanted)} (ROUND-003 `
+				.. `AC-8, minus the AssignSeats that started the round; telemetry Emit effects `
+				.. `excluded)`
 		)
 	end
 end
@@ -877,7 +903,10 @@ function RoundEndingContract.aResolvedRoundIsNotReResolved(machine: any, config:
 		`fixture: the round ended below quorum with nobody seated, so there is no departure to `
 			.. `ignore in Post`
 	)
-	Contract.eventIsIgnored(machine, {
+	-- TEL-002 Contract §5 / P2, P3: this departure now emits a `session_end`
+	-- and records itself in `departed`; the seated list, the outcome and the
+	-- control effects are still exactly what pin 5 says. See the helper.
+	Contract.eventIsIgnoredExceptTelemetry(machine, {
 		label = `a PlayerLeft naming the seated player {seated}, in Post`,
 		state = post,
 		event = RoundEndingContract.left(seated),

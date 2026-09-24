@@ -94,7 +94,7 @@ return {
 	end,
 
 	["AC-1: an empty lobby is still in Lobby well past lobbySeconds and has emitted nothing"] = function()
-		local empty = Machine.initial(CONFIG, Lobby.SEED, Lobby.ROUND_ID)
+		local empty = Machine.initial(CONFIG, Lobby.SEED, Lobby.ROUND_ID, Lobby.SESSION_ID)
 		local wellPast = CONFIG.lobbySeconds * 5
 		local after, effects = Machine.step(empty, Lobby.tick(), wellPast)
 		assert(
@@ -130,7 +130,7 @@ return {
 		PlayerJoined branch, which is mutation 1 of the story's `## Notes`.
 	]]
 	["AC-2: a PlayerJoined never rewrites phaseEnteredAt, whatever the now"] = function()
-		local state = Machine.initial(CONFIG, Lobby.SEED, Lobby.ROUND_ID)
+		local state = Machine.initial(CONFIG, Lobby.SEED, Lobby.ROUND_ID, Lobby.SESSION_ID)
 		local enteredAt = state.phaseEnteredAt
 		local joinTimes = { 0, 7, 11.5, CONFIG.lobbySeconds * 9 }
 
@@ -205,6 +205,15 @@ return {
 		unconditional unseating `PlayerLeft` branch and watches this go red while
 		the Lobby tests stay red for their own reasons - and re-earned the same
 		way by ROUND-005's probe 1 after the narrowing.
+
+		TEL-002 (Contract §5, P2, P3) turns these three departures into
+		telemetry: each emits a `bounce_before_resolution` (Assignment) or a
+		`session_end` (Resolution, Post) and records itself in the `departed`
+		guard map, and NOTHING ELSE about the step changes - nobody is unseated,
+		no control effect is produced. So the check is
+		`eventIsIgnoredExceptTelemetry`, which excludes exactly `departed` and
+		the `Emit` effects and asserts every other half unchanged. Re-earned by
+		TEL-002's `## Regressions` probe, which makes this branch unseat.
 	]]
 	["Contract pin 2: a PlayerLeft outside the Lobby is ignored - a mid-round departure is ROUND-005"] = function()
 		local reached = journeyPastTheLobby()
@@ -213,7 +222,7 @@ return {
 
 		for _, phase in { "Assignment", "Resolution", "Post" } do
 			local state = reached[phase]
-			local ok, err = pcall(Contract.eventIsIgnored, Machine, {
+			local ok, err = pcall(Contract.eventIsIgnoredExceptTelemetry, Machine, {
 				label = `a PlayerLeft naming the seated player p2, in {phase}`,
 				state = state,
 				event = Lobby.left("p2"),
@@ -238,7 +247,8 @@ return {
 			#offending == 0,
 			`Contract pin 2: a PlayerLeft was acted on in {#offending} phase(s) past the Lobby `
 				.. `({table.concat(offending, ", ")}). ROUND-004 unseats in the LOBBY and nowhere `
-				.. `else; a mid-round departure is ROUND-005's. The first:\n{first}`
+				.. `else; a mid-round departure is ROUND-005's; TEL-002's telemetry (the departed `
+				.. `guard and Emit effects) is excluded from this check. The first:\n{first}`
 		)
 	end,
 }
