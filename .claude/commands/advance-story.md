@@ -110,6 +110,20 @@ each recorded control value against the shipped module. When it returns, run the
 tests yourself, then `bash scripts/gates.sh --fast` — the same admissibility
 question, now expecting green.
 
+**Proving the freeze held, at RED → GREEN and GREEN → GATES.** Right after
+`phase.sh set` and before dispatching, run
+`bash scripts/frozen.sh snapshot <every path the phase must not touch>` — the
+test files, and any file the lock does not cover. Before leaving the phase, run
+`bash scripts/frozen.sh verify` and paste its line into the story; anything but
+`frozen: OK` is a violation to explain, not a formality. Do **not** use
+`git diff --stat <test file>` here. It answers the wrong question after RED:
+RED's work is uncommitted (a story commits once, at REVIEW), so a non-empty diff
+is the healthy case, an empty one means the tests were reverted, and an untracked
+new test file does not appear in it at all. `git diff --stat` remains valid in the
+RED direction, where the frozen file is source and its last committed state is the
+previous merge. A snapshot cannot be taken after the fact, so a missed one is
+recorded as missed, never reconstructed.
+
 **GREEN → GATES.** Set the phase, then — **before** `gates.sh` — run every entry
 in `## Deferred verifications` that names GATES as its owner, and paste what
 happened into the block: what was mutated, which assertion went red, and that the

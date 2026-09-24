@@ -25,7 +25,13 @@ specific way software goes wrong.
 2. The failure must be the *right* failure - your assertion, not an unrelated
    error that happens to be red.
 3. During GREEN the tests are frozen. A test that is wrong sends the story back
-   to RED; it is never edited into passing.
+   to RED; it is never edited into passing. Prove the freeze held with
+   `bash scripts/frozen.sh snapshot <test paths>` at the RED → GREEN handoff,
+   before GREEN starts, and `bash scripts/frozen.sh verify` before it ends - a
+   blob-hash comparison. Not `git diff --stat`: RED's work is uncommitted when
+   GREEN runs, so the diff is non-empty when the tests are intact, empty only
+   when they were reverted, and blind to a new untracked test file. That check
+   is valid only in the RED direction, on source whose last state is committed.
 4. Never reach green by weakening: no relaxed tolerance, no skipped case, no
    deleted case, no assertion narrowed to what the code already does.
 5. Done means `bash scripts/gates.sh` was run and passed. It writes its own

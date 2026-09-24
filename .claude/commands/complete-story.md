@@ -39,6 +39,11 @@ approval between phases is exactly when they get quietly reordered:
   verify yourself rather than delegate.
 - **GREEN confirms the negative-control values RED recorded**, not just that
   the control tests pass. RED could not run them: its suite failed at import.
+- **The freeze is snapshotted before the dispatch, not checked after it.** At
+  RED → GREEN and GREEN → GATES, `bash scripts/frozen.sh snapshot <frozen paths>`
+  runs right after `phase.sh set`, and `bash scripts/frozen.sh verify` before
+  leaving the phase. Never `git diff --stat` on a test file after RED: RED's work
+  is uncommitted, so that diff is non-empty when the freeze held.
 - **A claim that the contract is wrong is reproduced before it is accepted.**
   When a subagent reports that an acceptance criterion, a threshold or a frozen
   test is wrong, verify it yourself on different inputs, without reusing the

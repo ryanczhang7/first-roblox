@@ -7,6 +7,7 @@ in here is ever committed; only this file and `.gitkeep` are tracked.
 |---|---|---|---|
 | `current-story.env` | `scripts/phase.sh` | the phase guard, the status line | no |
 | `last-gate-run` | `scripts/gates.sh` | the stop hook | no |
+| `frozen-*.tsv` | `scripts/frozen.sh` | `scripts/frozen.sh verify` | no |
 | `gate-logs/*.log` | `scripts/gates.sh` | you, when a gate fails | yes |
 | `mutations/*.bak` | `scripts/mutate.sh` | `scripts/mutate.sh`, to restore the file | yes |
 | `mutations/log` | `scripts/mutate.sh` | you, and the story that quotes it | yes |
@@ -49,6 +50,15 @@ phase lock is off entirely.
 `RESULT=`, `FULL=` and this file's timestamp out of it to decide whether a phase's
 gate obligation was met, so writing `RESULT=pass` by hand forges precisely what
 law 3 exists to prevent. `bash scripts/gates.sh` is what writes it.
+
+**`frozen-*.tsv` — not hand-editable.** One per story, written by
+`bash scripts/frozen.sh snapshot` and read by `bash scripts/frozen.sh verify` as
+evidence that a phase left its frozen files alone: `verify` exits 0 when the
+recorded blob hashes equal the current ones, so writing the current hashes in by
+hand forges an OK the same way a hand-written `RESULT=pass` forges a gate run.
+The known limit is in the design, not this table: re-running `snapshot` mid-phase
+replaces the record and resets the baseline. Only taking the snapshot at the phase
+transition itself would close that.
 
 ## The exhaust
 
