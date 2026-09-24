@@ -437,6 +437,30 @@ whole-line needle is what catches it; a floating `grep CHANGED` would not.
      inputs, not the subagent's code. That claim is also what an agent says
      when it wants to stop failing. -->
 
+### Amendment 1 — AC-6: "reads and writes" became "writes"
+
+- **Which AC:** AC-6.
+- **What it said:** "Given any invocation, `scripts/frozen.sh` reads and writes
+  nothing outside `.claude/state/`, and `bash .claude/tests/settings.test.sh`
+  still passes …"
+- **What it says now:** "Given any invocation, `scripts/frozen.sh` writes
+  nothing outside `.claude/state/` — in particular it never modifies a path it
+  was asked to freeze — and `bash .claude/tests/settings.test.sh` still passes …"
+  The rest of the criterion is unchanged.
+- **Who approved it:** the user (ryanczhang7), on 2026-09-23, choosing the
+  "writes only" option the Lead PO put to them.
+- **When:** at PLANNED→RED, before RED was dispatched and before any test
+  existed, so no test was written against the old wording.
+- **Why:** no correct implementation can meet the "reads" half. Both verbs have
+  to hash the frozen paths themselves, which lie outside `.claude/state/` by
+  definition, and `git hash-object` reads `.git/`. The criterion was therefore
+  either untestable or false for every correct script. This was the Lead PO's
+  own finding, not a subagent's claim.
+- **Why it is here and not only in `## Notes`:** the story was committed to
+  `main` while PLANNED, so `check-boundaries.sh` compares against that wording,
+  and PO decision 6 in `## Notes` alone was invisible to it. Found by
+  `check-boundaries.sh` on the first REVIEW commit (6338f1c).
+
 ## Model guidance
 
 <!-- plan.sh:generated:begin -->
