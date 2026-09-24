@@ -33,6 +33,8 @@ local LobbyGateContract = {}
 
 LobbyGateContract.SEED = 20260916
 LobbyGateContract.ROUND_ID = "round-ROUND-004-a"
+-- TEL-002: `initial` takes the driver's session id as its 4th argument.
+LobbyGateContract.SESSION_ID = "session-ROUND-004-a"
 
 function LobbyGateContract.joined(playerId: string): any
 	return { kind = "PlayerJoined", playerId = playerId }
@@ -62,7 +64,12 @@ end
 	fail on the count assert here rather than mysteriously four lines later.
 ]]
 function LobbyGateContract.lobbyOf(machine: any, config: any, count: number): any
-	local state = machine.initial(config, LobbyGateContract.SEED, LobbyGateContract.ROUND_ID)
+	local state = machine.initial(
+		config,
+		LobbyGateContract.SEED,
+		LobbyGateContract.ROUND_ID,
+		LobbyGateContract.SESSION_ID
+	)
 	for _, id in LobbyGateContract.roster(count) do
 		state = machine.step(state, LobbyGateContract.joined(id), 0)
 	end
@@ -428,7 +435,12 @@ function LobbyGateContract.removalPreservesJoinOrder(machine: any, config: any)
 	}
 	local expected = { "p2", "p4", "p5", "p6", "p8" }
 
-	local state = machine.initial(config, LobbyGateContract.SEED, LobbyGateContract.ROUND_ID)
+	local state = machine.initial(
+		config,
+		LobbyGateContract.SEED,
+		LobbyGateContract.ROUND_ID,
+		LobbyGateContract.SESSION_ID
+	)
 	local trail: { string } = {}
 	for index, entry in script do
 		local action, playerId = entry[1] :: string, entry[2] :: string

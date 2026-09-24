@@ -140,4 +140,37 @@ function Deep.kinds(effects: { any }): { string }
 	return out
 end
 
+--[[
+	The CONTROL effects of a step: every effect whose kind is not `Emit`, in
+	order.
+
+	TEL-002 adds telemetry to the phase machine as `{ kind = "Emit", event }`
+	effects returned from `step` (architecture.md §Effects, D3). ROUND-003 AC-8,
+	ROUND-005 AC-6 and AC-7 pin the machine's control effects - `AssignSeats`,
+	`ComputeTrace`, `PromptRematch` - and that meaning is KEPT: each of those
+	assertions filters through this one function before comparing, so a join,
+	a departure or the step that enters Resolution may carry telemetry without
+	the ROUND suites re-deciding what the control sequence is. Telemetry on
+	those steps is pinned by `tests/helpers/TelemetryEmitContract.luau`.
+
+	ONE shared filter rather than a private one per file (TEL-002 Contract §5):
+	four private copies of "which files are source" once drifted apart in this
+	repository, and a private "which effects are control" would drift the same
+	way.
+]]
+function Deep.controlEffects(effects: { any }): { any }
+	local out: { any } = {}
+	for _, effect in effects do
+		if not (typeof(effect) == "table" and effect.kind == "Emit") then
+			table.insert(out, effect)
+		end
+	end
+	return out
+end
+
+-- `Deep.kinds` over the control effects only. Read the comment above.
+function Deep.controlKinds(effects: { any }): { string }
+	return Deep.kinds(Deep.controlEffects(effects))
+end
+
 return Deep

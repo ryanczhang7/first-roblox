@@ -122,4 +122,57 @@ function PhaseMachineContract.eventIsIgnored(machine: any, case: Case)
 	)
 end
 
+--[[
+	`eventIsIgnored` for a `PlayerLeft` that TEL-002 turns into telemetry.
+
+	ROUND-004 Contract pin 2 and ROUND-005 Contract pin 5 say a departure in
+	`Assignment`, `Resolution` or `Post` is ignored: nobody is unseated, no
+	control effect is produced, `phaseEnteredAt` and `outcome` are untouched.
+	TEL-002 keeps every word of that (its Contract, P3) and adds two things the
+	old check cannot see past: the step emits a `bounce_before_resolution` or a
+	`session_end`, and it records the departure in the `departed` guard map so
+	that a duplicate `PlayerLeft` emits nothing (P2). So this check compares the
+	state with `departed` EXCLUDED on both sides and the effects with `Emit`
+	EXCLUDED, and asserts every other half of `eventIsIgnored` unchanged. What
+	`departed` and the `Emit` must be is TEL-002's suite's to pin
+	(`TelemetryEmitContract.luau`), not this check's to wave through.
+
+	Only `departed` is excluded, deliberately. A `PlayerLeft` has no business
+	touching `rematched` or `roundsSeated`, and a machine that did would still
+	fail here.
+]]
+function PhaseMachineContract.eventIsIgnoredExceptTelemetry(machine: any, case: Case)
+	local snapshot = Deep.copy(case.state)
+
+	local ok, result, effects = pcall(machine.step, case.state, case.event, case.now)
+	assert(ok, `AC-7: step raised on {case.label} instead of ignoring it: {tostring(result)}`)
+
+	local expected = Deep.copy(snapshot)
+	local actual = Deep.copy(result)
+	if typeof(expected) == "table" then
+		expected.departed = nil
+	end
+	if typeof(actual) == "table" then
+		actual.departed = nil
+	end
+	local difference = Deep.diff(expected, actual)
+	assert(
+		difference == "",
+		`AC-7: {case.label} was not ignored - the returned state differs from the one given `
+			.. `(telemetry's departed guard excluded from the comparison):\n{difference}`
+	)
+
+	assert(
+		typeof(effects) == "table",
+		`AC-7: step returned {typeof(effects)} for its effect list on {case.label}`
+	)
+	local control = Deep.controlEffects(effects :: { any })
+	assert(
+		#control == 0,
+		`AC-7: {case.label} produced {#control} control effect(s) and must produce none `
+			.. `(telemetry Emit effects excluded; TEL-002 pins those): `
+			.. Deep.show(Deep.kinds(control))
+	)
+end
+
 return PhaseMachineContract
