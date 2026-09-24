@@ -4,8 +4,8 @@ title: Proving a frozen file was untouched needs a check that works when the pre
 slug: proving-a-frozen-file-was-untouched-need
 epic: 
 type: fix
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-015-proving-a-frozen-file-was-untouched-need
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -1080,6 +1080,20 @@ this story and is out of its scope; it has been filed as a separate follow-up.
 
 **The freeze was verified again after the second run:**
 `frozen: OK — 3 path(s) unchanged since the snapshot for HARNESS-015`.
+
+### DONE
+
+Merged as `f6c1cbb` via PR #28 on 2026-09-24T17:55:32Z. Both CI jobs passed on
+the first run, against head `56afdf0`:
+
+- `gates` (run 36034320378) passed in **2m33s** against
+  `timeout-minutes: 45`. The Harness self-test step, which is the one that binds
+  this story, took **1m49s**; Run gates took 21s.
+- `boundaries` (run 36034320546) passed in 8s.
+
+Every duration is far from its limit. No gate was pending CI. The self-test
+takes about 1m49s on CI against about two hours locally, which confirms that
+this machine's contention, not the suites, is the local cost.
 
 **PO decision 5 — `depends_on: []`.** This story needs nothing from
 `HARNESS-014` beyond its *evidence*. `HARNESS-014` is where the defect was
