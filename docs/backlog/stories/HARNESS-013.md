@@ -4,8 +4,8 @@ title: mutate.sh's early-exit paths leak the backup they print about
 slug: mutate-sh-s-early-exit-paths-leak-the-ba
 epic: 
 type: fix
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-013-mutate-sh-s-early-exit-paths-leak-the-ba
 depends_on: [HARNESS-012]   # its finish() trap and its piped test helpers are what this builds on
 required_gates: []          # gate ids that are optional for the repo but binding for THIS story
@@ -1464,3 +1464,29 @@ is `s/^  SEDERR=.*/  SEDERR=""/` on `scripts/mutate.sh`. The assertion that must
 go red is `and sed's own complaint, indented by two spaces`; the one that must
 stay green is `and stderr carries the heading, entire`. For mutations 1 and 2,
 read `head -4` as the row that must stay green, not `head -1`.
+
+### PR #27's CI timings, read rather than assumed
+
+`https://github.com/ryanczhang7/first-roblox/pull/27` was merged as `8f2dfdd` on
+2026-09-24. Both jobs were green on the first run:
+
+- `boundaries`: 10 s (run https://github.com/ryanczhang7/first-roblox/actions/runs/35939680029)
+- `gates`: 2 m 34 s (run https://github.com/ryanczhang7/first-roblox/actions/runs/35939680171)
+
+In that log, `mutate: 133 passed, 0 failed` and `19 harness suite(s) passed.`
+
+The step that carries this story's artifact is `Harness self-test`, because no
+gate reads `.claude/tests/**` (PO decision 3):
+
+| Run | `Harness self-test` |
+|---|---|
+| **PR #27** | **107 s** |
+| PR #25 (HARNESS-012) | 88 s |
+| earlier `main` runs | 84–103 s |
+
+The 16 new `mutate.sh` processes cost about 19 s over PR #25 on
+`ubuntu-latest`, compared with roughly 250 s locally on Windows. That is slightly
+above the earlier spread, and the step keeps growing, but nothing is near a limit:
+`gates` declares no `timeout-minutes`, so the only ceiling is GitHub's 6 h
+default. The other steps took 3 s (`Show configured gates`), 3 s
+(`Audit the gate manifest`) and 21 s (`Run gates`).
