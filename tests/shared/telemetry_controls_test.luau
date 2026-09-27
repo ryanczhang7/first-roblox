@@ -144,7 +144,8 @@ return {
 		AC-2's controls. Mutation 3 of `## Notes` is `purchase` removed;
 		measured here, it fails AC-1 and AC-3 as well as AC-2, because both of
 		those construct every B6 name and `purchase` is one. The other
-		direction - a tenth, invented event - fails AC-2 on the count and AC-3
+		direction - an invented extra event, outside both the B6 set and the
+		operational set (TEL-003) - fails AC-2 on the count and AC-3
 		on construction, because `level_up` is one of AC-3's strangers. A wrong
 		bucket for the one event the story says to get right fails AC-2 and
 		AC-1. An unfrozen table fails AC-2 alone, both ways it can be written.
@@ -169,7 +170,7 @@ return {
 			"purchase: expected D8_28, got nil (missing)",
 			"the AC-2 failure names the missing event and its settled bucket"
 		)
-		names(message, "8 entries in all, 9 expected", "the AC-2 failure counts the entries")
+		names(message, "9 entries in all, 10 expected", "the AC-2 failure counts the entries")
 
 		names(
 			refuses(
@@ -191,9 +192,9 @@ return {
 		)
 	end,
 
-	["AC-2 control: a tenth invented event in BUCKETS fails AC-2 on the count and AC-3 by constructing it"] = function()
+	["AC-2 control: an invented extra event in BUCKETS, outside the B6 and operational sets, fails AC-2 on the count and AC-3 by constructing it"] = function()
 		local Event = Stubs.extraTenthEvent
-		passesTheChecks(EVENT_CHECKS, Event, "the tenth-event Event", {
+		passesTheChecks(EVENT_CHECKS, Event, "the extra-event Event", {
 			["AC-2"] = true,
 			["AC-3"] = true,
 		})
@@ -201,19 +202,24 @@ return {
 		local message = refuses(
 			Contract.bucketsNameExactlyTheNineB6Events,
 			Event,
-			"a BUCKETS with a tenth entry must fail AC-2"
+			"a BUCKETS with a stray extra entry must fail AC-2"
 		)
 		names(message, "0 of 9 wrong or missing", "all nine are still right")
+		names(message, "0 of 1 operational wrong or missing", "the operational entry is right")
 		names(
 			message,
-			"1 extra or malformed entries (10 entries in all, 9 expected)",
+			"1 extra or malformed entries (11 entries in all, 10 expected)",
 			"the count fires"
 		)
-		names(message, 'level_up = "D1" is not a B6 event', "the extra entry is named")
+		names(
+			message,
+			'level_up = "D1" is neither a B6 event nor an operational one',
+			"the extra entry is named"
+		)
 		names(
 			message,
 			"0 way(s) it is not frozen",
-			"the tenth entry is not misread as an unfrozen write"
+			"the extra entry is not misread as an unfrozen write"
 		)
 
 		names(
@@ -241,7 +247,7 @@ return {
 			'bounce_before_resolution: expected D1, got "D2_7"',
 			"the AC-2 failure names the event and both buckets"
 		)
-		names(message, "9 entries in all, 9 expected", "the count is still right")
+		names(message, "10 entries in all, 10 expected", "the count is still right")
 
 		names(
 			refuses(
@@ -252,6 +258,32 @@ return {
 			'value.bucket: expected "D1", got "D2_7"',
 			"AC-1 names the wrong bucket on the event"
 		)
+	end,
+
+	--[[
+		TEL-003's half of AC-2: the operational set. `remote_rejected` absent
+		fails AC-2 ALONE - AC-1 and AC-3 construct only B6 names - naming the
+		gap as operational. This is the shape the real module fails in TEL-003's
+		RED, observed here against a stub in the same phase.
+	]]
+	["AC-2 control (TEL-003): remote_rejected missing from BUCKETS fails AC-2 alone, naming the operational gap"] = function()
+		local Event = Stubs.missingOperational
+		passesTheChecks(EVENT_CHECKS, Event, "the missing-operational Event", { ["AC-2"] = true })
+
+		local message = refuses(
+			Contract.bucketsNameExactlyTheNineB6Events,
+			Event,
+			"a BUCKETS without remote_rejected must fail AC-2"
+		)
+		names(message, "0 of 9 wrong or missing", "the nine B6 events are right")
+		names(message, "1 of 1 operational wrong or missing", "the operational gap is counted")
+		names(
+			message,
+			"remote_rejected: expected D1, got nil (missing) (operational, TEL-003)",
+			"the gap is named with its bucket"
+		)
+		names(message, "9 entries in all, 10 expected", "the count fires")
+		names(message, "0 way(s) it is not frozen", "the gap is not misread as a write")
 	end,
 
 	["AC-2 control: a writable BUCKETS fails AC-2 alone, on an existing key and on a new key"] = function()
