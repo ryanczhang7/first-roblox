@@ -4,8 +4,8 @@ title: A disconnect transfers the key class to the supplier and closes the ring
 slug: a-disconnect-transfers-the-key-class-to
 epic: EPIC-02
 type: feature
-status: in-progress
-phase: GATES
+status: in-review
+phase: REVIEW
 branch: story/SEAT-003-a-disconnect-transfers-the-key-class-to
 depends_on: [SEAT-002, ROUND-005]
 required_gates: []
@@ -754,3 +754,23 @@ governs (a partial run; `gates.sh` does not record it):
     FAIL         unit (14s, did 443 units of work, below the floor of 444 in project.conf) -> .claude/state/gate-logs/unit.log
     === mutate: command exited 1; restored (verified byte-for-byte against .../.claude_harness_project.conf.20260928T173525Z.1826.bak) ===
       546: floor    | unit      | 443
+
+## Gate results
+
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-28T17:39:14Z
+    commit: be91cd4
+    tree:   7159982f9af836f5b883f86607a30df72ea79be9
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 88)
+    PASS         lint (0s, observed 88, floor 1)
+    PASS         typecheck (2s, observed 17)
+    PASS         unit (13s, observed 443, floor 443)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 57746)
+    PASS         harness (14s, observed 40)
+    UNCONFIGURED mutation
+
