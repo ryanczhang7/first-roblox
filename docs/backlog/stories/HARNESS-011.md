@@ -4,8 +4,8 @@ title: A contract helper's failure message survives past 511 characters
 slug: a-contract-helper-s-failure-message-surv
 epic: 
 type: chore
-status: in-progress
-phase: GATES
+status: in-review
+phase: REVIEW
 branch: story/HARNESS-011-a-contract-helper-s-failure-message-surv
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -620,10 +620,22 @@ case could not fail.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-28T19:27:31Z
+    commit: 85f9954
+    tree:   da894b56bbc14ebc26b5f300ca8bc74e3f381c01
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 90)
+    PASS         lint (0s, observed 90, floor 1)
+    PASS         typecheck (2s, observed 17)
+    PASS         unit (22s, observed 450, floor 443)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 57746)
+    PASS         harness (14s, observed 40)
+    UNCONFIGURED mutation
 
 ## Scaffold inventory
 
@@ -820,11 +832,12 @@ follow-up.
    pushed, AC-4 and AC-5 differ from the base with no `## Amendments` entry, and
    the PR will be refused. Before REVIEW, either push that commit to `main`
    (it is a PLANNED edit, which the rules allow without an amendment) or record
-   the PO-1..PO-3 changes as an `## Amendments` entry. **The user's call.**
+   the PO-1..PO-3 changes as an `## Amendments` entry.
+   **Resolved in GATES:** `## Amendments` A-1. `main` was not pushed to directly.
 2. **The follow-up story is not filed yet.** `## Out of scope` makes filing it
    part of this story: every remaining helper onto the shared raiser, and the
-   wrong "512" in each private wrapper's comment. File it with `/plan-story`
-   before DONE.
+   wrong "512" in each private wrapper's comment.
+   **Resolved in GATES:** filed as `HARNESS-016`, `depends_on: [HARNESS-011]`.
 3. The `harness` gate's stray-file precondition clears on the commit at REVIEW,
    as it did for SEAT-003. GATES should expect it on the uncommitted tree and
    read the log, not wave it through: every other counters assertion is green.
