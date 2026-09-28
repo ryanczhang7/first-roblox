@@ -4,8 +4,8 @@ title: Every contract helper raises through the shared raiser
 slug: every-contract-helper-raises-through-the
 epic: 
 type: chore
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-016-every-contract-helper-raises-through-the
 depends_on: [HARNESS-011]   # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -616,3 +616,20 @@ further, because it is outside this story.
     PASS         harness (17s, observed 40)
     UNCONFIGURED mutation
 
+
+## Close-out (REVIEW → DONE)
+
+Merged as PR #33 (`5f03275`) on 2026-09-28. Timings are from the first CI run,
+which was the only run; both jobs were green on `e683e8f`:
+
+| Job / gate | CI | Limit | Headroom |
+|---|---|---|---|
+| `gates` job | 2m38s (23:31:45 → 23:34:23) | no `timeout-minutes` set, so the GitHub default of 360 min applies (the 45 in `gates.yml` is a comment) | > 99 % |
+| `unit` | 5s, `452 passed, 0 failed` (32s to 3m31s locally) | none | — |
+| `harness` | 14s, `project-counters: 40 passed, 0 failed` | none | — |
+| `typecheck` / `lint` / `format` / `build` | 3s / 0s / 0s / 0s | none | — |
+| `boundaries` job | 7s | — | — |
+
+Nothing is within 10 % of a limit, and no gate reached REVIEW *pending CI*. The
+local swing (21s to 3m31s for the same suite) did not show up on CI. It stays a
+property of this machine, recorded under `## Scaffold inventory`.
