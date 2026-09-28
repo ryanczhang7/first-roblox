@@ -11,7 +11,9 @@
 	rest are the mutations the story's `## Notes` asks the orchestrator to run
 	at acceptance (a lens read from the supplier, `{}` for a stranger) and the
 	one-defect projections the remaining criteria would otherwise have no
-	control for.
+	control for. SEAT-003 adds one: the class LIST handed out by reference
+	(`aliasKeyClasses`), the temptation the story names once a player can hold
+	two classes.
 
 	It is a FACTORY over a table of defects, as `RingStubs.luau` is, so that
 	`defects` is empty for the baseline and has exactly ONE field set for every
@@ -28,10 +30,13 @@
 	particular AC-4's source guard never runs over this file, so nothing here
 	says anything about how the real module may be written.
 
-	NOTHING HERE REQUIRES UNMERGED PRODUCTION CODE - `src/server/seats/Ring.luau`
-	is SEAT-001's, merged and frozen - so these controls are EXECUTED in RED,
-	and `tests/server/projection_controls_test.luau` records what each one
-	actually did.
+	THE SHAPE IT READS IS SEAT-003's: `assignment.keyClasses[p]` is a list and
+	`assignment.lens[p]` is stored. The lens is read off the FIELD here rather
+	than through `Ring.lensOf`, so that these stubs depend on `Ring` only for
+	σ⁻¹ and σ - which is what lets SEAT-003's RED drive them against a
+	candidate ring while the real module still deals the old shape. The
+	supplier and dependent still come from the real `Ring`, because the
+	`refuseViaRing` control needs Ring's own refusal.
 ]]
 
 local Ring = require("../../src/server/seats/Ring")
@@ -44,8 +49,8 @@ local ProjectionStubs = {}
 	  * `copyAndRemoveSigma`  - `table.clone(assignment)` then `sigma = nil`
 	                            (AC-2's control, AC-3's control; mutation 1 of
 	                            `## Notes`)
-	  * `lensFromSupplier`    - lensClass read from the supplier's key class
-	                            instead of the dependent's (mutation 2)
+	  * `lensFromSupplier`    - lensClass read from the supplier's first key
+	                            class instead of the stored lens (mutation 2)
 	  * `emptyForUnknown`     - `{}` for a player not in the assignment
 	                            instead of raising (mutation 3)
 	  * `refuseViaRing`       - no membership check of its own; a stranger
@@ -55,9 +60,12 @@ local ProjectionStubs = {}
 	                            table (PO-2)
 	  * `seatOrderFromRing`   - seatOrder walked along σ from `p` rather than
 	                            copied from the seats (AC-6, "σ in any form")
-	  * `leakSupplierClass`   - one extra field, `supplierClass`, holding
-	                            `keyClass[σ⁻¹(p)]` (AC-2 and AC-6, one integer)
+	  * `leakSupplierClass`   - one extra field, `supplierClass`, holding the
+	                            supplier's first class (AC-2 and AC-6, one
+	                            integer)
 	  * `swapNeighbours`      - supplierId and dependentId exchanged (AC-1)
+	  * `aliasKeyClasses`     - `keyClasses = assignment.keyClasses[p]`, the
+	                            same list (SEAT-003; AC-1's aliasing pin)
 ]]
 export type Defects = {
 	copyAndRemoveSigma: boolean?,
@@ -68,6 +76,7 @@ export type Defects = {
 	seatOrderFromRing: boolean?,
 	leakSupplierClass: boolean?,
 	swapNeighbours: boolean?,
+	aliasKeyClasses: boolean?,
 }
 
 local function isSeated(assignment: any, playerId: any): boolean
@@ -124,18 +133,28 @@ function ProjectionStubs.make(defects: Defects): any
 			end
 		end
 
+		local keyClasses: { number }
+		if defects.aliasKeyClasses then
+			keyClasses = assignment.keyClasses[playerId]
+		else
+			keyClasses = {}
+			for _, class in assignment.keyClasses[playerId] do
+				table.insert(keyClasses, class)
+			end
+		end
+
 		local view: { [string]: any } = {
 			playerId = playerId,
-			keyClass = assignment.keyClass[playerId],
+			keyClasses = keyClasses,
 			lensClass = if defects.lensFromSupplier
-				then assignment.keyClass[Ring.supplierOf(assignment, playerId)]
-				else Ring.lensOf(assignment, playerId),
+				then assignment.keyClasses[supplierId][1]
+				else assignment.lens[playerId],
 			supplierId = supplierId,
 			dependentId = dependentId,
 			seatOrder = seatOrder,
 		}
 		if defects.leakSupplierClass then
-			view.supplierClass = assignment.keyClass[Ring.supplierOf(assignment, playerId)]
+			view.supplierClass = assignment.keyClasses[Ring.supplierOf(assignment, playerId)][1]
 		end
 		return view
 	end
@@ -152,5 +171,6 @@ ProjectionStubs.aliasSeatOrder = ProjectionStubs.make({ aliasSeatOrder = true })
 ProjectionStubs.seatOrderFromRing = ProjectionStubs.make({ seatOrderFromRing = true })
 ProjectionStubs.leakSupplierClass = ProjectionStubs.make({ leakSupplierClass = true })
 ProjectionStubs.swapNeighbours = ProjectionStubs.make({ swapNeighbours = true })
+ProjectionStubs.aliasKeyClasses = ProjectionStubs.make({ aliasKeyClasses = true })
 
 return ProjectionStubs

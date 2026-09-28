@@ -45,11 +45,16 @@
 	and it is observable from outside: draws taken from the parent before `assign`
 	do not move the ring.
 
+	THE LENS IS STORED, NOT DERIVED (SEAT-003 PO-1). It is DEALT as `k(σ(p))`
+	and never recomputed. After a withdrawal closes the ring, `σ(s)` for the
+	supplier `s` is the leaver's dependent, so recomputing would hand `s` the
+	leaver's lens - exactly what `roles.md` section 6 says is lost.
+
 	WHAT THIS MODULE DOES NOT KNOW. Lens CONTENTS - the `(tag → required value)`
 	pairings a lens actually shows - come from the M3 instance generator, so an
-	`Assignment` carries `players`, `sigma` and `keyClass` and nothing else.
-	SEAT-002 replicates that shape as is. It needs no Roblox runtime either: no
-	`Instance`, no service, nothing but arithmetic over tables.
+	`Assignment` carries `players`, `sigma`, `keyClasses` and `lens` and nothing
+	else. It needs no Roblox runtime either: no `Instance`, no service, no clock -
+	`rejoin` is handed `now` - nothing but arithmetic over tables.
 ]]
 
 local Rng = require("@shared/Rng")
@@ -63,7 +68,19 @@ export type KeyClass = number -- 1..n, one per seated player
 export type Assignment = {
 	players: { PlayerId }, -- seat order, as seated
 	sigma: { [PlayerId]: PlayerId }, -- σ: p -> p's dependent, the ring-successor
-	keyClass: { [PlayerId]: KeyClass },
+	-- A list, because a supplier inherits a leaver's class (SEAT-003) and one
+	-- field says which classes a player may operate, not two.
+	keyClasses: { [PlayerId]: { KeyClass } },
+	lens: { [PlayerId]: KeyClass }, -- λ(p), dealt as k(σ(p)) and never recomputed
+}
+
+-- What the driver keeps while a player is away: the ring as it stood before
+-- the withdrawal, so a rejoin inside the window can put it back exactly.
+export type Absence = {
+	playerId: PlayerId,
+	leftAt: number,
+	graceSeconds: number,
+	snapshot: Assignment,
 }
 
 -- The sub-stream label. Any label isolates the seats from the parent's draws;
@@ -125,9 +142,17 @@ function Ring.assign(players: { PlayerId }, rng: Rng.Rng): Assignment
 		them by seat keeps the rng's single decision the RING and nothing else, so
 		a player's own key class says nothing about where they sit in it.
 	]]
-	local keyClass: { [PlayerId]: KeyClass } = {}
+	local keyClasses: { [PlayerId]: { KeyClass } } = {}
 	for i, p in players do
-		keyClass[p] = i
+		keyClasses[p] = { i }
+	end
+
+	-- `λ(p) = k(σ(p))`: the lens reads the DEPENDENT's key class - the values
+	-- `p` can see are the ones `p`'s successor needs - and never the supplier's.
+	-- Dealt once, here, while every player still holds exactly one class.
+	local lens: { [PlayerId]: KeyClass } = {}
+	for _, p in players do
+		lens[p] = keyClasses[sigma[p]][1]
 	end
 
 	return {
@@ -135,14 +160,15 @@ function Ring.assign(players: { PlayerId }, rng: Rng.Rng): Assignment
 		-- reach inside an assignment that was already dealt.
 		players = table.clone(players),
 		sigma = sigma,
-		keyClass = keyClass,
+		keyClasses = keyClasses,
+		lens = lens,
 	}
 end
 
--- `λ(p) = k(σ(p))`: the lens reads the DEPENDENT's key class - the values `p`
--- can see are the ones `p`'s successor needs - and never the supplier's.
+-- The stored lens. Not `k(σ(p))`: after a withdrawal that formula names the
+-- leaver's lost lens for the supplier (PO-1).
 function Ring.lensOf(assignment: Assignment, playerId: PlayerId): KeyClass
-	return assignment.keyClass[assignment.sigma[playerId]]
+	return assignment.lens[playerId]
 end
 
 -- `σ(p)`: the ring-successor, the player `p` sends facts to.
@@ -155,7 +181,7 @@ end
 
 	Searched rather than stored, because a second table on the `Assignment` would
 	be a second copy of σ that could disagree with the first - and the Contract
-	names three fields. The scan is over `players` (bounded by the seated count,
+	names four fields. The scan is over `players` (bounded by the seated count,
 	at most 6) rather than over `sigma`, so the answer does not depend on hash
 	order and a stray key in σ cannot become one.
 ]]
@@ -171,6 +197,105 @@ function Ring.supplierOf(assignment: Assignment, playerId: PlayerId): PlayerId
 	-- argument was not seated, rather than handing back a nil that would be
 	-- mistaken for a player somewhere downstream.
 	error(`Ring.supplierOf: {tostring(playerId)} has no supplier - is that player seated?`, 2)
+end
+
+--[[
+	A copy of `assignment` that shares no table with it, leaving out `omit`.
+
+	Fresh at EVERY level, the lists of untouched players included: a result
+	that reused an argument's list would let the next withdrawal's append
+	rewrite `Absence.snapshot` in place, which is PO-3's defect one step later.
+	Every map is walked through `players`, as `supplierOf` walks it, so a stray
+	key cannot be carried across, and every list is appended to rather than
+	cloned: this file's single `table.clone` is SEAT-001's, and SEAT-002's
+	on-disk guard control counts it.
+]]
+local function copyWithout(assignment: Assignment, omit: PlayerId?): Assignment
+	local players: { PlayerId } = {}
+	local sigma: { [PlayerId]: PlayerId } = {}
+	local keyClasses: { [PlayerId]: { KeyClass } } = {}
+	local lens: { [PlayerId]: KeyClass } = {}
+
+	for _, p in assignment.players do
+		if p ~= omit then
+			table.insert(players, p)
+			sigma[p] = assignment.sigma[p]
+			lens[p] = assignment.lens[p]
+			local classes: { KeyClass } = {}
+			for _, class in assignment.keyClasses[p] do
+				table.insert(classes, class)
+			end
+			keyClasses[p] = classes
+		end
+	end
+
+	return { players = players, sigma = sigma, keyClasses = keyClasses, lens = lens }
+end
+
+--[[
+	`q` leaves: the ring closes around them and their key goes to their SUPPLIER
+	(`roles.md` section 6).
+
+	The supplier `s = σ⁻¹(q)` is the one player who could already see the
+	values `q`'s actuators need, so handing them `q`'s class keeps the instance
+	solvable. The dependent `σ(q)` is the natural wrong answer and the structure
+	cannot tell: the ring closes the same way either way. Both are read from the
+	ring AS PASSED, never from any earlier one - after a first withdrawal the
+	suppliers have moved (AC-7).
+
+	What this deliberately does NOT repair:
+
+	  * `q`'s LENS IS LOST. Its entry is removed and nobody's lens is
+	    recomputed, so `s` keeps `k(q)` - a class `s` now holds. `s` is the one
+	    player who can act on what their own lens shows: the derangement is
+	    broken for exactly one player, on purpose (AC-3). A dropout should hurt.
+	  * The round's fate. A 3 → 2 withdrawal still returns a well-formed ring;
+	    quorum is ROUND-005's decision, in one place (AC-8).
+
+	PURE (PO-3): the caller keeps the argument as `Absence.snapshot`, so it is
+	never written to. The supplier is found by its own scan rather than through
+	`supplierOf`, so an unseated `q` is blamed on THIS function's caller.
+]]
+function Ring.withdraw(assignment: Assignment, playerId: PlayerId): Assignment
+	local supplier: PlayerId? = nil
+	for _, candidate in assignment.players do
+		if assignment.sigma[candidate] == playerId then
+			supplier = candidate
+			break
+		end
+	end
+	if supplier == nil then
+		error(`Ring.withdraw: {tostring(playerId)} is not seated in this assignment`, 2)
+	end
+
+	local result = copyWithout(assignment, playerId)
+	result.sigma[supplier] = assignment.sigma[playerId]
+	-- The supplier's own classes first, then all of the leaver's, in order.
+	for _, class in assignment.keyClasses[playerId] do
+		table.insert(result.keyClasses[supplier], class)
+	end
+	return result
+end
+
+--[[
+	A rejoin: the original seat back, or nothing.
+
+	Too late is INCLUSIVE - `now - leftAt >= graceSeconds` - matching the phase
+	machine's boundary convention; after it "the seat is gone and the player
+	spectates until the next round" (`roles.md` section 6). Inside the window
+	the answer is the pre-withdrawal ring (PO-4), as a deep copy so the driver
+	that owns the `Absence` is not reachable through the ring it hands out.
+
+	`now` is passed in; nothing here reads a clock. The current ring is not
+	consulted: composing a rejoin with a second, intervening withdrawal is out
+	of this story's scope, and the parameter is kept so that decision has a
+	place to land without changing the signature.
+]]
+function Ring.rejoin(_assignment: Assignment, absence: Absence, now: number): Assignment?
+	if now - absence.leftAt >= absence.graceSeconds then
+		return nil
+	end
+	return copyWithout(absence.snapshot, nil)
 end
 
 return Ring
