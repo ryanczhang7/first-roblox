@@ -4,8 +4,8 @@ title: A disconnect transfers the key class to the supplier and closes the ring
 slug: a-disconnect-transfers-the-key-class-to
 epic: EPIC-02
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/SEAT-003-a-disconnect-transfers-the-key-class-to
 depends_on: [SEAT-002, ROUND-005]
 required_gates: []
@@ -774,3 +774,11 @@ governs (a partial run; `gates.sh` does not record it):
     PASS         harness (14s, observed 40)
     UNCONFIGURED mutation
 
+
+## Close-out (REVIEW → DONE)
+
+Merged as PR #31 (`3c34d08`) on 2026-09-28. First CI run's timings, read out of the
+logs: `gates` job 2m43s against `timeout-minutes: 45`, with `unit 4s (443 passed,
+0 failed)`, `harness 14s`, typecheck 3s; `boundaries` 8s. Nothing near a limit.
+
+**Final M2 unit count: 443.** This closes EPIC-02's last done-when bullet.
