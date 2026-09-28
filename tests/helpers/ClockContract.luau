@@ -12,6 +12,8 @@
 	A factory is `(startSeconds: number) -> ManualClock`.
 ]]
 
+local Contract = require("./Contract")
+
 local ClockContract = {}
 
 export type Factory = (number) -> any
@@ -28,29 +30,37 @@ export type Factory = (number) -> any
 function ClockContract.advanceMovesNowByTheDelta(factory: Factory)
 	local clock = factory(100)
 
-	assert(clock.now() == 100, `AC-1: a clock made at 100 reported {clock.now()}`)
-	assert(clock.now() == 100, `AC-1: now() changed without an advance: {clock.now()}`)
+	if clock.now() ~= 100 then
+		Contract.fail(`AC-1: a clock made at 100 reported {clock.now()}`)
+	end
+	if clock.now() ~= 100 then
+		Contract.fail(`AC-1: now() changed without an advance: {clock.now()}`)
+	end
 
 	clock:advance(5)
-	assert(
-		clock.now() == 105,
-		`AC-1: after advance(5) from 100, now() is {clock.now()}, wanted 105`
-	)
-	assert(clock.now() == 105, `AC-1: now() drifted between advances: {clock.now()}`)
+	if clock.now() ~= 105 then
+		Contract.fail(`AC-1: after advance(5) from 100, now() is {clock.now()}, wanted 105`)
+	end
+	if clock.now() ~= 105 then
+		Contract.fail(`AC-1: now() drifted between advances: {clock.now()}`)
+	end
 
 	clock:advance(2.5)
-	assert(
-		clock.now() == 107.5,
-		`AC-1: after advance(2.5) from 105, now() is {clock.now()}, wanted 107.5`
-	)
-	assert(clock.now() == 107.5, `AC-1: now() drifted after the final advance: {clock.now()}`)
+	if clock.now() ~= 107.5 then
+		Contract.fail(`AC-1: after advance(2.5) from 105, now() is {clock.now()}, wanted 107.5`)
+	end
+	if clock.now() ~= 107.5 then
+		Contract.fail(`AC-1: now() drifted after the final advance: {clock.now()}`)
+	end
 end
 
 -- The zero edge. An advance of nothing is not an error and moves nothing.
 function ClockContract.zeroAdvanceChangesNothing(factory: Factory)
 	local clock = factory(3.25)
 	clock:advance(0)
-	assert(clock.now() == 3.25, `AC-1: advance(0) moved the clock to {clock.now()}`)
+	if clock.now() ~= 3.25 then
+		Contract.fail(`AC-1: advance(0) moved the clock to {clock.now()}`)
+	end
 end
 
 --[[
@@ -63,11 +73,12 @@ function ClockContract.negativeAdvanceIsAnError(factory: Factory)
 	local ok = pcall(function()
 		clock:advance(-1)
 	end)
-	assert(ok == false, `Contract: advance(-1) was accepted; now() is {clock.now()}`)
-	assert(
-		clock.now() == 10,
-		`Contract: a refused advance(-1) still moved the clock to {clock.now()}`
-	)
+	if ok ~= false then
+		Contract.fail(`Contract: advance(-1) was accepted; now() is {clock.now()}`)
+	end
+	if clock.now() ~= 10 then
+		Contract.fail(`Contract: a refused advance(-1) still moved the clock to {clock.now()}`)
+	end
 end
 
 -- The Contract: `set` is for test setup and may move backwards.
@@ -75,9 +86,13 @@ function ClockContract.setMayMoveBackwards(factory: Factory)
 	local clock = factory(100)
 	clock:advance(10)
 	clock:set(4)
-	assert(clock.now() == 4, `Contract: set(4) left now() at {clock.now()}`)
+	if clock.now() ~= 4 then
+		Contract.fail(`Contract: set(4) left now() at {clock.now()}`)
+	end
 	clock:advance(1)
-	assert(clock.now() == 5, `Contract: advance(1) after set(4) gave {clock.now()}, wanted 5`)
+	if clock.now() ~= 5 then
+		Contract.fail(`Contract: advance(1) after set(4) gave {clock.now()}, wanted 5`)
+	end
 end
 
 return ClockContract

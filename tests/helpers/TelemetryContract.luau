@@ -42,6 +42,7 @@
 ]]
 
 local Clock = require("../../src/shared/Clock")
+local Contract = require("./Contract")
 local Deep = require("./Deep")
 
 local TelemetryContract = {}
@@ -105,29 +106,6 @@ local EXPECTED_ENTRIES = #NAMES + #OPERATIONAL_NAMES
 
 local VALID_BUCKETS: { [string]: boolean } = { D1 = true, D2_7 = true, D8_28 = true }
 
---[[
-	The final assertion of every check goes through this rather than `assert`.
-	MEASURED in SEAT-002's RED: under Lune, `assert(false, message)` truncates
-	the message to 512 characters after the location prefix and `error` does
-	not. The checks accumulate every violation, and a control whose needle lies
-	beyond the cut can never match. Level 2 attributes the failure to the test
-	that called the check.
-]]
-local function check(condition: boolean, message: string)
-	if not condition then
-		error(message, 2)
-	end
-end
-
-local function firstFew(list: { string }, count: number): string
-	local shown: { string } = {}
-	for i = 1, math.min(count, #list) do
-		shown[i] = list[i]
-	end
-	local more = #list - #shown
-	return table.concat(shown, "\n") .. (if more > 0 then `\n  ... and {more} more` else "")
-end
-
 local function indent(text: string): string
 	return (string.gsub(text, "\n", "\n    "))
 end
@@ -168,7 +146,7 @@ local function raisingSink(shouldRaise: (any) -> boolean): ({ emit: (any) -> () 
 	local sink = {
 		emit = function(event: any)
 			if shouldRaise(event) then
-				error(`sink exploded on {tostring(event.name)}`)
+				Contract.fail(`sink exploded on {tostring(event.name)}`)
 			end
 			table.insert(seen, event)
 		end,
@@ -271,11 +249,12 @@ function TelemetryContract.eventCarriesTheSuppliedValuesAndTheClocksTime(Event: 
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-1: the event is not exactly the supplied values with at = the clock's t, in `
-			.. `{#violations} of {#CONSTRUCTION_CASES} cases:\n{firstFew(violations, 6)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-1: the event is not exactly the supplied values with at = the clock's t, in `
+				.. `{#violations} of {#CONSTRUCTION_CASES} cases:\n{Contract.firstFew(violations, 6)}`
+		)
+	end
 end
 
 --[[
@@ -295,10 +274,9 @@ end
 ]]
 function TelemetryContract.bucketsNameExactlyTheNineB6Events(Event: EventModule)
 	local buckets = Event.BUCKETS
-	check(
-		typeof(buckets) == "table",
-		`AC-2: Event.BUCKETS is {typeof(buckets)}, not a table of name -> bucket`
-	)
+	if typeof(buckets) ~= "table" then
+		Contract.fail(`AC-2: Event.BUCKETS is {typeof(buckets)}, not a table of name -> bucket`)
+	end
 
 	local violations: { string } = {}
 	for _, name in NAMES do
@@ -379,21 +357,29 @@ function TelemetryContract.bucketsNameExactlyTheNineB6Events(Event: EventModule)
 		end)
 	end
 
-	check(
-		#violations == 0
+	if
+		not (
+			#violations == 0
 			and #operational == 0
 			and #extras == 0
 			and count == EXPECTED_ENTRIES
-			and #frozen == 0,
-		`AC-2: BUCKETS does not name exactly the nine B6 events with their settled buckets plus `
-			.. `the operational set. `
-			.. `{#violations} of 9 wrong or missing:\n{table.concat(violations, "\n")}\n`
-			.. `{#operational} of {#OPERATIONAL_NAMES} operational wrong or missing:\n`
-			.. `{table.concat(operational, "\n")}\n`
-			.. `{#extras} extra or malformed entries ({count} entries in all, {EXPECTED_ENTRIES} `
-			.. `expected):\n{table.concat(extras, "\n")}\n`
-			.. `{#frozen} way(s) it is not frozen:\n{table.concat(frozen, "\n")}`
-	)
+			and #frozen == 0
+		)
+	then
+		Contract.fail(
+			`AC-2: BUCKETS does not name exactly the nine B6 events with their settled buckets plus `
+				.. `the operational set. `
+				.. `{#violations} of 9 wrong or missing:\n{Contract.firstFew(
+					violations,
+					#violations
+				)}\n`
+				.. `{#operational} of {#OPERATIONAL_NAMES} operational wrong or missing:\n`
+				.. `{table.concat(operational, "\n")}\n`
+				.. `{#extras} extra or malformed entries ({count} entries in all, {EXPECTED_ENTRIES} `
+				.. `expected):\n{table.concat(extras, "\n")}\n`
+				.. `{#frozen} way(s) it is not frozen:\n{table.concat(frozen, "\n")}`
+		)
+	end
 end
 
 --[[
@@ -447,11 +433,12 @@ function TelemetryContract.unknownNameIsRefused(Event: EventModule)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-3: an unknown event name is not refused by construction, in {#violations} case(s):\n`
-			.. table.concat(violations, "\n")
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-3: an unknown event name is not refused by construction, in {#violations} case(s):\n`
+				.. Contract.firstFew(violations, #violations)
+		)
+	end
 end
 
 --[[
@@ -537,12 +524,13 @@ function TelemetryContract.nonScalarFieldIsRefusedNamingTheKey(Event: EventModul
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-6: a non-scalar field value is not refused naming its key, or a scalar one is not `
-			.. `accepted intact, in {#violations} of {#rejected + #ACCEPTED_CASES} cases:\n`
-			.. firstFew(violations, 8)
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-6: a non-scalar field value is not refused naming its key, or a scalar one is not `
+				.. `accepted intact, in {#violations} of {#rejected + #ACCEPTED_CASES} cases:\n`
+				.. Contract.firstFew(violations, 8)
+		)
+	end
 end
 
 --[[
@@ -558,14 +546,14 @@ function TelemetryContract.recordingSinkHoldsExactlyWhatWasEmittedInOrder(Sink: 
 	local violations: { string } = {}
 
 	local sink = Sink.recording()
-	check(
-		typeof(sink) == "table" and typeof(sink.emit) == "function",
-		`AC-4: Sink.recording() returned {Deep.show(sink)}; a sink is a table with an emit function`
-	)
-	check(
-		typeof(sink.events) == "table",
-		`AC-4: a recording sink's events is {typeof(sink.events)}, not a list`
-	)
+	if not (typeof(sink) == "table" and typeof(sink.emit) == "function") then
+		Contract.fail(
+			`AC-4: Sink.recording() returned {Deep.show(sink)}; a sink is a table with an emit function`
+		)
+	end
+	if typeof(sink.events) ~= "table" then
+		Contract.fail(`AC-4: a recording sink's events is {typeof(sink.events)}, not a list`)
+	end
 	if #sink.events ~= 0 then
 		table.insert(violations, `  a fresh recording sink already holds {#sink.events} event(s)`)
 	end
@@ -610,11 +598,12 @@ function TelemetryContract.recordingSinkHoldsExactlyWhatWasEmittedInOrder(Sink: 
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-4: the recording sink does not hold exactly what was emitted, in order, with fields `
-			.. `intact:\n{table.concat(violations, "\n")}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-4: the recording sink does not hold exactly what was emitted, in order, with fields `
+				.. `intact:\n{Contract.firstFew(violations, #violations)}`
+		)
+	end
 end
 
 --[[
@@ -687,11 +676,12 @@ function TelemetryContract.dispatchDeliversEveryEventToAWorkingSink(Sink: SinkMo
 		end
 	end
 
-	check(
-		#violations == 0,
-		`dispatch: a working sink does not receive every event with none dropped:\n`
-			.. table.concat(violations, "\n")
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`dispatch: a working sink does not receive every event with none dropped:\n`
+				.. Contract.firstFew(violations, #violations)
+		)
+	end
 end
 
 --[[
@@ -733,7 +723,10 @@ function TelemetryContract.raisingEmitDoesNotPropagate(Sink: SinkModule)
 	-- string does.
 	local tableError = {
 		emit = function()
-			error({ code = 503 })
+			-- Through the shared raiser like every other raise here (HARNESS-016).
+			-- A non-string value carries no position at any level, so the table
+			-- raised is the same one `error({ code = 503 })` raised.
+			Contract.fail({ code = 503 } :: any)
 		end,
 	}
 	ok, err = pcall(Sink.dispatch, tableError, { three[1] })
@@ -745,11 +738,12 @@ function TelemetryContract.raisingEmitDoesNotPropagate(Sink: SinkModule)
 		)
 	end
 
-	check(
-		#violations == 0,
-		`AC-5 (no propagation): a raising emit reached the caller of Sink.dispatch in `
-			.. `{#violations} case(s):\n{table.concat(violations, "\n")}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-5 (no propagation): a raising emit reached the caller of Sink.dispatch in `
+				.. `{#violations} case(s):\n{Contract.firstFew(violations, #violations)}`
+		)
+	end
 end
 
 --[[
@@ -855,11 +849,15 @@ function TelemetryContract.raisingEmitIsACountedDrop(Sink: SinkModule)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-5 (counted drop): a raising emit is not recorded as exactly one drop with the rest `
-			.. `delivered, in {#violations} of {#cases} cases:\n{table.concat(violations, "\n")}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-5 (counted drop): a raising emit is not recorded as exactly one drop with the rest `
+				.. `delivered, in {#violations} of {#cases} cases:\n{Contract.firstFew(
+					violations,
+					#violations
+				)}`
+		)
+	end
 end
 
 return TelemetryContract

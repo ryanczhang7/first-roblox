@@ -34,6 +34,7 @@
 	compares nothing and passes.
 ]]
 
+local Contract = require("./Contract")
 local fs = require("@lune/fs")
 
 local TuningSpec = {}
@@ -272,12 +273,13 @@ end
 
 --[[ AC-4's anti-vacuity half, first direction: how much was parsed. ]]
 function TuningSpec.assertEnoughRows(parsed: Parsed)
-	assert(
-		#parsed.rows >= TuningSpec.MIN_CONSTANTS,
-		`AC-4: the guard parsed {#parsed.rows} constants from {TuningSpec.SPEC_PATH} §1 and §5, `
-			.. `expected at least {TuningSpec.MIN_CONSTANTS}. A parser that matches nothing `
-			.. `compares nothing and passes.`
-	)
+	if not (#parsed.rows >= TuningSpec.MIN_CONSTANTS) then
+		Contract.fail(
+			`AC-4: the guard parsed {#parsed.rows} constants from {TuningSpec.SPEC_PATH} §1 and §5, `
+				.. `expected at least {TuningSpec.MIN_CONSTANTS}. A parser that matches nothing `
+				.. `compares nothing and passes.`
+		)
+	end
 end
 
 --[[
@@ -298,21 +300,23 @@ function TuningSpec.assertExpectedNames(parsed: Parsed)
 			end
 		end
 	end
-	assert(
-		#missing == 0,
-		`AC-4: the guard parsed {#parsed.rows} constants from {TuningSpec.SPEC_PATH} but not `
-			.. `these:\n  `
-			.. table.concat(missing, "\n  ")
-	)
+	if #missing ~= 0 then
+		Contract.fail(
+			`AC-4: the guard parsed {#parsed.rows} constants from {TuningSpec.SPEC_PATH} but not `
+				.. `these:\n  `
+				.. table.concat(missing, "\n  ")
+		)
+	end
 end
 
 function TuningSpec.assertNoParseProblems(parsed: Parsed)
-	assert(
-		#parsed.problems == 0,
-		`AC-4: the guard could not read {#parsed.problems} row(s) of {TuningSpec.SPEC_PATH}. `
-			.. `A row it cannot read is a constant it is not checking:\n  `
-			.. table.concat(parsed.problems, "\n  ")
-	)
+	if #parsed.problems ~= 0 then
+		Contract.fail(
+			`AC-4: the guard could not read {#parsed.problems} row(s) of {TuningSpec.SPEC_PATH}. `
+				.. `A row it cannot read is a constant it is not checking:\n  `
+				.. table.concat(parsed.problems, "\n  ")
+		)
+	end
 end
 
 --[[
@@ -452,7 +456,9 @@ function TuningSpec.describe(findings: { Finding }): string
 end
 
 function TuningSpec.assertNoFindings(findings: { Finding }, what: string)
-	assert(#findings == 0, `{what}:\n  ` .. TuningSpec.describe(findings))
+	if #findings ~= 0 then
+		Contract.fail(`{what}:\n  ` .. TuningSpec.describe(findings))
+	end
 end
 
 --[[
@@ -536,11 +542,12 @@ end
 
 function TuningSpec.assertNoAbsentConstants(module: any)
 	local count = TuningSpec.constantCount(module)
-	assert(
-		count >= TuningSpec.MIN_CONSTANTS,
-		`AC-5: the absence check ran over a module exposing {count} constants, expected at least `
-			.. `{TuningSpec.MIN_CONSTANTS}. "No key matches" is true of an empty table.`
-	)
+	if not (count >= TuningSpec.MIN_CONSTANTS) then
+		Contract.fail(
+			`AC-5: the absence check ran over a module exposing {count} constants, expected at least `
+				.. `{TuningSpec.MIN_CONSTANTS}. "No key matches" is true of an empty table.`
+		)
+	end
 	TuningSpec.assertNoFindings(
 		TuningSpec.absenceFindings(module),
 		"AC-5: the module names a constant tuning.md §7 records as deliberately absent"

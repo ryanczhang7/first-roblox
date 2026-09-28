@@ -20,6 +20,7 @@
 	Every message names its criterion, because the controls assert on the text.
 ]]
 
+local Contract = require("./Contract")
 local Deep = require("./Deep")
 
 local PhaseMachineContract = {}
@@ -63,11 +64,12 @@ function PhaseMachineContract.stepDoesNotMutateItsInput(machine: any, case: Case
 	machine.step(case.state, case.event, case.now)
 
 	local difference = Deep.diff(snapshot, case.state)
-	assert(
-		difference == "",
-		`AC-6: step mutated the state it was given ({case.label}).\n`
-			.. `The input state before the call and after it differ:\n{difference}`
-	)
+	if difference ~= "" then
+		Contract.fail(
+			`AC-6: step mutated the state it was given ({case.label}).\n`
+				.. `The input state before the call and after it differ:\n{difference}`
+		)
+	end
 end
 
 -- AC-6: same `(state, event, now)`, same state out and same effects out.
@@ -76,16 +78,18 @@ function PhaseMachineContract.stepIsDeterministic(machine: any, case: Case)
 	local secondState, secondEffects = machine.step(case.state, case.event, case.now)
 
 	local stateDifference = Deep.diff(firstState, secondState)
-	assert(
-		stateDifference == "",
-		`AC-6: two identical steps returned different states ({case.label}):\n{stateDifference}`
-	)
+	if stateDifference ~= "" then
+		Contract.fail(
+			`AC-6: two identical steps returned different states ({case.label}):\n{stateDifference}`
+		)
+	end
 
 	local effectDifference = Deep.diff(firstEffects, secondEffects)
-	assert(
-		effectDifference == "",
-		`AC-6: two identical steps returned different effects ({case.label}):\n{effectDifference}`
-	)
+	if effectDifference ~= "" then
+		Contract.fail(
+			`AC-6: two identical steps returned different effects ({case.label}):\n{effectDifference}`
+		)
+	end
 end
 
 --[[
@@ -101,25 +105,30 @@ function PhaseMachineContract.eventIsIgnored(machine: any, case: Case)
 	local snapshot = Deep.copy(case.state)
 
 	local ok, result, effects = pcall(machine.step, case.state, case.event, case.now)
-	assert(ok, `AC-7: step raised on {case.label} instead of ignoring it: {tostring(result)}`)
+	if not ok then
+		Contract.fail(
+			`AC-7: step raised on {case.label} instead of ignoring it: {tostring(result)}`
+		)
+	end
 
 	local difference = Deep.diff(snapshot, result)
-	assert(
-		difference == "",
-		`AC-7: {case.label} was not ignored - the returned state differs from the one given:\n`
-			.. difference
-	)
+	if difference ~= "" then
+		Contract.fail(
+			`AC-7: {case.label} was not ignored - the returned state differs from the one given:\n`
+				.. difference
+		)
+	end
 
-	assert(
-		typeof(effects) == "table",
-		`AC-7: step returned {typeof(effects)} for its effect list on {case.label}`
-	)
+	if typeof(effects) ~= "table" then
+		Contract.fail(`AC-7: step returned {typeof(effects)} for its effect list on {case.label}`)
+	end
 	local list = effects :: { any }
-	assert(
-		#list == 0,
-		`AC-7: {case.label} produced {#list} effect(s) and must produce none: `
-			.. Deep.show(Deep.kinds(list))
-	)
+	if #list ~= 0 then
+		Contract.fail(
+			`AC-7: {case.label} produced {#list} effect(s) and must produce none: `
+				.. Deep.show(Deep.kinds(list))
+		)
+	end
 end
 
 --[[
@@ -145,7 +154,11 @@ function PhaseMachineContract.eventIsIgnoredExceptTelemetry(machine: any, case: 
 	local snapshot = Deep.copy(case.state)
 
 	local ok, result, effects = pcall(machine.step, case.state, case.event, case.now)
-	assert(ok, `AC-7: step raised on {case.label} instead of ignoring it: {tostring(result)}`)
+	if not ok then
+		Contract.fail(
+			`AC-7: step raised on {case.label} instead of ignoring it: {tostring(result)}`
+		)
+	end
 
 	local expected = Deep.copy(snapshot)
 	local actual = Deep.copy(result)
@@ -156,23 +169,24 @@ function PhaseMachineContract.eventIsIgnoredExceptTelemetry(machine: any, case: 
 		actual.departed = nil
 	end
 	local difference = Deep.diff(expected, actual)
-	assert(
-		difference == "",
-		`AC-7: {case.label} was not ignored - the returned state differs from the one given `
-			.. `(telemetry's departed guard excluded from the comparison):\n{difference}`
-	)
+	if difference ~= "" then
+		Contract.fail(
+			`AC-7: {case.label} was not ignored - the returned state differs from the one given `
+				.. `(telemetry's departed guard excluded from the comparison):\n{difference}`
+		)
+	end
 
-	assert(
-		typeof(effects) == "table",
-		`AC-7: step returned {typeof(effects)} for its effect list on {case.label}`
-	)
+	if typeof(effects) ~= "table" then
+		Contract.fail(`AC-7: step returned {typeof(effects)} for its effect list on {case.label}`)
+	end
 	local control = Deep.controlEffects(effects :: { any })
-	assert(
-		#control == 0,
-		`AC-7: {case.label} produced {#control} control effect(s) and must produce none `
-			.. `(telemetry Emit effects excluded; TEL-002 pins those): `
-			.. Deep.show(Deep.kinds(control))
-	)
+	if #control ~= 0 then
+		Contract.fail(
+			`AC-7: {case.label} produced {#control} control effect(s) and must produce none `
+				.. `(telemetry Emit effects excluded; TEL-002 pins those): `
+				.. Deep.show(Deep.kinds(control))
+		)
+	end
 end
 
 return PhaseMachineContract

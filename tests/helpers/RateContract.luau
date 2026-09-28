@@ -47,6 +47,7 @@
 ]]
 
 local Clock = require("../../src/shared/Clock")
+local Contract = require("./Contract")
 local Deep = require("./Deep")
 local NetContract = require("./NetContract")
 
@@ -69,18 +70,6 @@ export type World = {
 	unnoticed.
 ]]
 RateContract.MIN_INTERVAL_SECONDS = 1.5
-
---[[
-	The final assertion of every check goes through this rather than `assert`.
-	MEASURED in SEAT-002's RED: under Lune, `assert(false, message)` truncates
-	the message to 512 characters after the location prefix and `error` does
-	not. Level 2 attributes the failure to the caller.
-]]
-local function check(condition: boolean, message: string)
-	if not condition then
-		error(message, 2)
-	end
-end
 
 local function indent(text: string): string
 	return "  " .. (string.gsub(text, "\n", "\n  "))
@@ -274,13 +263,14 @@ function RateContract.acceptsAtTheIntervalAndRejectsInsideIt(net: Net)
 			`AC-1: the handler ran {#calls} time(s) over {#steps} calls; {runs} were outside the interval`
 		)
 	end
-	check(
-		#violations == 0,
-		`AC-1: {#violations} violation(s) across {#steps} calls at minIntervalSeconds = {min} - the `
-			.. `comparison is now - lastAccepted >= minIntervalSeconds, inclusive:\n{indent(
-				table.concat(violations, "\n")
-			)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-1: {#violations} violation(s) across {#steps} calls at minIntervalSeconds = {min} - the `
+				.. `comparison is now - lastAccepted >= minIntervalSeconds, inclusive:\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[
@@ -328,13 +318,14 @@ function RateContract.playersAreLimitedIndependently(net: Net)
 			table.insert(violations, `AC-2: the handler saw playerId {Deep.show(entry.playerId)}`)
 		end
 	end
-	check(
-		#violations == 0,
-		`AC-2: {#violations} violation(s) across {#steps} calls by two players - an implementation `
-			.. `with one shared last-accepted timestamp fails here:\n{indent(
-				table.concat(violations, "\n")
-			)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-2: {#violations} violation(s) across {#steps} calls by two players - an implementation `
+				.. `with one shared last-accepted timestamp fails here:\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[
@@ -424,13 +415,14 @@ function RateContract.intervalIsMeasuredFromTheLastAcceptedCall(net: Net)
 		)
 	end
 
-	check(
-		#violations == 0,
-		`AC-3: {#violations} violation(s) across {#steps + 1 + total} calls - an implementation that `
-			.. `updates the timestamp on rejection fails here:\n{indent(
-				table.concat(violations, "\n")
-			)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-3: {#violations} violation(s) across {#steps + 1 + total} calls - an implementation that `
+				.. `updates the timestamp on rejection fails here:\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[
@@ -442,12 +434,13 @@ end
 ]]
 function RateContract.remoteWithoutRateLimitIsNeverLimited(net: Net)
 	local definition = RateContract.remote(net, "ac4", nil)
-	check(
-		definition.rateLimit == nil,
-		`AC-4: the test remote was declared without a rateLimit but has {Deep.show(
-			definition.rateLimit
-		)}`
-	)
+	if definition.rateLimit ~= nil then
+		Contract.fail(
+			`AC-4: the test remote was declared without a rateLimit but has {Deep.show(
+				definition.rateLimit
+			)}`
+		)
+	end
 	local handler, calls = NetContract.recorder()
 	local context, world = RateContract.world({ "p1" }, "Round", START)
 	local readsBeforeGuard = world.clockReads
@@ -482,12 +475,13 @@ function RateContract.remoteWithoutRateLimitIsNeverLimited(net: Net)
 				.. `remote with no rateLimit never reads the clock`
 		)
 	end
-	check(
-		#violations == 0,
-		`AC-4: {#violations} violation(s) for a remote with no rateLimit:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-4: {#violations} violation(s) for a remote with no rateLimit:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 --[[
@@ -628,13 +622,14 @@ function RateContract.earlierRejectionsDoNotAdvanceTheLimiter(net: Net)
 			`AC-5: the handler ran {#calls} time(s) over {#cases} calls; {expectedRunCount} were accepted`
 		)
 	end
-	check(
-		#violations == 0,
-		`AC-5: {#violations} violation(s) across {#cases} calls - a limiter consulted before identity, `
-			.. `shape, range or phase, or advanced by a call they rejected, fails here:\n{indent(
-				table.concat(violations, "\n")
-			)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-5: {#violations} violation(s) across {#cases} calls - a limiter consulted before identity, `
+				.. `shape, range or phase, or advanced by a call they rejected, fails here:\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[
@@ -649,22 +644,25 @@ end
 ]]
 function RateContract.forgetRemovesThePlayerAndSizeCountsSeatedPlayers(net: Net)
 	local min = RateContract.MIN_INTERVAL_SECONDS
-	check(
-		net.RateLimiter ~= nil,
-		"AC-6: src/net/RateLimiter.luau did not load - the limiter is a new module and AC-6 is a unit "
-			.. "criterion on it"
-	)
-	check(
-		typeof(net.RateLimiter.new) == "function",
-		`AC-6: RateLimiter.new is {typeof(net.RateLimiter.new)}; expected a function`
-	)
-	local limiter = net.RateLimiter.new(min)
-	check(typeof(limiter) == "table", `AC-6: RateLimiter.new({min}) returned {Deep.show(limiter)}`)
-	for _, method in { "allow", "forget", "size" } do
-		check(
-			typeof(limiter[method]) == "function",
-			`AC-6: the limiter's {method} is {typeof(limiter[method])}; expected a method`
+	if net.RateLimiter == nil then
+		Contract.fail(
+			"AC-6: src/net/RateLimiter.luau did not load - the limiter is a new module and AC-6 is a unit "
+				.. "criterion on it"
 		)
+	end
+	if typeof(net.RateLimiter.new) ~= "function" then
+		Contract.fail(`AC-6: RateLimiter.new is {typeof(net.RateLimiter.new)}; expected a function`)
+	end
+	local limiter = net.RateLimiter.new(min)
+	if typeof(limiter) ~= "table" then
+		Contract.fail(`AC-6: RateLimiter.new({min}) returned {Deep.show(limiter)}`)
+	end
+	for _, method in { "allow", "forget", "size" } do
+		if typeof(limiter[method]) ~= "function" then
+			Contract.fail(
+				`AC-6: the limiter's {method} is {typeof(limiter[method])}; expected a method`
+			)
+		end
 	end
 
 	local violations: { string } = {}
@@ -763,11 +761,14 @@ function RateContract.forgetRemovesThePlayerAndSizeCountsSeatedPlayers(net: Net)
 		expectSize(`after {leaver} left, with {#seated} seated`, #seated)
 	end
 
-	check(
-		#violations == 0,
-		`AC-6: {#violations} violation(s) - a limiter whose forget is a no-op, or whose size counts `
-			.. `(player, key) pairs, fails here:\n{indent(table.concat(violations, "\n"))}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-6: {#violations} violation(s) - a limiter whose forget is a no-op, or whose size counts `
+				.. `(player, key) pairs, fails here:\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[ ------------------------------------------------------------------------
@@ -790,11 +791,15 @@ function RateContract.rateRejectionDetailNamesTheRemoteAndTheInterval(net: Net)
 
 	local ok1, result1 = call(guarded, "p1", VALID)
 	local accepted = expectAcceptance("detail", "the first call at t", ok1, result1)
-	check(accepted == nil, accepted or "")
+	if accepted ~= nil then
+		Contract.fail(accepted or "")
+	end
 	local ok, result = call(guarded, "p1", VALID)
 	local rejected =
 		expectRejection("detail", "the second call at the same instant", ok, result, "rate")
-	check(rejected == nil, rejected or "")
+	if rejected ~= nil then
+		Contract.fail(rejected or "")
+	end
 	local detail = result.detail :: string
 
 	local violations: { string } = {}
@@ -811,12 +816,13 @@ function RateContract.rateRejectionDetailNamesTheRemoteAndTheInterval(net: Net)
 	if string.find(detail, tostring(min), 1, true) == nil then
 		table.insert(violations, `detail does not carry the required interval {min}: "{detail}"`)
 	end
-	check(
-		#violations == 0,
-		`the rate rejection's detail failed in {#violations} way(s):\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`the rate rejection's detail failed in {#violations} way(s):\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 --[[
@@ -948,12 +954,13 @@ function RateContract.clockIsReadOnlyByCallsThatReachTheRateCheck(net: Net)
 			`clock: the handler ran {#calls} time(s) over {#cases} calls; {expectedRunCount} were accepted`
 		)
 	end
-	check(
-		#violations == 0,
-		`clock: {#violations} violation(s) across {#cases} calls:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`clock: {#violations} violation(s) across {#cases} calls:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 return RateContract

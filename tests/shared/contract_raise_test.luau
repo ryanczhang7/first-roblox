@@ -16,11 +16,21 @@
 	pass, before the raiser is written.
 ]]
 
+local NetContract = require("../helpers/NetContract")
+local NetStubs = require("../helpers/NetStubs")
+local PhaseContract = require("../helpers/PhaseContract")
+local PhaseStubs = require("../helpers/PhaseStubs")
 local ProjectionContract = require("../helpers/ProjectionContract")
 local ProjectionStubs = require("../helpers/ProjectionStubs")
+local RateContract = require("../helpers/RateContract")
+local RateStubs = require("../helpers/RateStubs")
+local RejectionContract = require("../helpers/RejectionContract")
+local RejectionStubs = require("../helpers/RejectionStubs")
 local RingContract = require("../helpers/RingContract")
 local RingStubs = require("../helpers/RingStubs")
 local SourceScan = require("../helpers/SourceScan")
+local TelemetryContract = require("../helpers/TelemetryContract")
+local TelemetryStubs = require("../helpers/TelemetryStubs")
 local fs = require("@lune/fs")
 
 local loaded, loadResult = pcall(require, "../helpers/Contract")
@@ -97,6 +107,38 @@ local PASSING: { { what: string, run: () -> () } } = {
 			ProjectionContract.noForeignKeyClassAppears(ProjectionStubs.correct)
 		end,
 	},
+	-- HARNESS-016 AC-2: one accumulating check per newly reached helper, each
+	-- paired below with a control stub its own controls test asserts it fails.
+	{
+		what = "NetContract, NET-001 AC-2, on the correct wrapper",
+		run = function()
+			NetContract.malformedPayloadIsRejectedForShape(NetStubs.correct())
+		end,
+	},
+	{
+		what = "PhaseContract, NET-002 AC-4, on the correct wrapper",
+		run = function()
+			PhaseContract.multiPhaseRemoteRunsInEachLegalPhaseAndNowhereElse(PhaseStubs.correct())
+		end,
+	},
+	{
+		what = "RateContract, NET-003 AC-2, on the correct wrapper",
+		run = function()
+			RateContract.playersAreLimitedIndependently(RateStubs.correct())
+		end,
+	},
+	{
+		what = "RejectionContract, TEL-003 AC-6, on the correct bundle",
+		run = function()
+			RejectionContract.coalescingIsPerPlayerAndPerRemote(RejectionStubs.correct())
+		end,
+	},
+	{
+		what = "TelemetryContract, TEL-001 AC-6, on the correct Event",
+		run = function()
+			TelemetryContract.nonScalarFieldIsRefusedNamingTheKey(TelemetryStubs.correctEvent)
+		end,
+	},
 }
 
 local FAILING: { { what: string, run: () -> () } } = {
@@ -112,12 +154,47 @@ local FAILING: { { what: string, run: () -> () } } = {
 			ProjectionContract.noForeignKeyClassAppears(ProjectionStubs.copyAndRemoveSigma)
 		end,
 	},
+	{
+		what = "NetContract, NET-001 AC-2, on the boolean-false wrapper",
+		run = function()
+			NetContract.malformedPayloadIsRejectedForShape(NetStubs.with("booleanFalse"))
+		end,
+	},
+	{
+		what = "PhaseContract, NET-002 AC-4, on the first-entry-only wrapper",
+		run = function()
+			PhaseContract.multiPhaseRemoteRunsInEachLegalPhaseAndNowhereElse(
+				PhaseStubs.with("firstEntryOnly")
+			)
+		end,
+	},
+	{
+		what = "RateContract, NET-003 AC-2, on the shared-timestamp wrapper",
+		run = function()
+			RateContract.playersAreLimitedIndependently(RateStubs.with("sharedTimestamp"))
+		end,
+	},
+	{
+		what = "RejectionContract, TEL-003 AC-6, on the per-player reporter",
+		run = function()
+			RejectionContract.coalescingIsPerPlayerAndPerRemote(
+				RejectionStubs.with("perPlayerOnly")
+			)
+		end,
+	},
+	{
+		what = "TelemetryContract, TEL-001 AC-6, on the accept-nested-table Event",
+		run = function()
+			TelemetryContract.nonScalarFieldIsRefusedNamingTheKey(TelemetryStubs.acceptNestedTable)
+		end,
+	},
 }
 
 --[[
-	AC-4's set, BY NAME. The criterion names four helpers and no more; the other
-	raising helpers are the follow-up's (`## Out of scope`). The file list those
-	names are looked up in is the harness's - `classify.sh --list test` through
+	The guarded set, BY NAME: HARNESS-011's AC-4 named the first four, and
+	HARNESS-016's AC-1 the other ten. Stubs, `Fakes` and `SourceScan` raise on
+	purpose and are not contracts. The file list those names are looked up in is
+	the harness's - `classify.sh --list test` through
 	`SourceScan.classifierList` - so a helper that is renamed, or stops
 	classifying as a test, is reported missing rather than silently unscanned.
 ]]
@@ -126,6 +203,17 @@ local IN_SCOPE = {
 	"tests/helpers/ProjectionContract.luau",
 	"tests/helpers/RingContract.luau",
 	"tests/helpers/RoundEndingContract.luau",
+	-- HARNESS-016
+	"tests/helpers/ClockContract.luau",
+	"tests/helpers/NetContract.luau",
+	"tests/helpers/PhaseContract.luau",
+	"tests/helpers/PhaseMachineContract.luau",
+	"tests/helpers/RateContract.luau",
+	"tests/helpers/RejectionContract.luau",
+	"tests/helpers/RngContract.luau",
+	"tests/helpers/TelemetryContract.luau",
+	"tests/helpers/TelemetryEmitContract.luau",
+	"tests/helpers/TuningSpec.luau",
 }
 
 -- A raise that does not go through `Contract.fail`: bare `assert`, or `error`
@@ -139,6 +227,25 @@ local function bareRaises(path: string, text: string): { string }
 	local found: { string } = {}
 	for _, hit in SourceScan.hitsIn(path, text, RAISES) do
 		table.insert(found, `  {hit.path}:{hit.line}: {hit.symbol}`)
+	end
+	return found
+end
+
+--[[
+	HARNESS-016 AC-3's needle, matched in COMMENT text only
+	(`SourceScan.commentsOnly`): code and string literals are blanked, so this
+	file's own strings - AC-1's control message, this constant - are not hits.
+	It covers the plural too. The five private `check` wrappers each carried the
+	phrase, in a doc comment quoting the cap one too high.
+]]
+local CAP_NEEDLE = "512 character"
+
+local function capComments(path: string, text: string): { string }
+	local found: { string } = {}
+	for lineNumber, line in string.split(SourceScan.commentsOnly(text), "\n") do
+		if string.find(line, CAP_NEEDLE, 1, true) then
+			table.insert(found, `  {path}:{lineNumber}`)
+		end
 	end
 	return found
 end
@@ -192,10 +299,13 @@ return {
 				table.insert(eager, `  {case.what}: {count} build(s)`)
 			end
 		end
-		assert(
-			#eager == 0,
-			`a passing check built its failure message:\n{table.concat(eager, "\n")}`
-		)
+		-- Through the raiser, not `assert`: this report grows a line per helper,
+		-- and HARNESS-016's red run 3a watched its sibling below cut at 511.
+		if #eager > 0 then
+			Contract().fail(
+				`a passing check built its failure message:\n{table.concat(eager, "\n")}`
+			)
+		end
 	end,
 
 	-- The non-zero half. Without it, a counter that is never incremented at all
@@ -216,10 +326,11 @@ return {
 				table.insert(silent, `  {case.what}: raised, but the counter saw 0 builds`)
 			end
 		end
-		assert(
-			#silent == 0,
-			`the counter did not see a failing check build:\n{table.concat(silent, "\n")}`
-		)
+		if #silent > 0 then
+			Contract().fail(
+				`the counter did not see a failing check build:\n{table.concat(silent, "\n")}`
+			)
+		end
 	end,
 
 	["AC-4: no in-scope contract helper raises except through Contract.fail"] = function()
@@ -290,10 +401,11 @@ return {
 				end
 			end
 		end
-		assert(
-			#unreported == 0,
-			`the AC-4 guard missed a reintroduced site:\n{table.concat(unreported, "\n")}`
-		)
+		if #unreported > 0 then
+			Contract().fail(
+				`the AC-4 guard missed a reintroduced site:\n{table.concat(unreported, "\n")}`
+			)
+		end
 	end,
 
 	--[[
@@ -321,6 +433,50 @@ return {
 		assert(
 			#absent == 0,
 			`docs/wiki/stack.md has no line reading:\n{table.concat(absent, "\n")}`
+		)
+	end,
+
+	["HARNESS-016 AC-3: no comment in tests/ quotes the assert cap as 512"] = function()
+		local found: { string } = {}
+		for _, path in SourceScan.classifierList("test", "tests") do
+			for _, entry in capComments(path, fs.readFile(path)) do
+				table.insert(found, entry)
+			end
+		end
+		if #found > 0 then
+			Contract().fail(
+				`{#found} comment line(s) quote the cap as "{CAP_NEEDLE}"; it is 511:\n`
+					.. table.concat(found, "\n")
+			)
+		end
+	end,
+
+	--[[
+		Both halves, on a real helper's text in memory: the phrase appended as a
+		COMMENT is reported at exactly that line, and the same phrase appended as
+		a STRING LITERAL is not. The second half is what keeps the scan off code;
+		a scan of whole lines would pass the first and fail it.
+	]]
+	["HARNESS-016 AC-3 control: a comment quoting 512 is reported by line, a string saying it is not"] = function()
+		local path = "tests/helpers/RingContract.luau"
+		local original = fs.readFile(path)
+		local baseline = #capComments(path, original)
+
+		local asComment, line = withLastLine(original, `-- assert keeps {CAP_NEEDLE}s`)
+		local report = capComments(path, asComment)
+		assert(
+			table.find(report, `  {path}:{line}`) ~= nil and #report == baseline + 1,
+			`a comment on line {line} was not reported alone; the report was:\n{table.concat(
+				report,
+				"\n"
+			)}`
+		)
+
+		local asString = withLastLine(original, `local _ = "assert keeps {CAP_NEEDLE}s"`)
+		local stringReport = capComments(path, asString)
+		assert(
+			#stringReport == baseline,
+			`a string literal was reported as a comment:\n{table.concat(stringReport, "\n")}`
 		)
 	end,
 }

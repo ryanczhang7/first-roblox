@@ -48,6 +48,7 @@ local Clock = require("../../src/shared/Clock")
 local Event = require("../../src/shared/telemetry/Event")
 local Contract = require("./PhaseMachineContract")
 local Deep = require("./Deep")
+local Raise = require("./Contract")
 
 local TelemetryEmitContract = {}
 
@@ -218,14 +219,15 @@ function TelemetryEmitContract.assertEmits(
 		return
 	end
 	local index = firstDifference :: number
-	assert(
-		false,
-		`{criterion}: {label} emitted {#actual} telemetry event(s), wanted {#expected}. `
-			.. `First difference at index {index}: got `
-			.. `{TelemetryEmitContract.describeOne(actual[index])}, wanted `
-			.. `{TelemetryEmitContract.describeOne(expected[index])}. Whole list: `
-			.. `{TelemetryEmitContract.describe(actual)}`
-	)
+	if not false then
+		Raise.fail(
+			`{criterion}: {label} emitted {#actual} telemetry event(s), wanted {#expected}. `
+				.. `First difference at index {index}: got `
+				.. `{TelemetryEmitContract.describeOne(actual[index])}, wanted `
+				.. `{TelemetryEmitContract.describeOne(expected[index])}. Whole list: `
+				.. `{TelemetryEmitContract.describe(actual)}`
+		)
+	end
 end
 
 -- How many emitted events are named `name` (and, if given, name `playerId`).
@@ -263,10 +265,11 @@ function TelemetryEmitContract.session(machine: any, config: any): any
 
 	function s.apply(event: any, now: number): { any }
 		local after, effects = machine.step(s.state, event, now)
-		assert(
-			typeof(effects) == "table",
-			`fixture: step returned {typeof(effects)} for its effect list at now = {now}`
-		)
+		if typeof(effects) ~= "table" then
+			Raise.fail(
+				`fixture: step returned {typeof(effects)} for its effect list at now = {now}`
+			)
+		end
 		table.insert(s.log, { now = now, event = event, effects = effects })
 		s.state = after
 		s.last = now
@@ -295,19 +298,19 @@ local STEP = 0.125
 	ignore them.
 ]]
 function TelemetryEmitContract.lobbyOf(machine: any, config: any, count: number): any
-	assert(
-		count >= config.playersMin and count <= config.playersMax,
-		`fixture: a round of {count} cannot be started - playersMin is {config.playersMin} and `
-			.. `playersMax is {config.playersMax}`
-	)
+	if not (count >= config.playersMin and count <= config.playersMax) then
+		Raise.fail(
+			`fixture: a round of {count} cannot be started - playersMin is {config.playersMin} and `
+				.. `playersMax is {config.playersMax}`
+		)
+	end
 	local s = TelemetryEmitContract.session(machine, config)
 	for index = 1, count do
 		s.apply(TelemetryEmitContract.joined(`p{index}`), s.last + STEP)
 	end
-	assert(
-		#s.state.players == count,
-		`fixture: seating {count} player(s) produced {Deep.show(s.state.players)}`
-	)
+	if #s.state.players ~= count then
+		Raise.fail(`fixture: seating {count} player(s) produced {Deep.show(s.state.players)}`)
+	end
 	return s
 end
 
@@ -315,22 +318,24 @@ end
 function TelemetryEmitContract.toAssignment(s: any): { any }
 	local due = math.max(s.last, s.state.phaseEnteredAt + s.config.lobbySeconds) + STEP
 	local effects = s.apply(TelemetryEmitContract.tick(), due)
-	assert(
-		s.state.phase == "Assignment",
-		`fixture: a Tick at now = {due} on a Lobby of {#s.state.players} entered at `
-			.. `{s.state.phaseEnteredAt} left the machine in {tostring(s.state.phase)}, not `
-			.. `Assignment (ROUND-003 AC-1, ROUND-004 AC-2)`
-	)
+	if s.state.phase ~= "Assignment" then
+		Raise.fail(
+			`fixture: a Tick at now = {due} on a Lobby of {#s.state.players} entered at `
+				.. `{s.state.phaseEnteredAt} left the machine in {tostring(s.state.phase)}, not `
+				.. `Assignment (ROUND-003 AC-1, ROUND-004 AC-2)`
+		)
+	end
 	return effects
 end
 
 -- Assignment -> Round. Returns that step's effects.
 function TelemetryEmitContract.toRound(s: any): { any }
 	local effects = s.apply(TelemetryEmitContract.seatsAssigned(), s.last + STEP)
-	assert(
-		s.state.phase == "Round",
-		`fixture: SeatsAssigned left the machine in {tostring(s.state.phase)}, not Round`
-	)
+	if s.state.phase ~= "Round" then
+		Raise.fail(
+			`fixture: SeatsAssigned left the machine in {tostring(s.state.phase)}, not Round`
+		)
+	end
 	return effects
 end
 
@@ -338,21 +343,23 @@ end
 function TelemetryEmitContract.resolveByEvent(s: any, criterion: string): { any }
 	local effects =
 		s.apply(TelemetryEmitContract.resolved(TelemetryEmitContract.eventOutcome()), s.last + STEP)
-	assert(
-		s.state.phase == "Resolution",
-		`{criterion}: a RoundResolved left the machine in {tostring(s.state.phase)}, not `
-			.. `Resolution (ROUND-003 AC-3)`
-	)
+	if s.state.phase ~= "Resolution" then
+		Raise.fail(
+			`{criterion}: a RoundResolved left the machine in {tostring(s.state.phase)}, not `
+				.. `Resolution (ROUND-003 AC-3)`
+		)
+	end
 	return effects
 end
 
 -- Resolution -> Post. Returns that step's effects.
 function TelemetryEmitContract.toPost(s: any): { any }
 	local effects = s.apply(TelemetryEmitContract.tick(), s.last + STEP)
-	assert(
-		s.state.phase == "Post",
-		`fixture: the Tick after Resolution left the machine in {tostring(s.state.phase)}, not Post`
-	)
+	if s.state.phase ~= "Post" then
+		Raise.fail(
+			`fixture: the Tick after Resolution left the machine in {tostring(s.state.phase)}, not Post`
+		)
+	end
 	return effects
 end
 
@@ -360,11 +367,12 @@ end
 function TelemetryEmitContract.toLobby(s: any): { any }
 	local due = math.max(s.last, s.state.phaseEnteredAt + s.config.postRoundSeconds) + STEP
 	local effects = s.apply(TelemetryEmitContract.tick(), due)
-	assert(
-		s.state.phase == "Lobby",
-		`fixture: a Tick at now = {due} on a Post entered at {s.state.phaseEnteredAt} left the `
-			.. `machine in {tostring(s.state.phase)}, not Lobby (ROUND-003 AC-5)`
-	)
+	if s.state.phase ~= "Lobby" then
+		Raise.fail(
+			`fixture: a Tick at now = {due} on a Post entered at {s.state.phaseEnteredAt} left the `
+				.. `machine in {tostring(s.state.phase)}, not Lobby (ROUND-003 AC-5)`
+		)
+	end
 	return effects
 end
 
@@ -410,24 +418,26 @@ end
 ]]
 function TelemetryEmitContract.initialCarriesTheSessionId(machine: any, config: any)
 	local s = TelemetryEmitContract.session(machine, config)
-	assert(
-		s.state.sessionId == TelemetryEmitContract.SESSION_ID,
-		`Contract §2: initial(config, seed, roundId, "{TelemetryEmitContract.SESSION_ID}") produced `
-			.. `a state whose sessionId is {Deep.show(s.state.sessionId)}. The driver generates it `
-			.. `and the machine carries it; it is the sessionId of every event this state emits`
-	)
+	if s.state.sessionId ~= TelemetryEmitContract.SESSION_ID then
+		Raise.fail(
+			`Contract §2: initial(config, seed, roundId, "{TelemetryEmitContract.SESSION_ID}") produced `
+				.. `a state whose sessionId is {Deep.show(s.state.sessionId)}. The driver generates it `
+				.. `and the machine carries it; it is the sessionId of every event this state emits`
+		)
+	end
 
 	local run = TelemetryEmitContract.roundOf(machine, config, config.playersMin)
 	TelemetryEmitContract.resolveByEvent(run, "Contract §2")
 	TelemetryEmitContract.toPost(run)
 	TelemetryEmitContract.toLobby(run)
-	assert(
-		run.state.sessionId == TelemetryEmitContract.SESSION_ID,
-		`Contract §2: after a whole round and Post -> Lobby the sessionId is `
-			.. `{Deep.show(run.state.sessionId)}, wanted "{TelemetryEmitContract.SESSION_ID}". It `
-			.. `identifies the server instance's run, not a round, and is carried across every `
-			.. `transition`
-	)
+	if run.state.sessionId ~= TelemetryEmitContract.SESSION_ID then
+		Raise.fail(
+			`Contract §2: after a whole round and Post -> Lobby the sessionId is `
+				.. `{Deep.show(run.state.sessionId)}, wanted "{TelemetryEmitContract.SESSION_ID}". It `
+				.. `identifies the server instance's run, not a round, and is carried across every `
+				.. `transition`
+		)
+	end
 end
 
 --[[
@@ -470,11 +480,12 @@ function TelemetryEmitContract.joinIsEmittedOncePerPlayerPerSession(machine: any
 	for index = 3, config.playersMax do
 		s.apply(TelemetryEmitContract.joined(`p{index}`), (3 + index) * STEP)
 	end
-	assert(
-		#s.state.players == config.playersMax,
-		`fixture: the lobby holds {Deep.show(s.state.players)}, wanted playersMax `
-			.. `({config.playersMax}) seated before the surplus join`
-	)
+	if #s.state.players ~= config.playersMax then
+		Raise.fail(
+			`fixture: the lobby holds {Deep.show(s.state.players)}, wanted playersMax `
+				.. `({config.playersMax}) seated before the surplus join`
+		)
+	end
 	local surplus = `p{config.playersMax + 1}`
 	local refused = s.apply(TelemetryEmitContract.joined(surplus), (5 + config.playersMax) * STEP)
 	TelemetryEmitContract.assertEmits(
@@ -493,16 +504,18 @@ function TelemetryEmitContract.joinIsEmittedOncePerPlayerPerSession(machine: any
 		{}
 	)
 
-	assert(
-		TelemetryEmitContract.count(s.all(), "join", "p1") == 1,
-		`AC-1: over the whole session p1 produced `
-			.. `{TelemetryEmitContract.count(s.all(), "join", "p1")} join event(s), wanted exactly 1`
-	)
-	assert(
-		TelemetryEmitContract.count(s.all(), "join") == config.playersMax,
-		`AC-1: {config.playersMax} distinct players were seated and the session produced `
-			.. `{TelemetryEmitContract.count(s.all(), "join")} join event(s)`
-	)
+	if TelemetryEmitContract.count(s.all(), "join", "p1") ~= 1 then
+		Raise.fail(
+			`AC-1: over the whole session p1 produced `
+				.. `{TelemetryEmitContract.count(s.all(), "join", "p1")} join event(s), wanted exactly 1`
+		)
+	end
+	if TelemetryEmitContract.count(s.all(), "join") ~= config.playersMax then
+		Raise.fail(
+			`AC-1: {config.playersMax} distinct players were seated and the session produced `
+				.. `{TelemetryEmitContract.count(s.all(), "join")} join event(s)`
+		)
+	end
 end
 
 --[[
@@ -545,11 +558,12 @@ function TelemetryEmitContract.roundCompleteIsEmittedOnceOnEnteringResolution(
 	local byClock = TelemetryEmitContract.roundOf(machine, config, count)
 	local due = byClock.state.phaseEnteredAt + config.roundSeconds
 	local clockEffects = byClock.apply(TelemetryEmitContract.tick(), due)
-	assert(
-		byClock.state.phase == "Resolution",
-		`AC-2: a Tick at now = {due}, exactly roundSeconds ({config.roundSeconds}) after the Round `
-			.. `was entered, left the machine in {tostring(byClock.state.phase)} (ROUND-005 AC-1)`
-	)
+	if byClock.state.phase ~= "Resolution" then
+		Raise.fail(
+			`AC-2: a Tick at now = {due}, exactly roundSeconds ({config.roundSeconds}) after the Round `
+				.. `was entered, left the machine in {tostring(byClock.state.phase)} (ROUND-005 AC-1)`
+		)
+	end
 	local expectedByClock: { any } = { roundComplete("lost", "clock") }
 	for _, id in roster do
 		table.insert(expectedByClock, frc(id))
@@ -563,11 +577,12 @@ function TelemetryEmitContract.roundCompleteIsEmittedOnceOnEnteringResolution(
 
 	-- Path 3: quorum, on the PlayerLeft that crossed the threshold.
 	local leaves = config.playersMin - config.minPlayersToContinue + 1
-	assert(
-		leaves >= 1 and leaves < config.roundSeconds,
-		`fixture: {leaves} departure(s) cannot take a round of {config.playersMin} below `
-			.. `minPlayersToContinue ({config.minPlayersToContinue}) before the clock is due`
-	)
+	if not (leaves >= 1 and leaves < config.roundSeconds) then
+		Raise.fail(
+			`fixture: {leaves} departure(s) cannot take a round of {config.playersMin} below `
+				.. `minPlayersToContinue ({config.minPlayersToContinue}) before the clock is due`
+		)
+	end
 	local byQuorum = TelemetryEmitContract.roundOf(machine, config, count)
 	local quorumEffects: { any } = {}
 	local leaver = ""
@@ -575,14 +590,15 @@ function TelemetryEmitContract.roundCompleteIsEmittedOnceOnEnteringResolution(
 		leaver = `p{index + 1}`
 		quorumEffects = byQuorum.apply(TelemetryEmitContract.left(leaver), byQuorum.last + STEP)
 	end
-	assert(
-		byQuorum.state.phase == "Resolution",
-		`AC-2: {leaves} departure(s) took the count below minPlayersToContinue `
-			.. `({config.minPlayersToContinue}) and the machine is in {tostring(
-				byQuorum.state.phase
-			)} `
-			.. `(ROUND-005 AC-2)`
-	)
+	if byQuorum.state.phase ~= "Resolution" then
+		Raise.fail(
+			`AC-2: {leaves} departure(s) took the count below minPlayersToContinue `
+				.. `({config.minPlayersToContinue}) and the machine is in {tostring(
+					byQuorum.state.phase
+				)} `
+				.. `(ROUND-005 AC-2)`
+		)
+	end
 	local expectedByQuorum: { any } = {
 		bounce(leaver, "Round"),
 		roundComplete("no_contest", "below_quorum"),
@@ -605,11 +621,12 @@ function TelemetryEmitContract.roundCompleteIsEmittedOnceOnEnteringResolution(
 		local lobbyEffects = TelemetryEmitContract.toLobby(run)
 		TelemetryEmitContract.assertEmits("AC-2", "the Tick Post -> Lobby", lobbyEffects, {})
 		local total = TelemetryEmitContract.count(run.all(), "round_complete")
-		assert(
-			total == 1,
-			`AC-2: one round, from Lobby back to Lobby, produced {total} round_complete event(s); `
-				.. `exactly one, on the step that entered Resolution`
-		)
+		if total ~= 1 then
+			Raise.fail(
+				`AC-2: one round, from Lobby back to Lobby, produced {total} round_complete event(s); `
+					.. `exactly one, on the step that entered Resolution`
+			)
+		end
 	end
 end
 
@@ -636,23 +653,26 @@ function TelemetryEmitContract.noContestIsDistinguishableFromALoss(machine: any,
 			quorum = event
 		end
 	end
-	assert(
-		quorum ~= nil,
-		`AC-3: the quorum ending emitted no round_complete at all: `
-			.. `{TelemetryEmitContract.describe(TelemetryEmitContract.shapes(quorumEffects))}`
-	)
-	assert(
-		quorum.fields.result ~= "lost",
-		`AC-3: the round ended because the lobby fell below minPlayersToContinue and round_complete `
-			.. `carries result "lost". The group did not fail, the lobby did (mechanics.md §8); a `
-			.. `no_contest counted as a loss misreports retention and the group's record`
-	)
-	assert(
-		quorum.fields.result == "no_contest" and quorum.fields.reason == "below_quorum",
-		`AC-3: the quorum ending's round_complete carries result `
-			.. `{Deep.show(quorum.fields.result)}, reason {Deep.show(quorum.fields.reason)}; wanted `
-			.. `"no_contest" / "below_quorum"`
-	)
+	if quorum == nil then
+		Raise.fail(
+			`AC-3: the quorum ending emitted no round_complete at all: `
+				.. `{TelemetryEmitContract.describe(TelemetryEmitContract.shapes(quorumEffects))}`
+		)
+	end
+	if quorum.fields.result == "lost" then
+		Raise.fail(
+			`AC-3: the round ended because the lobby fell below minPlayersToContinue and round_complete `
+				.. `carries result "lost". The group did not fail, the lobby did (mechanics.md §8); a `
+				.. `no_contest counted as a loss misreports retention and the group's record`
+		)
+	end
+	if not (quorum.fields.result == "no_contest" and quorum.fields.reason == "below_quorum") then
+		Raise.fail(
+			`AC-3: the quorum ending's round_complete carries result `
+				.. `{Deep.show(quorum.fields.result)}, reason {Deep.show(quorum.fields.reason)}; wanted `
+				.. `"no_contest" / "below_quorum"`
+		)
+	end
 
 	local byClock = TelemetryEmitContract.roundOf(machine, config, config.playersMin)
 	local clockEffects = byClock.apply(
@@ -665,19 +685,21 @@ function TelemetryEmitContract.noContestIsDistinguishableFromALoss(machine: any,
 			clock = event
 		end
 	end
-	assert(
-		clock ~= nil and clock.fields.result == "lost",
-		`AC-3: the CLOCK ending's round_complete is `
-			.. `{if clock == nil
-				then "absent"
-				else TelemetryEmitContract.describeOne(TelemetryEmitContract.shape(clock))}, `
-			.. `wanted result "lost". If both endings carry the same result there is nothing to tell apart`
-	)
-	assert(
-		quorum.fields.result ~= clock.fields.result,
-		`AC-3: the quorum ending and the clock ending both carry result `
-			.. `{Deep.show(quorum.fields.result)}; the result field alone must distinguish them`
-	)
+	if not (clock ~= nil and clock.fields.result == "lost") then
+		Raise.fail(
+			`AC-3: the CLOCK ending's round_complete is `
+				.. `{if clock == nil
+					then "absent"
+					else TelemetryEmitContract.describeOne(TelemetryEmitContract.shape(clock))}, `
+				.. `wanted result "lost". If both endings carry the same result there is nothing to tell apart`
+		)
+	end
+	if quorum.fields.result == clock.fields.result then
+		Raise.fail(
+			`AC-3: the quorum ending and the clock ending both carry result `
+				.. `{Deep.show(quorum.fields.result)}; the result field alone must distinguish them`
+		)
+	end
 end
 
 --[[
@@ -723,12 +745,13 @@ function TelemetryEmitContract.bounceIsEmittedOnceForALeaverBeforeResolution(
 		inAssignment,
 		{ bounce(assignmentLeaver, "Assignment") }
 	)
-	assert(
-		#s.state.players == seatedBefore,
-		`AC-4 (P3): a departure in Assignment changed the seated list to `
-			.. `{Deep.show(s.state.players)}; only Lobby and Round unseat (ROUND-004 pin 2), and `
-			.. `that is not this story's to change`
-	)
+	if #s.state.players ~= seatedBefore then
+		Raise.fail(
+			`AC-4 (P3): a departure in Assignment changed the seated list to `
+				.. `{Deep.show(s.state.players)}; only Lobby and Round unseat (ROUND-004 pin 2), and `
+				.. `that is not this story's to change`
+		)
+	end
 
 	TelemetryEmitContract.toRound(s)
 	local roundLeaver = `p{config.playersMax - 2}`
@@ -739,11 +762,12 @@ function TelemetryEmitContract.bounceIsEmittedOnceForALeaverBeforeResolution(
 		inRound,
 		{ bounce(roundLeaver, "Round") }
 	)
-	assert(
-		s.state.phase == "Round",
-		`fixture: the Round of {seatedBefore} ended on {roundLeaver}'s departure; AC-4 needs the `
-			.. `round to continue so the bounce is the only event on the step`
-	)
+	if s.state.phase ~= "Round" then
+		Raise.fail(
+			`fixture: the Round of {seatedBefore} ended on {roundLeaver}'s departure; AC-4 needs the `
+				.. `round to continue so the bounce is the only event on the step`
+		)
+	end
 
 	local notSeated = s.apply(TelemetryEmitContract.left("never-seated-p99"), s.last + STEP)
 	TelemetryEmitContract.assertEmits(
@@ -755,11 +779,12 @@ function TelemetryEmitContract.bounceIsEmittedOnceForALeaverBeforeResolution(
 
 	for _, who in { lobbyLeaver, assignmentLeaver, roundLeaver } do
 		local total = TelemetryEmitContract.count(s.all(), "bounce_before_resolution", who)
-		assert(
-			total == 1,
-			`AC-4: {who} left once before resolution and the session produced {total} `
-				.. `bounce_before_resolution event(s) for them, wanted exactly 1`
-		)
+		if total ~= 1 then
+			Raise.fail(
+				`AC-4: {who} left once before resolution and the session produced {total} `
+					.. `bounce_before_resolution event(s) for them, wanted exactly 1`
+			)
+		end
 	end
 end
 
@@ -779,22 +804,24 @@ function TelemetryEmitContract.noBounceIsEmittedInResolutionOrPost(machine: any,
 	local before = #s.log
 
 	local inResolution = s.apply(TelemetryEmitContract.left("p1"), s.last + STEP)
-	assert(
-		TelemetryEmitContract.count(inResolution, "bounce_before_resolution") == 0,
-		`AC-5: p1 left in Resolution and the step emitted `
-			.. `{TelemetryEmitContract.describe(TelemetryEmitContract.shapes(inResolution))}. A player `
-			.. `leaving AFTER the round resolved did not bounce; emitting `
-			.. `bounce_before_resolution here over-reports A5's ranking penalty against ourselves`
-	)
+	if TelemetryEmitContract.count(inResolution, "bounce_before_resolution") ~= 0 then
+		Raise.fail(
+			`AC-5: p1 left in Resolution and the step emitted `
+				.. `{TelemetryEmitContract.describe(TelemetryEmitContract.shapes(inResolution))}. A player `
+				.. `leaving AFTER the round resolved did not bounce; emitting `
+				.. `bounce_before_resolution here over-reports A5's ranking penalty against ourselves`
+		)
+	end
 
 	TelemetryEmitContract.toPost(s)
 	local inPost = s.apply(TelemetryEmitContract.left("p2"), s.last + STEP)
-	assert(
-		TelemetryEmitContract.count(inPost, "bounce_before_resolution") == 0,
-		`AC-5: p2 left in Post and the step emitted `
-			.. `{TelemetryEmitContract.describe(TelemetryEmitContract.shapes(inPost))}. No `
-			.. `bounce_before_resolution after resolution`
-	)
+	if TelemetryEmitContract.count(inPost, "bounce_before_resolution") ~= 0 then
+		Raise.fail(
+			`AC-5: p2 left in Post and the step emitted `
+				.. `{TelemetryEmitContract.describe(TelemetryEmitContract.shapes(inPost))}. No `
+				.. `bounce_before_resolution after resolution`
+		)
+	end
 
 	s.apply(TelemetryEmitContract.left("p2"), s.last + STEP) -- duplicate, in Post
 	TelemetryEmitContract.toLobby(s)
@@ -806,12 +833,13 @@ function TelemetryEmitContract.noBounceIsEmittedInResolutionOrPost(machine: any,
 		end
 	end
 	local total = TelemetryEmitContract.count(after, "bounce_before_resolution")
-	assert(
-		total == 0,
-		`AC-5: from entering Resolution through Post and back to Lobby, with two players leaving `
-			.. `and one duplicate departure, {total} bounce_before_resolution event(s) were emitted; `
-			.. `wanted none`
-	)
+	if total ~= 0 then
+		Raise.fail(
+			`AC-5: from entering Resolution through Post and back to Lobby, with two players leaving `
+				.. `and one duplicate departure, {total} bounce_before_resolution event(s) were emitted; `
+				.. `wanted none`
+		)
+	end
 end
 
 --[[
@@ -831,12 +859,13 @@ end
 	        the guard means and not "once per session".
 ]]
 function TelemetryEmitContract.bounceIsEmittedOncePerDeparturePerRound(machine: any, config: any)
-	assert(
-		config.playersMin - 1 >= config.minPlayersToContinue,
-		`fixture: a round of playersMin ({config.playersMin}) cannot lose one player and continue `
-			.. `against minPlayersToContinue ({config.minPlayersToContinue}); AC-6 needs the round `
-			.. `to survive the departure`
-	)
+	if not (config.playersMin - 1 >= config.minPlayersToContinue) then
+		Raise.fail(
+			`fixture: a round of playersMin ({config.playersMin}) cannot lose one player and continue `
+				.. `against minPlayersToContinue ({config.minPlayersToContinue}); AC-6 needs the round `
+				.. `to survive the departure`
+		)
+	end
 	local s = TelemetryEmitContract.lobbyOf(machine, config, config.playersMin)
 	TelemetryEmitContract.toAssignment(s)
 
@@ -865,10 +894,9 @@ function TelemetryEmitContract.bounceIsEmittedOncePerDeparturePerRound(machine: 
 		inRound,
 		{ bounce("p3", "Round") }
 	)
-	assert(
-		s.state.phase == "Round",
-		`fixture: p3's departure ended the round; AC-6 needs it to continue`
-	)
+	if s.state.phase ~= "Round" then
+		Raise.fail(`fixture: p3's departure ended the round; AC-6 needs it to continue`)
+	end
 	local duplicateInRound = s.apply(TelemetryEmitContract.left("p3"), s.last + STEP)
 	TelemetryEmitContract.assertEmits(
 		"AC-6",
@@ -881,11 +909,12 @@ function TelemetryEmitContract.bounceIsEmittedOncePerDeparturePerRound(machine: 
 	for _, who in { "p3", "p4" } do
 		local total =
 			TelemetryEmitContract.count(firstRoundEffects, "bounce_before_resolution", who)
-		assert(
-			total == 1,
-			`AC-6: {who} left once (and once more by duplicate) in the first round and `
-				.. `{total} bounce_before_resolution event(s) were emitted for them; wanted exactly 1`
-		)
+		if total ~= 1 then
+			Raise.fail(
+				`AC-6: {who} left once (and once more by duplicate) in the first round and `
+					.. `{total} bounce_before_resolution event(s) were emitted for them; wanted exactly 1`
+			)
+		end
 	end
 
 	-- (iii) The next round: one more each.
@@ -893,11 +922,12 @@ function TelemetryEmitContract.bounceIsEmittedOncePerDeparturePerRound(machine: 
 	TelemetryEmitContract.toPost(s)
 	TelemetryEmitContract.toLobby(s)
 	s.apply(TelemetryEmitContract.joined("p3"), s.last + STEP)
-	assert(
-		#s.state.players == config.playersMin,
-		`fixture: the second Lobby holds {Deep.show(s.state.players)}, wanted playersMin `
-			.. `({config.playersMin}) - p1, p2, p4 carried from Post and p3 rejoined`
-	)
+	if #s.state.players ~= config.playersMin then
+		Raise.fail(
+			`fixture: the second Lobby holds {Deep.show(s.state.players)}, wanted playersMin `
+				.. `({config.playersMin}) - p1, p2, p4 carried from Post and p3 rejoined`
+		)
+	end
 	TelemetryEmitContract.toAssignment(s)
 	local againInAssignment = s.apply(TelemetryEmitContract.left("p4"), s.last + STEP)
 	TelemetryEmitContract.assertEmits(
@@ -917,11 +947,12 @@ function TelemetryEmitContract.bounceIsEmittedOncePerDeparturePerRound(machine: 
 
 	for _, who in { "p3", "p4" } do
 		local total = TelemetryEmitContract.count(s.all(), "bounce_before_resolution", who)
-		assert(
-			total == 2,
-			`AC-6: {who} left in two consecutive rounds and {total} bounce_before_resolution `
-				.. `event(s) were emitted for them over the session; wanted exactly 2, one per round`
-		)
+		if total ~= 2 then
+			Raise.fail(
+				`AC-6: {who} left in two consecutive rounds and {total} bounce_before_resolution `
+					.. `event(s) were emitted for them over the session; wanted exactly 2, one per round`
+			)
+		end
 	end
 end
 
@@ -944,11 +975,12 @@ function TelemetryEmitContract.firstRoundCompleteIsEmittedOncePerPlayerPerSessio
 	machine: any,
 	config: any
 )
-	assert(
-		config.playersMax >= config.playersMin + 2,
-		`fixture: this check seats playersMin + 1 in round one and one more in round two, and `
-			.. `playersMax ({config.playersMax}) cannot hold playersMin + 2 ({config.playersMin + 2})`
-	)
+	if not (config.playersMax >= config.playersMin + 2) then
+		Raise.fail(
+			`fixture: this check seats playersMin + 1 in round one and one more in round two, and `
+				.. `playersMax ({config.playersMax}) cannot hold playersMin + 2 ({config.playersMin + 2})`
+		)
+	end
 	local count = config.playersMin + 1
 	local s = TelemetryEmitContract.lobbyOf(machine, config, count)
 	local rejoiner = `p{count}`
@@ -957,10 +989,11 @@ function TelemetryEmitContract.firstRoundCompleteIsEmittedOncePerPlayerPerSessio
 	-- P2a: leave the Lobby, come back.
 	s.apply(TelemetryEmitContract.left(rejoiner), s.last + STEP)
 	s.apply(TelemetryEmitContract.joined(rejoiner), s.last + STEP)
-	assert(
-		#s.state.players == count,
-		`fixture: after {rejoiner} left and rejoined the Lobby holds {Deep.show(s.state.players)}`
-	)
+	if #s.state.players ~= count then
+		Raise.fail(
+			`fixture: after {rejoiner} left and rejoined the Lobby holds {Deep.show(s.state.players)}`
+		)
+	end
 
 	TelemetryEmitContract.toAssignment(s)
 	-- P3: leaves, stays seated, is marked departed.
@@ -1000,18 +1033,20 @@ function TelemetryEmitContract.firstRoundCompleteIsEmittedOncePerPlayerPerSessio
 	local all = s.all()
 	for _, who in { "p1", rejoiner, newcomer } do
 		local total = TelemetryEmitContract.count(all, "first_round_complete", who)
-		assert(
-			total == 1,
-			`AC-7: {who} completed their first round once and {total} first_round_complete `
-				.. `event(s) were emitted for them over two rounds; wanted exactly 1`
-		)
+		if total ~= 1 then
+			Raise.fail(
+				`AC-7: {who} completed their first round once and {total} first_round_complete `
+					.. `event(s) were emitted for them over two rounds; wanted exactly 1`
+			)
+		end
 	end
 	local leaverTotal = TelemetryEmitContract.count(all, "first_round_complete", assignmentLeaver)
-	assert(
-		leaverTotal == 0,
-		`AC-7 (P3): {assignmentLeaver} left in Assignment before their first round and `
-			.. `{leaverTotal} first_round_complete event(s) were emitted for them; wanted none`
-	)
+	if leaverTotal ~= 0 then
+		Raise.fail(
+			`AC-7 (P3): {assignmentLeaver} left in Assignment before their first round and `
+				.. `{leaverTotal} first_round_complete event(s) were emitted for them; wanted none`
+		)
+	end
 end
 
 --[[
@@ -1107,16 +1142,18 @@ function TelemetryEmitContract.rematchAndSessionEndAreEmittedOnceInPost(machine:
 		{}
 	)
 
-	assert(
-		TelemetryEmitContract.count(s.all(), "rematch_accepted") == 2,
-		`AC-8: two players accepted a rematch (one of them twice) and the session produced `
-			.. `{TelemetryEmitContract.count(s.all(), "rematch_accepted")} rematch_accepted event(s)`
-	)
-	assert(
-		TelemetryEmitContract.count(s.all(), "session_end") == 2,
-		`AC-8: two players left after resolution (each twice) and the session produced `
-			.. `{TelemetryEmitContract.count(s.all(), "session_end")} session_end event(s)`
-	)
+	if TelemetryEmitContract.count(s.all(), "rematch_accepted") ~= 2 then
+		Raise.fail(
+			`AC-8: two players accepted a rematch (one of them twice) and the session produced `
+				.. `{TelemetryEmitContract.count(s.all(), "rematch_accepted")} rematch_accepted event(s)`
+		)
+	end
+	if TelemetryEmitContract.count(s.all(), "session_end") ~= 2 then
+		Raise.fail(
+			`AC-8: two players left after resolution (each twice) and the session produced `
+				.. `{TelemetryEmitContract.count(s.all(), "session_end")} session_end event(s)`
+		)
+	end
 
 	-- P4: once per ROUND. The second round's Post accepts p1's rematch again.
 	TelemetryEmitContract.toLobby(s)
@@ -1210,16 +1247,16 @@ end
 ]]
 function TelemetryEmitContract.everyEmitCarriesTheStepsNowAndAKnownName(machine: any, config: any)
 	local s, nows = TelemetryEmitContract.lifecycle(machine, config)
-	assert(
-		s.state.phase == "Lobby",
-		`fixture: the lifecycle ended in {tostring(s.state.phase)}, not back in Lobby`
-	)
+	if s.state.phase ~= "Lobby" then
+		Raise.fail(`fixture: the lifecycle ended in {tostring(s.state.phase)}, not back in Lobby`)
+	end
 	for index = 2, #nows do
-		assert(
-			nows[index] > nows[index - 1] and nows[index] ~= math.floor(nows[index]),
-			`fixture: the manual clock must be strictly increasing and non-integer; step {index} `
-				.. `is at {nows[index]} after {nows[index - 1]}`
-		)
+		if not (nows[index] > nows[index - 1] and nows[index] ~= math.floor(nows[index])) then
+			Raise.fail(
+				`fixture: the manual clock must be strictly increasing and non-integer; step {index} `
+					.. `is at {nows[index]} after {nows[index - 1]}`
+			)
+		end
 	end
 
 	local wrongAt: { string } = {}
@@ -1258,42 +1295,48 @@ function TelemetryEmitContract.everyEmitCarriesTheStepsNowAndAKnownName(machine:
 		end
 	end
 
-	assert(
-		total > 0,
-		`AC-9: a full lifecycle of {#s.log} steps emitted no telemetry at all; there is nothing `
-			.. `whose at could be checked`
-	)
+	if not (total > 0) then
+		Raise.fail(
+			`AC-9: a full lifecycle of {#s.log} steps emitted no telemetry at all; there is nothing `
+				.. `whose at could be checked`
+		)
+	end
 	local missing: { string } = {}
 	for _, name in TelemetryEmitContract.EMITTED_NAMES do
 		if (seen[name] or 0) == 0 then
 			table.insert(missing, name)
 		end
 	end
-	assert(
-		#missing == 0,
-		`AC-9: the lifecycle emitted {total} event(s) but never {table.concat(missing, ", ")}; `
-			.. `at has to be checked for every one of this story's six emitters`
-	)
-	assert(
-		#wrongAt == 0,
-		`AC-9: {#wrongAt} of {total} event(s) carry an at that is not the now of the step that `
-			.. `produced them. The step never uses another time source. The first: {wrongAt[1]}`
-	)
-	assert(
-		#unknownName == 0,
-		`AC-9: {#unknownName} event(s) carry a name absent from Event.BUCKETS. The first: `
-			.. `{unknownName[1]}`
-	)
-	assert(
-		#wrongBucket == 0,
-		`AC-9: {#wrongBucket} event(s) are filed under a bucket other than Event.BUCKETS'. The `
-			.. `first: {wrongBucket[1]}`
-	)
-	assert(
-		#wrongSession == 0,
-		`AC-9: {#wrongSession} event(s) carry a sessionId other than the one initial was given. `
-			.. `The first: {wrongSession[1]}`
-	)
+	if #missing ~= 0 then
+		Raise.fail(
+			`AC-9: the lifecycle emitted {total} event(s) but never {table.concat(missing, ", ")}; `
+				.. `at has to be checked for every one of this story's six emitters`
+		)
+	end
+	if #wrongAt ~= 0 then
+		Raise.fail(
+			`AC-9: {#wrongAt} of {total} event(s) carry an at that is not the now of the step that `
+				.. `produced them. The step never uses another time source. The first: {wrongAt[1]}`
+		)
+	end
+	if #unknownName ~= 0 then
+		Raise.fail(
+			`AC-9: {#unknownName} event(s) carry a name absent from Event.BUCKETS. The first: `
+				.. `{unknownName[1]}`
+		)
+	end
+	if #wrongBucket ~= 0 then
+		Raise.fail(
+			`AC-9: {#wrongBucket} event(s) are filed under a bucket other than Event.BUCKETS'. The `
+				.. `first: {wrongBucket[1]}`
+		)
+	end
+	if #wrongSession ~= 0 then
+		Raise.fail(
+			`AC-9: {#wrongSession} event(s) carry a sessionId other than the one initial was given. `
+				.. `The first: {wrongSession[1]}`
+		)
+	end
 end
 
 --[[
@@ -1412,10 +1455,9 @@ function TelemetryEmitContract.emittingStepsArePureAndDeterministic(machine: any
 		end
 	end
 	if #violations > 0 then
-		error(
+		Raise.fail(
 			`ROUND-003 AC-6 on TEL-002's emitting steps: {#violations} violation(s). The first:\n`
-				.. violations[1],
-			2
+				.. violations[1]
 		)
 	end
 end

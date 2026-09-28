@@ -50,6 +50,7 @@
 	directly; wrapper checks drive `RateContract.world`'s manual clock.
 ]]
 
+local Contract = require("./Contract")
 local Deep = require("./Deep")
 local NetContract = require("./NetContract")
 local RateContract = require("./RateContract")
@@ -64,18 +65,6 @@ export type Bundle = {
 	RejectionReporter: any,
 	Event: any,
 }
-
---[[
-	The final assertion of every check goes through this rather than `assert`.
-	MEASURED in SEAT-002's RED: under Lune, `assert(false, message)` truncates
-	the message to 512 characters after the location prefix and `error` does
-	not. Level 2 attributes the failure to the caller.
-]]
-local function check(condition: boolean, message: string)
-	if not condition then
-		error(message, 2)
-	end
-end
 
 local function indent(text: string): string
 	return "  " .. (string.gsub(text, "\n", "\n  "))
@@ -235,33 +224,41 @@ end
      ------------------------------------------------------------------------ ]]
 
 local function module(bundle: Bundle, criterion: string): any
-	check(
-		bundle.RejectionReporter ~= nil,
-		`{criterion}: src/net/RejectionReporter.luau did not load - the reporter is a new module `
-			.. `and this check is a unit criterion on it`
-	)
+	if bundle.RejectionReporter == nil then
+		Contract.fail(
+			`{criterion}: src/net/RejectionReporter.luau did not load - the reporter is a new module `
+				.. `and this check is a unit criterion on it`
+		)
+	end
 	return bundle.RejectionReporter
 end
 
 local function newReporter(bundle: Bundle, criterion: string): (any, number)
 	local Reporter = module(bundle, criterion)
-	check(
-		typeof(Reporter.new) == "function",
-		`{criterion}: RejectionReporter.new is {typeof(Reporter.new)}; expected a function`
-	)
+	if typeof(Reporter.new) ~= "function" then
+		Contract.fail(
+			`{criterion}: RejectionReporter.new is {typeof(Reporter.new)}; expected a function`
+		)
+	end
 	local interval = Reporter.INTERVAL_SECONDS
-	check(
-		typeof(interval) == "number",
-		`{criterion}: RejectionReporter.INTERVAL_SECONDS is {Deep.show(interval)}; expected a number`
-	)
+	if typeof(interval) ~= "number" then
+		Contract.fail(
+			`{criterion}: RejectionReporter.INTERVAL_SECONDS is {Deep.show(interval)}; expected a number`
+		)
+	end
 	local reporter = Reporter.new(interval, SESSION_ID)
-	check(
-		typeof(reporter) == "table"
+	if
+		not (
+			typeof(reporter) == "table"
 			and typeof(reporter.record) == "function"
-			and typeof(reporter.flush) == "function",
-		`{criterion}: RejectionReporter.new({interval}, "{SESSION_ID}") returned `
-			.. `{Deep.show(reporter)}; expected a reporter with record and flush methods`
-	)
+			and typeof(reporter.flush) == "function"
+		)
+	then
+		Contract.fail(
+			`{criterion}: RejectionReporter.new({interval}, "{SESSION_ID}") returned `
+				.. `{Deep.show(reporter)}; expected a reporter with record and flush methods`
+		)
+	end
 	return reporter, interval
 end
 
@@ -303,13 +300,18 @@ local function flood(bundle: Bundle, criterion: string): ({ any }, { any })
 			table.insert(fromRecord, result)
 		end
 	end
-	check(raised == nil, raised or "")
+	if raised ~= nil then
+		Contract.fail(raised or "")
+	end
 	local ok, flushed = flush(reporter, FLOOD_CALLS / FLOOD_HZ)
-	check(ok, `{criterion}: flush({FLOOD_CALLS / FLOOD_HZ}) RAISED: {tostring(flushed)}`)
-	check(
-		typeof(flushed) == "table",
-		`{criterion}: flush({FLOOD_CALLS / FLOOD_HZ}) returned {Deep.show(flushed)}; expected a list`
-	)
+	if not ok then
+		Contract.fail(`{criterion}: flush({FLOOD_CALLS / FLOOD_HZ}) RAISED: {tostring(flushed)}`)
+	end
+	if typeof(flushed) ~= "table" then
+		Contract.fail(
+			`{criterion}: flush({FLOOD_CALLS / FLOOD_HZ}) returned {Deep.show(flushed)}; expected a list`
+		)
+	end
 	return fromRecord, flushed
 end
 
@@ -341,11 +343,12 @@ end
 ]]
 function RejectionContract.reporterExportsTheIntervalAndAConstructor(bundle: Bundle)
 	local Reporter = module(bundle, "Contract")
-	check(
-		Reporter.INTERVAL_SECONDS == 1,
-		`Contract: RejectionReporter.INTERVAL_SECONDS is {Deep.show(Reporter.INTERVAL_SECONDS)}; `
-			.. `rejection_report_interval_seconds is 1`
-	)
+	if Reporter.INTERVAL_SECONDS ~= 1 then
+		Contract.fail(
+			`Contract: RejectionReporter.INTERVAL_SECONDS is {Deep.show(Reporter.INTERVAL_SECONDS)}; `
+				.. `rejection_report_interval_seconds is 1`
+		)
+	end
 	newReporter(bundle, "Contract")
 end
 
@@ -427,14 +430,15 @@ function RejectionContract.nonRateReasonsAreNeverCoalesced(bundle: Bundle)
 		reconstructs("Contract: a table caller id", bundle, event, violations)
 	end
 
-	check(
-		#violations == 0,
-		`AC-1: {#violations} violation(s) over 20 non-rate rejections and one table caller id `
-			.. `({produced} event(s) produced) - a reporter that coalesces every reason, or `
-			.. `whose envelope is not the Contract's, fails here:\n{indent(
-				table.concat(violations, "\n")
-			)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-1: {#violations} violation(s) over 20 non-rate rejections and one table caller id `
+				.. `({produced} event(s) produced) - a reporter that coalesces every reason, or `
+				.. `whose envelope is not the Contract's, fails here:\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[ ------------------------------------------------------------------------
@@ -468,14 +472,15 @@ end
 ]]
 function RejectionContract.floodIsBoundedToElevenEvents(bundle: Bundle)
 	local fromRecord, flushed = flood(bundle, "AC-5")
-	check(
-		#fromRecord == 10 and #flushed == 1,
-		`AC-5: record returned {#fromRecord} event(s) over {FLOOD_CALLS} rate rejections at `
-			.. `{FLOOD_HZ} Hz ({FLOOD_CALLS / FLOOD_HZ} s) and flush({FLOOD_CALLS / FLOOD_HZ}) returned `
-			.. `{#flushed}; wanted 10 and 1 - at most one rate event per player per remote per `
-			.. `second, plus the trailing window. Telemetry that scales one-to-one with a flood is `
-			.. `an amplifier`
-	)
+	if not (#fromRecord == 10 and #flushed == 1) then
+		Contract.fail(
+			`AC-5: record returned {#fromRecord} event(s) over {FLOOD_CALLS} rate rejections at `
+				.. `{FLOOD_HZ} Hz ({FLOOD_CALLS / FLOOD_HZ} s) and flush({FLOOD_CALLS / FLOOD_HZ}) returned `
+				.. `{#flushed}; wanted 10 and 1 - at most one rate event per player per remote per `
+				.. `second, plus the trailing window. Telemetry that scales one-to-one with a flood is `
+				.. `an amplifier`
+		)
+	end
 
 	local violations: { string } = {}
 	local all: { any } = table.clone(fromRecord)
@@ -499,11 +504,14 @@ function RejectionContract.floodIsBoundedToElevenEvents(bundle: Bundle)
 		expected.fields.count = nil
 		diffEvent(label, withoutCount, expected, violations)
 	end
-	check(
-		#violations == 0,
-		`AC-5: 11 events, but {#violations} of them are not on the Contract's schedule (windows `
-			.. `opening at 0..9, the flush at 10):\n{indent(table.concat(violations, "\n"))}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-5: 11 events, but {#violations} of them are not on the Contract's schedule (windows `
+				.. `opening at 0..9, the flush at 10):\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[
@@ -522,12 +530,13 @@ function RejectionContract.floodCountsSumToEveryRejection(bundle: Bundle)
 		table.insert(all, event)
 	end
 	local total, missing = sumOfCounts(all)
-	check(
-		total == FLOOD_CALLS,
-		`AC-5: the sum of fields.count over {#all} event(s) ({#fromRecord} from record, `
-			.. `{#flushed} from flush) is {total}, and {missing} of them carry no numeric count; `
-			.. `{FLOOD_CALLS} rejections were recorded and every one must be accounted for`
-	)
+	if total ~= FLOOD_CALLS then
+		Contract.fail(
+			`AC-5: the sum of fields.count over {#all} event(s) ({#fromRecord} from record, `
+				.. `{#flushed} from flush) is {total}, and {missing} of them carry no numeric count; `
+				.. `{FLOOD_CALLS} rejections were recorded and every one must be accounted for`
+		)
+	end
 
 	local violations: { string } = {}
 	local schedule = floodSchedule()
@@ -547,13 +556,14 @@ function RejectionContract.floodCountsSumToEveryRejection(bundle: Bundle)
 		end
 		fieldKeysAreExactly(label, event, violations)
 	end
-	check(
-		#violations == 0,
-		`AC-5: the counts sum to {FLOOD_CALLS}, but {#violations} event(s) are not the Contract's `
-			.. `schedule (1, 100 x 9; the flush carrying 99):\n{indent(
-				table.concat(violations, "\n")
-			)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-5: the counts sum to {FLOOD_CALLS}, but {#violations} event(s) are not the Contract's `
+				.. `schedule (1, 100 x 9; the flush carrying 99):\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[ ------------------------------------------------------------------------
@@ -659,12 +669,13 @@ function RejectionContract.windowIsInclusiveAndFlushLeavesItsStart(bundle: Bundl
 		end
 	end
 
-	check(
-		#violations == 0,
-		`Contract: {#violations} violation(s) across {#steps} steps on one (player, remote) `
-			.. `window - a > comparison, or a flush that moves, clears or fails to drain the `
-			.. `window, fails here:\n{indent(table.concat(violations, "\n"))}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`Contract: {#violations} violation(s) across {#steps} steps on one (player, remote) `
+				.. `window - a > comparison, or a flush that moves, clears or fails to drain the `
+				.. `window, fails here:\n{indent(Contract.firstFew(violations, #violations))}`
+		)
+	end
 end
 
 --[[ ------------------------------------------------------------------------
@@ -785,12 +796,13 @@ function RejectionContract.coalescingIsPerPlayerAndPerRemote(bundle: Bundle)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-6: {#violations} violation(s) across {recorded} rejections by two players on two `
-			.. `remotes - a reporter keyed by player alone, by remote alone, or flushing in `
-			.. `insertion order fails here:\n{indent(table.concat(violations, "\n"))}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-6: {#violations} violation(s) across {recorded} rejections by two players on two `
+				.. `remotes - a reporter keyed by player alone, by remote alone, or flushing in `
+				.. `insertion order fails here:\n{indent(Contract.firstFew(violations, #violations))}`
+		)
+	end
 end
 
 --[[
@@ -831,12 +843,13 @@ function RejectionContract.flushWithNothingPendingReturnsAnEmptyList(bundle: Bun
 	end
 	expectEmpty("immediately after a flush that drained one pending rejection", 0.95)
 
-	check(
-		#violations == 0,
-		`Contract: {#violations} violation(s) - flush with nothing pending returns {"{}"}:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`Contract: {#violations} violation(s) - flush with nothing pending returns {"{}"}:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 --[[ ------------------------------------------------------------------------
@@ -1137,13 +1150,14 @@ function RejectionContract.wrapperRecordsEachRejectionAndEmitsItsEventOnce(bundl
 		)
 	end
 
-	check(
-		#violations == 0,
-		`Contract: {#violations} violation(s) across {rejections} rejected calls through `
-			.. `Wrapper.guard with a telemetry field - a wrapper that does not read `
-			.. `context.telemetry, calls record with other arguments, emits a bare event, or emits `
-			.. `twice fails here:\n{indent(table.concat(violations, "\n"))}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`Contract: {#violations} violation(s) across {rejections} rejected calls through `
+				.. `Wrapper.guard with a telemetry field - a wrapper that does not read `
+				.. `context.telemetry, calls record with other arguments, emits a bare event, or emits `
+				.. `twice fails here:\n{indent(Contract.firstFew(violations, #violations))}`
+		)
+	end
 end
 
 --[[
@@ -1222,11 +1236,12 @@ function RejectionContract.acceptedCallProducesNoEventAndNoRecord(bundle: Bundle
 		)
 	end
 
-	check(
-		#violations == 0,
-		`AC-2: {#violations} violation(s) - a wrapper that records or emits on an accepted call `
-			.. `fails here:\n{indent(table.concat(violations, "\n"))}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-2: {#violations} violation(s) - a wrapper that records or emits on an accepted call `
+				.. `fails here:\n{indent(Contract.firstFew(violations, #violations))}`
+		)
+	end
 end
 
 --[[
@@ -1264,7 +1279,9 @@ function RejectionContract.contextWithoutTelemetryIsUnchanged(bundle: Bundle)
 	end
 
 	local bare, bareWorld = RateContract.world({ "p1" }, "Round", START)
-	check(bare.telemetry == nil, "fixture: RateContract.world must not set telemetry")
+	if bare.telemetry ~= nil then
+		Contract.fail("fixture: RateContract.world must not set telemetry")
+	end
 	local without = drive(bare, bareWorld, "without telemetry")
 
 	local spy = spyReporter()
@@ -1287,13 +1304,14 @@ function RejectionContract.contextWithoutTelemetryIsUnchanged(bundle: Bundle)
 		)
 	end
 
-	check(
-		#violations == 0,
-		`Contract: {#violations} violation(s) - a wrapper that indexes context.telemetry without `
-			.. `a nil check, or whose verdicts depend on it, fails here:\n{indent(
-				table.concat(violations, "\n")
-			)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`Contract: {#violations} violation(s) - a wrapper that indexes context.telemetry without `
+				.. `a nil check, or whose verdicts depend on it, fails here:\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[ ------------------------------------------------------------------------
@@ -1377,11 +1395,12 @@ function RejectionContract.everyReasonProducesExactlyOneEventNamingRemoteReasonA
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-1/AC-3: {#violations} violation(s) across the five reasons through Wrapper.guard `
-			.. `with the real reporter:\n{indent(table.concat(violations, "\n"))}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-1/AC-3: {#violations} violation(s) across the five reasons through Wrapper.guard `
+				.. `with the real reporter:\n{indent(Contract.firstFew(violations, #violations))}`
+		)
+	end
 end
 
 --[[
@@ -1466,13 +1485,14 @@ function RejectionContract.noArgumentValueEntersTheEvent(bundle: Bundle)
 		reconstructs(`AC-4: {case.label}`, bundle, event, violations)
 	end
 
-	check(
-		#violations == 0,
-		`AC-4: {#violations} violation(s) across {#cases} hostile payloads - an implementation `
-			.. `that copies rawArgs or detail into fields fails here:\n{indent(
-				table.concat(violations, "\n")
-			)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-4: {#violations} violation(s) across {#cases} hostile payloads - an implementation `
+				.. `that copies rawArgs or detail into fields fails here:\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[
@@ -1564,12 +1584,13 @@ function RejectionContract.tablePayloadYieldsScalarFieldsAndNoRaise(bundle: Bund
 		reconstructs(`AC-4: {payload.label}`, bundle, event, violations)
 	end
 
-	check(
-		#violations == 0,
-		`AC-4 (scalar fields): {#violations} violation(s) across {#payloads} table payloads:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-4 (scalar fields): {#violations} violation(s) across {#payloads} table payloads:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 --[[
@@ -1668,13 +1689,14 @@ function RejectionContract.floodThroughTheWrapperIsBoundedAndCounted(bundle: Bun
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-5: {#violations} violation(s) over a {FLOOD_CALLS}-call flood through Wrapper.guard - an `
-			.. `unbounded reporter, or one that loses the count, fails here:\n{indent(
-				table.concat(violations, "\n")
-			)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-5: {#violations} violation(s) over a {FLOOD_CALLS}-call flood through Wrapper.guard - an `
+				.. `unbounded reporter, or one that loses the count, fails here:\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[
@@ -1743,12 +1765,13 @@ function RejectionContract.tableCallerIdIsNotPutInTheEvent(bundle: Bundle)
 		reconstructs(`Contract: {caller.label} as the caller id`, bundle, event, violations)
 	end
 
-	check(
-		#violations == 0,
-		`Contract: {#violations} violation(s) across {#callers} non-string caller ids:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`Contract: {#violations} violation(s) across {#callers} non-string caller ids:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 return RejectionContract

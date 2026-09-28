@@ -14,6 +14,8 @@
 	because a control asserts on the ERROR and a boolean loses the reason.
 ]]
 
+local Contract = require("./Contract")
+
 local RngContract = {}
 
 export type Factory = (number) -> any
@@ -58,11 +60,12 @@ function RngContract.sameSeedReproduces(factory: Factory)
 		local left = sequence(factory(seed))
 		local right = sequence(factory(seed))
 		local at = firstDifference(left, right)
-		assert(
-			at == nil,
-			`AC-2: two Rngs from seed {seed} diverged at draw {at}\n`
-				.. `  a: {render(left)}\n  b: {render(right)}`
-		)
+		if at ~= nil then
+			Contract.fail(
+				`AC-2: two Rngs from seed {seed} diverged at draw {at}\n`
+					.. `  a: {render(left)}\n  b: {render(right)}`
+			)
+		end
 	end
 end
 
@@ -74,11 +77,12 @@ function RngContract.differentSeedsDiverge(factory: Factory)
 	for _, pair in { { 1, 2 }, { 7, 8 }, { 0, 1 }, { 1234, 5678 } } do
 		local left = sequence(factory(pair[1]))
 		local right = sequence(factory(pair[2]))
-		assert(
-			firstDifference(left, right) ~= nil,
-			`AC-2: seeds {pair[1]} and {pair[2]} produced the same sequence, so the seed is `
-				.. `not being used:\n  {render(left)}`
-		)
+		if firstDifference(left, right) == nil then
+			Contract.fail(
+				`AC-2: seeds {pair[1]} and {pair[2]} produced the same sequence, so the seed is `
+					.. `not being used:\n  {render(left)}`
+			)
+		end
 	end
 end
 
@@ -88,11 +92,12 @@ function RngContract.sameLabelSameSubStream(factory: Factory)
 		local left = sequence(factory(4242):derive(label))
 		local right = sequence(factory(4242):derive(label))
 		local at = firstDifference(left, right)
-		assert(
-			at == nil,
-			`AC-3: derive("{label}") on two parents seeded 4242 diverged at draw {at}\n`
-				.. `  a: {render(left)}\n  b: {render(right)}`
-		)
+		if at ~= nil then
+			Contract.fail(
+				`AC-3: derive("{label}") on two parents seeded 4242 diverged at draw {at}\n`
+					.. `  a: {render(left)}\n  b: {render(right)}`
+			)
+		end
 	end
 end
 
@@ -121,20 +126,22 @@ function RngContract.deriveIsIndependent(factory: Factory)
 	local baselineB = afterDraining("a", "b", 0)
 	local drainedB = afterDraining("a", "b", 50)
 	local at = firstDifference(baselineB, drainedB)
-	assert(
-		at == nil,
-		`AC-3: 50 draws from derive("a") changed derive("b") at draw {at}\n`
-			.. `  untouched: {render(baselineB)}\n  after draining a: {render(drainedB)}`
-	)
+	if at ~= nil then
+		Contract.fail(
+			`AC-3: 50 draws from derive("a") changed derive("b") at draw {at}\n`
+				.. `  untouched: {render(baselineB)}\n  after draining a: {render(drainedB)}`
+		)
+	end
 
 	local baselineA = afterDraining("b", "a", 0)
 	local drainedA = afterDraining("b", "a", 50)
 	local back = firstDifference(baselineA, drainedA)
-	assert(
-		back == nil,
-		`AC-3: 50 draws from derive("b") changed derive("a") at draw {back}\n`
-			.. `  untouched: {render(baselineA)}\n  after draining b: {render(drainedA)}`
-	)
+	if back ~= nil then
+		Contract.fail(
+			`AC-3: 50 draws from derive("b") changed derive("a") at draw {back}\n`
+				.. `  untouched: {render(baselineA)}\n  after draining b: {render(drainedA)}`
+		)
+	end
 end
 
 --[[
@@ -145,11 +152,12 @@ end
 function RngContract.differentLabelsDiffer(factory: Factory)
 	local seats = sequence(factory(77):derive("seats"))
 	local instance = sequence(factory(77):derive("instance"))
-	assert(
-		firstDifference(seats, instance) ~= nil,
-		`Contract: derive("seats") and derive("instance") from seed 77 are the same stream, `
-			.. `so the label is not being used:\n  {render(seats)}`
-	)
+	if firstDifference(seats, instance) == nil then
+		Contract.fail(
+			`Contract: derive("seats") and derive("instance") from seed 77 are the same stream, `
+				.. `so the label is not being used:\n  {render(seats)}`
+		)
+	end
 end
 
 local function countOf(list: { any }): { [any]: number }
@@ -166,15 +174,21 @@ function RngContract.shuffleIsAPermutation(factory: Factory)
 	local rng = factory(5) :: any
 	local out = rng:shuffle(input)
 
-	assert(#out == #input, `AC-4: shuffle returned {#out} items from {#input}`)
+	if #out ~= #input then
+		Contract.fail(`AC-4: shuffle returned {#out} items from {#input}`)
+	end
 
 	local wanted = countOf(input)
 	local got = countOf(out)
 	for value, n in wanted do
-		assert(got[value] == n, `AC-4: shuffle produced {got[value] or 0} of "{value}", wanted {n}`)
+		if got[value] ~= n then
+			Contract.fail(`AC-4: shuffle produced {got[value] or 0} of "{value}", wanted {n}`)
+		end
 	end
 	for value, n in got do
-		assert(wanted[value] == n, `AC-4: shuffle invented {n} of "{tostring(value)}"`)
+		if wanted[value] ~= n then
+			Contract.fail(`AC-4: shuffle invented {n} of "{tostring(value)}"`)
+		end
 	end
 end
 
@@ -189,14 +203,14 @@ function RngContract.shuffleDoesNotMutateItsInput(factory: Factory)
 	local rng = factory(5) :: any
 	local result = rng:shuffle(input)
 
-	assert(
-		table.concat(input, ",") == before,
-		`AC-4: shuffle mutated its argument: {before} -> {table.concat(input, ",")}`
-	)
-	assert(
-		rawequal(result, input) == false,
-		"AC-4: shuffle returned the caller's own table; the Contract says it returns a new list"
-	)
+	if table.concat(input, ",") ~= before then
+		Contract.fail(`AC-4: shuffle mutated its argument: {before} -> {table.concat(input, ",")}`)
+	end
+	if rawequal(result, input) ~= false then
+		Contract.fail(
+			"AC-4: shuffle returned the caller's own table; the Contract says it returns a new list"
+		)
+	end
 end
 
 --[[
@@ -208,13 +222,21 @@ function RngContract.shuffleHandlesEmptyAndSingleton(factory: Factory)
 
 	local empty: { string } = {}
 	local emptyOut = rng:shuffle(empty)
-	assert(#emptyOut == 0, `AC-4: shuffle of an empty list returned {#emptyOut} items`)
-	assert(rawequal(emptyOut, empty) == false, "AC-4: shuffle of an empty list returned the input")
+	if #emptyOut ~= 0 then
+		Contract.fail(`AC-4: shuffle of an empty list returned {#emptyOut} items`)
+	end
+	if rawequal(emptyOut, empty) ~= false then
+		Contract.fail("AC-4: shuffle of an empty list returned the input")
+	end
 
 	local one = { "only" }
 	local oneOut = rng:shuffle(one)
-	assert(#oneOut == 1 and oneOut[1] == "only", "AC-4: shuffle of one item changed it")
-	assert(#one == 1 and one[1] == "only", "AC-4: shuffle of one item mutated the input")
+	if not (#oneOut == 1 and oneOut[1] == "only") then
+		Contract.fail("AC-4: shuffle of one item changed it")
+	end
+	if not (#one == 1 and one[1] == "only") then
+		Contract.fail("AC-4: shuffle of one item mutated the input")
+	end
 end
 
 --[[
@@ -234,7 +256,9 @@ function RngContract.shuffleActuallyPermutes(factory: Factory)
 			return
 		end
 	end
-	error(`AC-4: 20 seeds all returned the input order {before}; this shuffle does not shuffle`)
+	Contract.fail(
+		`AC-4: 20 seeds all returned the input order {before}; this shuffle does not shuffle`
+	)
 end
 
 return RngContract
