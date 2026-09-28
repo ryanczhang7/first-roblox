@@ -227,23 +227,41 @@ line applies — and that is precisely where a vanished suite would read as gree
 ---
 
 
-### An `assert` message is truncated at 512 characters, and the evidence goes with it
+### An `assert` message is truncated at 511 characters, and the evidence goes with it
 
 Found by `ROUND-004`'s RED when a failure message was cut mid-trail, and measured
 by the Lead PO on a different input rather than taken on report. Lune 0.10.5,
 this machine, 2026-09-16 — a message of `string.rep("A", n)` through
 `pcall(function() assert(false, msg) end)`:
 
-    message   400 chars -> err   444 chars,   401 A's kept
-    message   480 chars -> err   524 chars,   481 A's kept
-    message   500 chars -> err   544 chars,   501 A's kept
-    message   520 chars -> err   555 chars,   512 A's kept
-    message   600 chars -> err   555 chars,   512 A's kept
-    message  2000 chars -> err   555 chars,   512 A's kept
+    message   400 chars -> err   444 chars,   400 A's kept
+    message   480 chars -> err   524 chars,   480 A's kept
+    message   500 chars -> err   544 chars,   500 A's kept
+    message   520 chars -> err   555 chars,   511 A's kept
+    message   600 chars -> err   555 chars,   511 A's kept
+    message  2000 chars -> err   555 chars,   511 A's kept
 
-**512 characters of message, exactly** — a fixed buffer, not a soft limit — plus
+**511 characters of message, exactly** — a fixed buffer, not a soft limit — plus
 the `path:line:` prefix the runner adds, which is another 40-75 characters and is
-*not* counted against the 512.
+*not* counted against the 511.
+
+**This section said 512 until `HARNESS-011`, and 512 was an off-by-one.** The
+"A's kept" column above was derived, and read one high on every row: a
+400-character message cannot keep 401 A's. The raw columns were right and give
+the answer directly - a 400-character message produced an `err` of 444, so the
+prefix is 44 characters, and `555 - 44 = 511`. `HARNESS-011` re-measured it with
+a marker at known indices (index 511 survives, 512 does not) and from
+directories whose names were 1, 40 and 90 characters long: the prefix grew from
+173 to 212 to 259 characters and the cap stayed at 511. So the prefix is not
+counted, and the cap is not machine-dependent. Do not "correct" 511 back to 512
+from the old column.
+
+**The fix in this repository is not to write shorter messages.** A contract
+helper raises through `Contract.fail` (`tests/helpers/Contract.luau`), which is
+`error(message, 0)`. `error` does not truncate at any level, and the
+`if ... then Contract.fail(...) end` shape builds a message only when the check
+fails, where `assert` builds it on every passing run too. The advice below still
+holds for any bare `assert` left in a test.
 
 This matters here more than it would in most repositories. This project has no
 coverage gate (§4), so a failing assertion's **message** is a large part of how a

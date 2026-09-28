@@ -4,8 +4,8 @@ title: A contract helper's failure message survives past 511 characters
 slug: a-contract-helper-s-failure-message-surv
 epic: 
 type: chore
-status: todo
-phase: PLANNED
+status: in-progress
+phase: GATES
 branch: story/HARNESS-011-a-contract-helper-s-failure-message-surv
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -200,6 +200,24 @@ any future **anchored** match — which is `rules.md`'s first and cheapest defen
 against a needle that cannot fail. Anyone adding an anchored assertion over these
 messages needs to know the prefix is gone.
 
+**Amended in SCAFFOLD (2026-09-28), in place, with reasons:**
+
+- *The module also exports the shared message-builder.* `Contract.firstFew(list,
+  count)`, plus `Contract.builds()` / `Contract.resetBuilds()`. Reason: AC-2
+  needs a builder that counts, and `RingContract` and `ProjectionContract` each
+  carried an identical private `firstFew`. Moving it into the raiser's module
+  gives AC-2 its counter and removes a second duplicated helper. The output is
+  unchanged byte for byte.
+- *The module is `tests/helpers/Contract.luau`*, and where a helper already binds
+  `Contract` to `PhaseMachineContract` (`LobbyGateContract`,
+  `RoundEndingContract`), it is required as `Raise` and called as `Raise.fail`.
+  Reason: renaming the existing binding would touch more than 40 unrelated lines
+  per file.
+- *AC-3 has a test* (`AC-3: stack.md records the cap as 511 ...`). The oracle
+  table called it a documentation edit, but law 4 wants every criterion to have
+  a test that fails when it is broken. The test was written first and watched
+  to fail.
+
 ### The call shape
 
 Every converted site becomes:
@@ -342,6 +360,93 @@ message content, which `## Out of scope` forbids.
 
 **Owner: GATES.** Paste the run.
 
+*SCAFFOLD's observation, not the GATES run:* `450 passed, 0 failed` (443 + the
+seven tests in `## Test plan`) on the converted tree. The existing controls tests
+still match every needle, including SEAT-001 AC-5's. GATES re-reads the number
+against the tree it gates.
+
+**AC-5's control: a single converted site reverted to bare `assert` must make the
+runner's `failed` count non-zero.** Falsifiable: with one `Contract.fail` site in
+`RingContract.luau` put back to `assert(#violations == 0, …)` through
+`scripts/mutate.sh`, `lune run test` must report `1 failed` or more, and the
+failure must be AC-4's test naming that file and line. SCAFFOLD did not run this
+against the finished tree, because a mutation in the phase that also writes the
+code proves less than one in a phase that cannot. **Owner: GATES.**
+Suggested expression, one site, single occurrence:
+
+    bash scripts/mutate.sh tests/helpers/RingContract.luau \
+      '0,/if #violations > 0 then/s//assert(#violations == 0) if false then/' -- lune run test
+
+(A second shape worth one run: an `error(` put back into
+`ProjectionContract.luau`'s fixture precondition.)
+
+#### Run in GATES (lead-po, 2026-09-28), before `gates.sh`
+
+**Mutation 1: AC-5's control. One Ring site reverted to bare `assert`.**
+
+    $ bash scripts/mutate.sh tests/helpers/RingContract.luau \
+        '0,/if #violations > 0 then/s//assert(#violations == 0) if false then/' -- \
+        bash -c 'lune run test 2>&1 | grep -E "^  FAIL|RingContract.luau:[0-9]+: assert|^[0-9]+ passed"'
+      202 - 	if #violations > 0 then
+      202 + 	assert(#violations == 0) if false then
+      FAIL  tests/server/ring_controls_test.luau :: AC-1 control: a generator that allows fixed points fails AC-1 on 168 of 256 cases, and AC-2 and AC-5 with it
+      FAIL  tests/shared/contract_raise_test.luau :: AC-2 control: a failing contract check does build its message, and the counter sees it
+      FAIL  tests/shared/contract_raise_test.luau :: AC-4: no in-scope contract helper raises except through Contract.fail
+      tests/helpers/RingContract.luau:202: assert
+    447 passed, 3 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .../tests_helpers_RingContract.luau.20260928T192215Z.268.bak) ===
+
+`failed` went from 0 to 3, and AC-4 names the site **by file and line**
+(`RingContract.luau:202: assert`). AC-5's control holds.
+
+**Mutation 2: a direct `error(` back in Projection's fixture precondition.**
+The predicted catch was a single assertion, AC-4:
+
+    $ bash scripts/mutate.sh tests/helpers/ProjectionContract.luau '0,/\tContract\.fail($/s//\terror(/' -- ...
+      119 - 		Contract.fail(
+      119 + 		error(
+      FAIL  tests/shared/contract_raise_test.luau :: AC-4: no in-scope contract helper raises except through Contract.fail
+      tests/helpers/ProjectionContract.luau:119: error
+    449 passed, 1 failed
+    === mutate: command exited 0; restored (verified byte-for-byte ...20260928T192242Z.1830.bak) ===
+
+Exactly the predicted one assertion fails.
+
+**Mutation 3: a wrong value in the raiser, level 0 → 1.**
+
+    $ bash scripts/mutate.sh tests/helpers/Contract.luau 's/^\terror(message, 0)$/\terror(message, 1)/' -- ...
+      FAIL  tests/shared/contract_raise_test.luau :: AC-1: Contract.fail delivers a 2000-character message intact, every character in order
+            ...contract_raise_test:157: Contract.fail delivered 2064 characters of a 2000-character message; it begins C:\Users\ryanc\Projects\first-roblox\tests\helpers\Contract:
+    449 passed, 1 failed
+    === mutate: command exited 0; restored (verified byte-for-byte ...20260928T192409Z.6072.bak) ===
+
+**Mutation 4: level 0 → 2. SURVIVED, recorded rather than hidden.**
+
+    $ bash scripts/mutate.sh tests/helpers/Contract.luau 's/error(message, 0)/error(message, 2)/' -- ...
+    450 passed, 0 failed
+    === mutate: command exited 0; restored (verified byte-for-byte ...20260928T192312Z.4030.bak) ===
+
+Why it survives: AC-1's test calls `pcall(Contract.fail, m)` directly. Level 2
+then names the caller of `fail`, which is `pcall`, a C function, so no position
+prefix is added and `err == m`. In real use, level 2 would prefix the controls
+test's line and still deliver every character in order. So this mutant does
+**not** violate AC-1 as written ("every character present, in order"), and it
+changes no needle (`## Contract`: no test matches a prefix). What goes
+unpinned is the Contract's *choice* of level 0 over 2, a design preference
+with no criterion behind it. Not a defective test, so no return to RED.
+Mutation 3 shows the test does catch a raiser that adds a prefix at the call.
+
+**Mutation 5: AC-2's counter never increments.**
+
+    $ bash scripts/mutate.sh tests/helpers/Contract.luau 's/^\tbuilds += 1$/\t-- builds += 1/' -- ...
+      FAIL  tests/shared/contract_raise_test.luau :: AC-2 control: a failing contract check does build its message, and the counter sees it
+    449 passed, 1 failed
+    === mutate: command exited 0; restored (verified byte-for-byte ...20260928T192333Z.5039.bak) ===
+
+This is the "counter that never increments satisfies the zero-case for the
+wrong reason" failure AC-2 names. The zero half passes and the control
+catches it alone.
+
 ## Amendments
 
 <!-- Acceptance criteria are frozen once the story leaves PLANNED. If one turns
@@ -353,6 +458,36 @@ message content, which `## Out of scope` forbids.
      wrong, record the ORCHESTRATOR'S OWN reproduction of it - different
      inputs, not the subagent's code. That claim is also what an agent says
      when it wants to stop failing. -->
+
+### A-1: AC-4 and AC-5, re-planned before leaving PLANNED (2026-09-28)
+
+The edit was made while the story was still PLANNED, which does not need an
+entry. But it was committed on local `main` (`HARNESS-011: re-plan against
+SEAT-002/003 …`) and never pushed, so `origin/main`, which `check-boundaries.sh`
+compares against, still has the filed wording. This entry records the
+difference, so the PR does not depend on a direct push to `main`.
+
+- **AC-4.** *Was:* "Given the three in-scope helpers (`RingContract.luau`,
+  `LobbyGateContract.luau`, `RoundEndingContract.luau`), then no call to bare
+  `assert` with a constructed failure message remains …"; its control reported a
+  reintroduced bare `assert`; its scope note listed four excluded helpers.
+  *Now:* four helpers, with `ProjectionContract.luau` added; bare `assert`
+  **and** helper-private raisers (a local `check` wrapper or a direct `error(`)
+  are forbidden; the control also covers a reintroduced `error(`; the scope note
+  points at `## Out of scope`.
+- **AC-5.** *Was:* the rationale quoted `floor | unit | 197`. *Now:* 443. The
+  criterion itself, `0 failed`, is unchanged.
+- **Who approved:** the user, in this session, answering three questions:
+  convert RingContract's private `check` (PO-1), bring `ProjectionContract` into
+  scope (PO-2), refresh the baselines (PO-3).
+- **Why:** SEAT-002 and SEAT-003 merged after the story was filed. SEAT-003 gave
+  RingContract a private `check` that avoids the truncation but keeps the eager
+  build AC-2 forbids. SEAT-002, whose in-flight status was the only reason for
+  excluding ProjectionContract, is DONE. The suite grew from 197 to 443.
+- **Reproduction:** not a subagent's claim. The Lead PO measured it directly:
+  `lune run test` → `443 passed, 0 failed`; per-helper site counts by grep
+  (`## Contract`, "Scope of conversion"). AC-4's own red run named exactly those
+  lines.
 
 ## Model guidance
 
@@ -376,6 +511,11 @@ name, below the table.
 <!-- One line per dispatch, as it happened: phase, agent, the model that
      actually ran, and — if a phase was planned for one model and ran on
      another — what that changed. A choice with no verdict is folklore. -->
+
+- PLANNED (re-plan) — `lead-po`, run in the orchestrating session: **Opus 5.5**
+  (`claude-opus-5-5`). As planned.
+- SCAFFOLD — `lead-po`, run in the orchestrating session with no subagent
+  dispatch: **Opus 5.5** (`claude-opus-5-5`). As planned.
 
 **Which rows apply.** This story runs PLANNED → **SCAFFOLD** → GATES → REVIEW →
 DONE (`## Contract`, "Phase path"), so the operative rows are PLANNED, SCAFFOLD,
@@ -437,8 +577,32 @@ under the existing required `unit` gate.
 
 ## Test plan
 
-<!-- Filled during SCAFFOLD: which assertions, at which level, and which AC each
-     one covers. -->
+All in `tests/shared/contract_raise_test.luau`: seven tests, unit level, run by
+the required `unit` gate.
+
+| Test | AC | What makes it fail |
+|---|---|---|
+| `AC-1: Contract.fail delivers a 2000-character message intact, every character in order` | AC-1 | `pcall(Contract.fail, m)` returns anything but exactly `m`. The fixture is 334 numbered six-character blocks, so any run of 511 occurs once |
+| `AC-1 control: the same message through bare assert is not intact, cut at exactly 511` | AC-1 control | same `arrivesIntact` predicate, applied to `assert(false, m)`: must be false; the tail of `err` must be `m[1..511]` and `m[1..512]` must appear nowhere |
+| `AC-2: a passing contract check never builds its failure message` | AC-2 | `Contract.firstFew`'s counter is non-zero after a PASSING check: Ring SEAT-001 AC-1 and SEAT-003 AC-1 on `RingStubs.correct`, Projection SEAT-002 AC-1 and AC-2 on `ProjectionStubs.correct` |
+| `AC-2 control: a failing contract check does build its message, and the counter sees it` | AC-2 control | the counter reads 0 after a FAILING check (Ring AC-1 on `anyPermutation`, Projection AC-2 on `copyAndRemoveSigma`), or the check passes |
+| `AC-3: stack.md records the cap as 511, keeps the prefix sentence, and records the off-by-one` | AC-3 | any of four WHOLE lines of `docs/wiki/stack.md` is missing. Matched whole-line so "512 characters of message" cannot satisfy the "511" needle |
+| `AC-4: no in-scope contract helper raises except through Contract.fail` | AC-4 | a code-level `assert` or `error` (via `SourceScan.hitsIn`, comments and strings blanked) in any of the four helpers, reported `path:line: symbol`; also fails if `classify.sh --list test tests/helpers` stops returning one of them |
+| `AC-4 control: one reintroduced bare assert or direct error is reported by file and line` | AC-4 control | appending one `assert(...)` / `error(...)` to each helper's real text is not reported at exactly `path:<that line>`, or moves the count by anything but 1 |
+
+**AC-5** is the runner's own final line, `450 passed, 0 failed`, held up from below
+by `floor | unit | 443`. Its control (a single site reverted to bare `assert`
+must make it non-zero) is a deferred verification owned by GATES.
+
+**Where AC-2's counter reaches, and where it does not.** It sees `firstFew`, the
+builder the two accumulating helpers share. It does not see a message built by
+plain interpolation (all of `LobbyGateContract`'s and `RoundEndingContract`'s,
+and SEAT-001 AC-5's `table.concat`). For those, AC-2 follows from AC-4 plus a
+green suite: `Contract.fail` always raises, so any message passed to it is
+built only on a path that raises, and a passing check that reached it would
+fail. SEAT-001 AC-5 was in the first draft of `PASSING` and was taken out
+because it read **0 builds in the run where the other four read 1**, so the
+case could not fail.
 
 ## Regressions
 
@@ -473,6 +637,153 @@ under the existing required `unit` gate.
      block requires, pasted: AC-1 and its `assert` control, AC-2's counter,
      AC-4's enumeration, each observed to fail BEFORE the raiser existed. -->
 
+No production source changed. Every code file classifies as `test`:
+
+    $ bash scripts/classify.sh tests/helpers/Contract.luau tests/shared/contract_raise_test.luau \
+        tests/helpers/RingContract.luau tests/helpers/ProjectionContract.luau \
+        tests/helpers/LobbyGateContract.luau tests/helpers/RoundEndingContract.luau \
+        docs/wiki/stack.md .claude/tests/project-counters.test.sh
+    test	tests/helpers/Contract.luau
+    test	tests/shared/contract_raise_test.luau
+    test	tests/helpers/RingContract.luau
+    test	tests/helpers/ProjectionContract.luau
+    test	tests/helpers/LobbyGateContract.luau
+    test	tests/helpers/RoundEndingContract.luau
+    docs	docs/wiki/stack.md
+    harness	.claude/tests/project-counters.test.sh
+
+| File | New / changed | Covered by |
+|---|---|---|
+| `tests/helpers/Contract.luau` | new: `fail`, `firstFew` (+ build counter), `builds`, `resetBuilds` | AC-1 (`fail`), AC-2 and its control (`firstFew`, counter) |
+| `tests/shared/contract_raise_test.luau` | new: the seven tests above | itself; every one observed red below except the two controls, which are controls |
+| `tests/helpers/RingContract.luau` | 24 sites → `if … then Contract.fail(…) end`; private `check` and `firstFew` removed | AC-4 (guard), AC-2 (counter), and every existing ring test and control, unchanged, green |
+| `tests/helpers/ProjectionContract.luau` | 8 sites converted, fixture `error(_, 2)` → `Contract.fail`; private `check` and `firstFew` removed | same, projection tests and controls |
+| `tests/helpers/LobbyGateContract.luau` | 32 sites → `Raise.fail`; truncation comment corrected | AC-4, lobby gate tests and controls |
+| `tests/helpers/RoundEndingContract.luau` | 64 sites → `Raise.fail`; header comment corrected | AC-4, round-ending tests and controls |
+| `docs/wiki/stack.md` | 512 → 511, the derived column corrected, the off-by-one recorded, the remedy named | AC-3 |
+| `.claude/tests/project-counters.test.sh` | `BASE_FORMAT`/`BASE_LINT` 88 → 90 for the two new files, with a LAST MEASURED entry | the `harness` gate |
+
+129 sites in all (32 + 64 + 24 + 8 + 1), matching the count in `## Contract`.
+
+**How the conversion was done.** A throwaway Lune script (kept in the session
+scratchpad, not the repo) used `SourceScan.codeOnly`, which blanks comments
+and strings but keeps every byte position, to find each `assert(`/`check(` call
+and its matching paren. It rewrote each call as
+`if <negated condition> then Contract.fail(<message>) end`, with the message
+text copied byte for byte, and stylua reflowed the result. A negation became
+`~=`/`==` only for a single top-level `==`/`~=` with no `and`/`or`/`not`;
+anything else became `not (…)`. The script printed
+`LobbyGate 32, RoundEnding 64, Ring 24, Projection 8 converted`. Check that no
+message changed: every line carrying a string literal, before and after, was
+diffed; the only differences are conditions, comments and stylua line breaks
+inside `{…}` interpolations. The suite then ran green with every existing
+controls-test `names()` needle.
+
+**`Raise`, not `Contract`, in two files.** `LobbyGateContract` and
+`RoundEndingContract` already bind `Contract` to `PhaseMachineContract`, with
+more than 40 uses each. The shared raiser is bound as `Raise` there. The first
+conversion pass emitted `Contract.fail` in them, which would have called nil and
+raised a *different* message on every failing path. It was caught by reading
+the requires before running anything.
+
+### Red run 1 — AC-1 and its `assert` control, before `Contract.luau` existed
+
+    $ lune run test
+      pass  tests/shared/contract_raise_test.luau :: AC-1 control: the same message through bare assert is not intact, cut at exactly 511
+      FAIL  tests/shared/contract_raise_test.luau :: AC-1: Contract.fail delivers a 2000-character message intact, every character in order
+            ...contract_raise_test:22: tests/helpers/Contract.luau did not load: error requiring module "../helpers/Contract": could not resolve child component "Contract"
+    444 passed, 1 failed
+
+The control **ran and passed** in this run: bare `assert` cut the 2000-character
+message at exactly 511 characters, so the truncation is measured again here, not
+taken on report.
+
+### Red run 2 — AC-2, first at import, then for the reason it exists
+
+At import, with the counter tests written and `Contract.luau` absent:
+
+    FAIL  ... :: AC-2 control: a failing contract check does build its message, and the counter sees it
+          ... tests/helpers/Contract.luau did not load: ...
+    FAIL  ... :: AC-2: a passing contract check never builds its failure message
+          ... tests/helpers/Contract.luau did not load: ...
+    444 passed, 3 failed
+
+That red says nothing about eager building, so a second run was taken. It had
+`Contract.luau` written, and the two accumulating helpers' private `firstFew`
+pointed at `Contract.firstFew`, **before any site was converted**. The
+`assert`s and private `check`s still built their messages eagerly:
+
+    $ lune run test
+      pass  ... :: AC-1: Contract.fail delivers a 2000-character message intact, every character in order
+      pass  ... :: AC-2 control: a failing contract check does build its message, and the counter sees it
+      FAIL  ... :: AC-2: a passing contract check never builds its failure message
+            ...contract_raise_test:194: a passing check built its failure message:
+      RingContract, SEAT-001 AC-1, on the correct ring stub: 1 build(s)
+      RingContract, SEAT-003 AC-1, on the correct ring stub: 1 build(s)
+      ProjectionContract, SEAT-002 AC-1, on the correct projection stub: 1 build(s)
+      ProjectionContract, SEAT-002 AC-2, on the correct projection stub: 1 build(s)
+      FAIL  ... :: AC-4: no in-scope contract helper raises except through Contract.fail
+    447 passed, 2 failed
+
+In the same run the control passed, so the counter does increment. That is the
+non-zero half AC-2 requires.
+
+### Red run 3 — AC-4's enumeration, before any conversion
+
+    $ lune run test
+      pass  ... :: AC-4 control: one reintroduced bare assert or direct error is reported by file and line
+      FAIL  ... :: AC-4: no in-scope contract helper raises except through Contract.fail
+            AC-4: 109 raise(s) in the in-scope helpers do not go through Contract.fail:
+      tests/helpers/LobbyGateContract.luau:76: assert
+      tests/helpers/LobbyGateContract.luau:126: assert
+      ...                                              (32 LobbyGate, 64 RoundEnding)
+      tests/helpers/ProjectionContract.luau:118: error
+      tests/helpers/ProjectionContract.luau:248: error
+      tests/helpers/ProjectionContract.luau:580: assert
+      tests/helpers/RingContract.luau:168: error
+      tests/helpers/RingContract.luau:215: assert
+      tests/helpers/RingContract.luau:253: assert
+      tests/helpers/RingContract.luau:277: assert
+      tests/helpers/RingContract.luau:316: assert
+      tests/helpers/RingContract.luau:391: assert
+      tests/helpers/RingContract.luau:512: assert
+      tests/helpers/RingContract.luau:611: assert
+      tests/helpers/RingContract.luau:693: assert
+      tests/helpers/RingContract.luau:733: assert
+    445 passed, 4 failed
+
+109 rather than 129 because the guard counts **raise primitives**, not call
+sites: each private `check` wrapper is one `error` (Ring:168, Projection:248)
+standing for its 15 and 7 callers. Every line it names is a line the PLANNED
+inventory in `## Contract` named.
+
+### Red run 4 — AC-3, before the documentation edit
+
+    $ lune run test
+      FAIL  ... :: AC-3: stack.md records the cap as 511, keeps the prefix sentence, and records the off-by-one
+            ...contract_raise_test:321: docs/wiki/stack.md has no line reading:
+      ### An `assert` message is truncated at 511 characters, and the evidence goes with it
+      **511 characters of message, exactly** — a fixed buffer, not a soft limit — plus
+      *not* counted against the 511.
+      **This section said 512 until `HARNESS-011`, and 512 was an off-by-one.** The
+    449 passed, 1 failed
+
+### After
+
+    $ lune run test | tail -1
+    450 passed, 0 failed
+
+`bash scripts/gates.sh --fast`, in SCAFFOLD, before the harness literals were
+moved: format PASS (observed 90), lint PASS (observed 90), typecheck PASS
+(observed 17), unit PASS (observed 450, floor 443), build PASS, harness FAIL.
+The harness failure was the counters suite reading `expected count: 88 / actual
+count: 90` for format and lint, and the stray-file precondition. The literals
+were moved to 90. On re-run only the precondition remains —
+`the working tree carries no stray .luau files` — which is the uncommitted tree,
+as it was for SEAT-003, TEL-002 and TEL-003, and which clears on commit. stylua
+and selene are clean over every changed test file, so GATES inherits no
+test-file format or lint failure it could not legally fix.
+
 ## Notes
 
 ### PO decisions at PLANNED → SCAFFOLD (2026-09-28)
@@ -500,6 +811,23 @@ helpers (`Net`, `Phase`, `Rate`, `Rejection`, `Telemetry`) carry their own
 private `check`, and `TelemetryEmitContract` has 48 bare `assert`s. None was in
 the filed inventory. They are listed under `## Out of scope` and go into the
 follow-up.
+
+### Open at the end of SCAFFOLD — for GATES and REVIEW
+
+1. **The re-plan commit is on local `main` only** (`HARNESS-011: re-plan against
+   SEAT-002/003 …`), and this branch was cut from it. `check-boundaries.sh`
+   compares `## Acceptance criteria` against `origin/main`. Until that commit is
+   pushed, AC-4 and AC-5 differ from the base with no `## Amendments` entry, and
+   the PR will be refused. Before REVIEW, either push that commit to `main`
+   (it is a PLANNED edit, which the rules allow without an amendment) or record
+   the PO-1..PO-3 changes as an `## Amendments` entry. **The user's call.**
+2. **The follow-up story is not filed yet.** `## Out of scope` makes filing it
+   part of this story: every remaining helper onto the shared raiser, and the
+   wrong "512" in each private wrapper's comment. File it with `/plan-story`
+   before DONE.
+3. The `harness` gate's stray-file precondition clears on the commit at REVIEW,
+   as it did for SEAT-003. GATES should expect it on the uncommitted tree and
+   read the log, not wave it through: every other counters assertion is green.
 
 **Epic done-when:** the story has no epic (`epic:` is empty), so there is no
 done-when to check it against.

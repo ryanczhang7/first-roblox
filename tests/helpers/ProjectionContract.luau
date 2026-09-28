@@ -51,6 +51,7 @@
 	Every message names its criterion, because the controls assert on the text.
 ]]
 
+local Contract = require("./Contract")
 local Deep = require("./Deep")
 local Ring = require("../../src/server/seats/Ring")
 local RingContract = require("./RingContract")
@@ -115,10 +116,9 @@ function ProjectionContract.withdrawnAssignmentFor(
 	local dealt = ProjectionContract.assignmentFor(n, seed)
 	-- Named, so that the RED failure reads as the missing export it is.
 	if typeof(Ring.withdraw) ~= "function" then
-		error(
+		Contract.fail(
 			`Ring.withdraw is {typeof(Ring.withdraw)} - the withdrawn fixtures need SEAT-003's `
-				.. `Ring.withdraw(assignment, playerId)`,
-			2
+				.. `Ring.withdraw(assignment, playerId)`
 		)
 	end
 	return Ring.withdraw(dealt, dealt.players[leaverIndex])
@@ -234,29 +234,13 @@ function ProjectionContract.flatten(view: any): ({ Leaf }, { Leaf })
 end
 
 --[[
-	The final assertion of every check goes through this rather than `assert`.
-	MEASURED IN RED: under Lune, `assert(false, message)` truncates the message
-	to 512 characters after the location prefix, and `error(message)` does not
-	(571 versus 6060 characters for the same 6000-character string). The checks
-	here accumulate every violation and report the first few with their paths,
-	which is well past 512 characters, and a control whose needle lies beyond
-	the cut can never match. Level 2 attributes the failure to the test that
-	called the check, which is where a reader wants to start.
+	Every failure here goes through `Contract.fail`, and every message is built
+	only on the path that raises it (HARNESS-011). SEAT-002 measured that
+	`assert` cuts these messages and used a private `check` -> `error(message,
+	2)` instead, which escaped the cut but still built every message on every
+	passing run. See `tests/helpers/Contract.luau`.
 ]]
-local function check(condition: boolean, message: string)
-	if not condition then
-		error(message, 2)
-	end
-end
-
-local function firstFew(list: { string }, count: number): string
-	local shown: { string } = {}
-	for i = 1, math.min(count, #list) do
-		shown[i] = list[i]
-	end
-	local more = #list - #shown
-	return table.concat(shown, "\n") .. (if more > 0 then `\n  ... and {more} more` else "")
-end
+local firstFew = Contract.firstFew
 
 local function isInteger(value: any): boolean
 	return typeof(value) == "number" and value == math.floor(value :: number)
@@ -349,14 +333,15 @@ function ProjectionContract.viewIsExactlyTheAllowlist(projection: Projection)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-1: the view is not exactly the allowlist ({table.concat(
-			ProjectionContract.ALLOWLIST,
-			", "
-		)}) `
-			.. `for p in {#violations} of {#cases} (n, seed, p) cases:\n{firstFew(violations, 6)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-1: the view is not exactly the allowlist ({table.concat(
+				ProjectionContract.ALLOWLIST,
+				", "
+			)}) `
+				.. `for p in {#violations} of {#cases} (n, seed, p) cases:\n{firstFew(violations, 6)}`
+		)
+	end
 end
 
 --[[
@@ -422,11 +407,12 @@ function ProjectionContract.noForeignKeyClassAppears(projection: Projection)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-2: another player's key class appears in the flattened view in {#violations} of `
-			.. `{#cases} views:\n{firstFew(violations, 6)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-2: another player's key class appears in the flattened view in {#violations} of `
+				.. `{#cases} views:\n{firstFew(violations, 6)}`
+		)
+	end
 end
 
 --[[
@@ -577,15 +563,18 @@ function ProjectionContract.privateFieldsAreAllowlistedOrAbsent(projection: Proj
 			table.insert(changed, `  {label(case)}: {table.concat(problems, "; ")}`)
 		end
 	end
-	assert(#pinned > 0, "the AC-3 control ran over no views; a control over nothing proves nothing")
+	if not (#pinned > 0) then
+		Contract.fail("the AC-3 control ran over no views; a control over nothing proves nothing")
+	end
 
-	check(
-		#present == 0 and #changed == 0,
-		`AC-3: first half - a private field of the Assignment reaches the view in {#present} of `
-			.. `{#cases} views:\n{firstFew(present, 4)}\n`
-			.. `AC-3: second half - after a private field is added, the view changes or carries a `
-			.. `secret in {#changed} of {#pinned} views at n = 4:\n{firstFew(changed, 4)}`
-	)
+	if not (#present == 0 and #changed == 0) then
+		Contract.fail(
+			`AC-3: first half - a private field of the Assignment reaches the view in {#present} of `
+				.. `{#cases} views:\n{firstFew(present, 4)}\n`
+				.. `AC-3: second half - after a private field is added, the view changes or carries a `
+				.. `secret in {#changed} of {#pinned} views at n = 4:\n{firstFew(changed, 4)}`
+		)
+	end
 end
 
 --[[
@@ -669,11 +658,12 @@ function ProjectionContract.unknownPlayerIsRefusedByProjectionItself(projection:
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-5: a player not in the assignment is not refused by the projection itself, in `
-			.. `{#violations} case(s):\n{table.concat(violations, "\n")}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-5: a player not in the assignment is not refused by the projection itself, in `
+				.. `{#violations} case(s):\n{table.concat(violations, "\n")}`
+		)
+	end
 end
 
 --[[
@@ -803,17 +793,19 @@ function ProjectionContract.pairwiseViewsRevealNothingOfEachOther(projection: Pr
 		end
 	end
 
-	check(
-		discriminating >= 100,
-		`AC-6's ring-order check discriminated in only {discriminating} of {#cases} cases; `
-			.. `the seeds need changing, not the check`
-	)
-	check(
-		#violations == 0,
-		`AC-6: a view lets a reader compute another player's lens in {#violations} of {#cases} `
-			.. `views ({discriminating} cases where the seat order and the ring order differ):\n`
-			.. firstFew(violations, 6)
-	)
+	if not (discriminating >= 100) then
+		Contract.fail(
+			`AC-6's ring-order check discriminated in only {discriminating} of {#cases} cases; `
+				.. `the seeds need changing, not the check`
+		)
+	end
+	if #violations > 0 then
+		Contract.fail(
+			`AC-6: a view lets a reader compute another player's lens in {#violations} of {#cases} `
+				.. `views ({discriminating} cases where the seat order and the ring order differ):\n`
+				.. firstFew(violations, 6)
+		)
+	end
 end
 
 --[[
@@ -838,10 +830,14 @@ function ProjectionContract.naiveFieldPresence(projection: Projection)
 			table.insert(violations, `view of {p} has no keyClasses field`)
 		end
 	end
-	check(
-		#violations == 0,
-		`naive: the view carries a sigma key or no keyClasses key:\n{table.concat(violations, "\n")}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`naive: the view carries a sigma key or no keyClasses key:\n{table.concat(
+				violations,
+				"\n"
+			)}`
+		)
+	end
 end
 
 return ProjectionContract
