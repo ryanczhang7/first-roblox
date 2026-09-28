@@ -57,6 +57,11 @@ a future reader with `ROUND-004`'s derived column in hand does not "re-correct"
 
 ### Part B — the truncation is destroying evidence now
 
+*Measured at filing, before SEAT-002 and SEAT-003 landed, and not re-taken at
+PLANNED. SEAT-003 has since grown `ring_controls_test.luau` and routed its own
+new checks through a private `check`, so the figures below describe the
+SEAT-001 checks, which still raise through bare `assert`.*
+
 Every `names(message, fragment, what)` call site was instrumented via
 `scripts/mutate.sh` — 55 of them, across the three relevant controls tests
 (`tests/server/ring_controls_test.luau` 32, `tests/server/round_ending_controls_test.luau` 16,
@@ -78,8 +83,8 @@ number and mean different things.
 
 **There is no vacuous assertion, and this story must not claim one.** `names()`
 asserts a needle is **present**, so a needle pushed past the cap makes the test
-**fail loudly**, not pass. The suite is green at **197 passed, 0 failed**, which
-is itself proof that every needle currently matches.
+**fail loudly**, not pass. The suite is green at **443 passed, 0 failed**
+(197 at filing), which is itself proof that every needle currently matches.
 
 The shape that *would* pass vacuously is an assertion that a needle is **absent**
 — `rules.md`'s "a lockfile is permitted unchecked" case. A search found the only
@@ -135,29 +140,30 @@ covers check does not apply to a test-only change; `unit` still runs the suite.
   the cap, and carries a line recording that the previously documented 512 was an
   off-by-one derived from `ROUND-004`'s table.
 
-- **AC-4** — Given the three in-scope helpers (`RingContract.luau`,
-  `LobbyGateContract.luau`, `RoundEndingContract.luau`), then **no** call to bare
-  `assert` with a constructed failure message remains in any of them: every
-  failure is raised through the shared raiser.
+- **AC-4** — Given the four in-scope helpers (`RingContract.luau`,
+  `LobbyGateContract.luau`, `RoundEndingContract.luau`,
+  `ProjectionContract.luau`), then **no** call to bare `assert` and **no**
+  helper-private raiser (a local `check` wrapper, or a direct `error(` call)
+  remains in any of them: every failure is raised through the shared raiser.
   The file enumeration is obtained from `bash scripts/classify.sh`, never from a
   private regex — `rules.md` is explicit that a guard asks for that answer rather
   than reimplementing it, and names four drifting private copies as the cost.
   *Control:* a single site reintroduced to bare `assert` must be reported by
-  **name and line**, not merely counted. A count-only assertion passes while
-  pointing at nothing.
-  *Scope note, so this criterion is not read wider than it is:* the four
-  remaining helpers that use `assert` — `ClockContract` (11 sites),
-  `RngContract` (15), `PhaseMachineContract` (7), `TuningSpec` (5) — are
-  deliberately **not** in AC-4's set. See `## Out of scope`.
+  **name and line**, not merely counted; so must a single reintroduced direct
+  `error(` call. A count-only assertion passes while pointing at nothing.
+  *Scope note, so this criterion is not read wider than it is:* every other
+  helper that raises — see `## Out of scope` for the list — is deliberately
+  **not** in AC-4's set.
 
 - **AC-5** — Given the full suite, when it runs after this change, then it
   reports **`0 failed`**. That number is the whole of this criterion: one
   integer, read from the runner's own final line, with no arithmetic.
   *Why that is not vacuous:* `0 failed` is also what a suite that shrank to
   nothing reports. The count is held up from below by the already-configured
-  `floor | unit | 197` in `.claude/harness/project.conf` — 197 being the passing
-  count before this story. A floor is a minimum, so the tests this story adds
-  raise the total and require no edit to it.
+  `floor | unit | 443` in `.claude/harness/project.conf` — 443 being the passing
+  count before this story (re-measured at PLANNED, 2026-09-28, after SEAT-002
+  and SEAT-003 landed; it was 197 when the story was filed). A floor is a
+  minimum, so the tests this story adds raise the total and require no edit to it.
   *Control:* reverting any single converted call site to bare `assert` must make
   this number non-zero, via AC-4's guard. A criterion that stays at `0 failed`
   through that revert is checking nothing.
@@ -217,23 +223,38 @@ flooded stdout from passing paths and timed the suite out **twice, at 420s and
 | `tests/helpers/RingContract.luau` | required — it is the file that truncates |
 | `tests/helpers/LobbyGateContract.luau` | required, for the one-answer reason, though it does not truncate today (max 404) |
 | `tests/helpers/RoundEndingContract.luau` | required, same (max 291) |
-| `tests/helpers/ProjectionContract.luau` | **out of scope** — see below |
+| `tests/helpers/ProjectionContract.luau` | required — PO-2: brought in at PLANNED once `SEAT-002` was DONE |
 
-**The three in-scope helpers are not the same shape, and the conversion is not
-one find-and-replace.** Only `RingContract` accumulates — it is the only helper
-in the tree that mentions `violations` at all (41 mentions, 10 `assert` sites).
-`LobbyGateContract` (32 sites) and `RoundEndingContract` (64 sites) build an
-interpolated message **at each site**, largely fixture preconditions
-(`` `fixture: ...` ``) and per-criterion messages. Both shapes are eagerly
-evaluated and both belong behind the raiser; the accumulating shape is the one
-that reaches 511.
+Site counts, re-measured at PLANNED on 2026-09-28 (`main` @ `bdc5d61`):
 
-`tests/helpers/ProjectionContract.luau` belongs to `SEAT-002`, which is active in
-RED on a different branch and already solves this **privately** with
-`error(msg, 2)`. That private solution is exactly how one answer becomes six, and
-it is the third reason for a shared raiser. It converges **after** `SEAT-002`
-lands, as a follow-up; this story creates **no** cross-branch dependency and
-`depends_on` stays empty.
+| Helper | bare `assert` | private `check(` calls | direct `error(` | total |
+|---|---|---|---|---|
+| `RingContract` | 9 (lines 215, 253, 277, 316, 391, 512, 611, 693, 733) | 15 (656, 839, 943, 974, 1045, 1120, 1182, 1231, 1295, 1416, 1522, 1586, 1656, 1742, 1813) | 1 — the body of its private `check` (168) | 24 sites + the wrapper |
+| `LobbyGateContract` | 32 | 0 | 0 | 32 |
+| `RoundEndingContract` | 64 | 0 | 0 | 64 |
+| `ProjectionContract` | 1 (580, fixed message) | 7 (352, 425, 582, 672, 806, 811, 841) | 2 — a fixture precondition (118) and its private `check` body (248) | 9 sites + the wrapper |
+| **all four** | | | | **129 sites, 2 private wrappers removed** |
+
+**The four in-scope helpers are not the same shape, and the conversion is not
+one find-and-replace.** `RingContract` and `ProjectionContract` accumulate
+`violations` and report `firstFew(...)`; `LobbyGateContract` and
+`RoundEndingContract` build an interpolated message **at each site**, largely
+fixture preconditions (`` `fixture: ...` ``) and per-criterion messages. All
+shapes are eagerly evaluated and all belong behind the raiser; the accumulating
+shape is the one that reaches 511.
+
+**The private `check` wrappers are eagerly evaluated too.** `SEAT-002` and
+`SEAT-003` each added a local `check(condition, message)` → `error(message, 2)`
+to escape the truncation. It does escape it, but `message` is still an argument,
+so it is built on every passing call exactly as `assert`'s is. Converting them is
+PO-1, and it is what AC-2 requires of these files. Their doc comments also quote
+the wrong cap ("512 characters after the location prefix"); those comments go
+with the wrappers.
+
+**Level 0 changes no needle.** Searched at PLANNED: no test under
+`tests/server`, `tests/shared` or `tests/net` matches a position prefix
+(`Contract.luau:`, `_test.luau:<n>`), so dropping it from the level-2 sites
+does not alter any assertion.
 
 ### Phase path: PLANNED → SCAFFOLD → GATES → REVIEW → DONE
 
@@ -258,10 +279,9 @@ against the tree as it stands:
    `Contract.fail` does not exist, and the control cuts at 511.
 2. Write AC-2's counter control. Run it. It fails — the message is built on
    passing checks today.
-3. Write AC-4's enumeration. Run it. It fails — all three in-scope helpers use
-   bare `assert` today: `RingContract` at lines 191, 229, 253, 292, 346, 443,
-   542, 587, 624 and 664 (10 sites), `LobbyGateContract` (32 sites),
-   `RoundEndingContract` (64 sites). 106 in all.
+3. Write AC-4's enumeration. Run it. It fails — all four in-scope helpers raise
+   through bare `assert` or a private wrapper today: 129 sites, per the table
+   above.
 4. *Then* write the raiser and convert.
 
 Paste each failure into `## Scaffold inventory`. A SCAFFOLD phase that lands the
@@ -271,19 +291,22 @@ remove, arriving through the door it opened.
 
 ### Baselines this story may read out rather than re-derive
 
-Measured on this machine under Lune 0.10.5, on the branch this story was planned
-from. All of these may be quoted; none needs re-deriving.
+Measured on this machine under Lune 0.10.5. Rows marked *(filing)* were taken on
+the tree the story was filed from, before SEAT-002 and SEAT-003 landed; the rest
+were re-measured at PLANNED on 2026-09-28 (`main` @ `bdc5d61`). All of these may
+be quoted; none needs re-deriving.
 
 | Measurement | Value |
 |---|---|
-| `lune run test` | **197 passed, 0 failed** |
+| `lune run test` | **443 passed, 0 failed** (197 at filing) |
 | `assert` message cap | **511** characters, message only |
 | position prefix, from a 1 / 40 / 90-character directory name | 173 / 212 / 259 — cap unchanged at 511 |
-| `RingContract` truncated checks | 7 (SEAT-001's AC-1..AC-5, AC-7, sub-stream pin), body exactly 511 |
-| `LobbyGateContract` / `RoundEndingContract` max body | 404 / 291 |
-| SEAT-001 AC-5 needle end offset | 479 of 511 — 32 characters of slack |
+| `RingContract` truncated checks *(filing)* | 7 (SEAT-001's AC-1..AC-5, AC-7, sub-stream pin), body exactly 511 |
+| `LobbyGateContract` / `RoundEndingContract` max body *(filing)* | 404 / 291 |
+| SEAT-001 AC-5 needle end offset *(filing)* | 479 of 511 — 32 characters of slack |
 | `error(msg, 0 / 1 / 2)` on 900 characters | 900 / 1075 / 1075, no truncation at any level |
-| `unit` gate floor in `project.conf` | 197 — a minimum, so adding tests needs no edit |
+| `unit` gate floor in `project.conf` | 443 — a minimum, so adding tests needs no edit |
+| in-scope raise sites | 129 across four helpers, plus 2 private wrappers (table under "Scope of conversion") |
 
 ### Oracle partition of the criteria (see `story-authoring`)
 
@@ -293,7 +316,7 @@ from. All of these may be quoted; none needs re-deriving.
 | AC-2 | **Mechanical** | Pin exactly: a counter, zero on a passing run, non-zero on a failing one. Both halves. |
 | AC-3 | **Settled** | A documentation edit against a measured number. No metric to invent. |
 | AC-4 | **Mechanical** | Pin exactly, and enumerate through `scripts/classify.sh`. A private regex for "a contract helper" is the four-drifting-copies failure `rules.md` names. |
-| AC-5 | **Settled** | 197 / 0 is the baseline above. Read it out. |
+| AC-5 | **Settled** | 443 / 0 is the baseline above. Read it out. |
 
 ### Test-only dependencies
 
@@ -311,10 +334,10 @@ caller list is therefore empty — checked, not assumed.
 <!-- Owner: the phase that runs it. Result pasted in by that phase. -->
 
 **AC-5's "after" half cannot run until the conversion exists.** The "before"
-figure is recorded above (197 / 0). The falsifiable condition: after the
-conversion, `lune run test` reports **197 plus this story's new tests, passed, 0
-failed** — in particular, AC-5 of `RingContract` still matches its needle at the
-new offset. If any existing needle stops matching, the conversion has changed
+figure is recorded above (443 / 0). The falsifiable condition: after the
+conversion, `lune run test` reports **443 plus this story's new tests, passed, 0
+failed** — in particular, SEAT-001's AC-5 check in `RingContract` still matches
+its needle at the new offset. If any existing needle stops matching, the conversion has changed
 message content, which `## Out of scope` forbids.
 
 **Owner: GATES.** Paste the run.
@@ -374,22 +397,31 @@ checks changes.** This story changes the **raising mechanism** and the
 counts as a violation, or *what* any needle asserts. A conversion that also
 rewords a message is out of scope, and AC-5 is the guard against it.
 
-**`tests/helpers/ProjectionContract.luau` is not touched**, and nothing on
-`SEAT-002`'s branch is touched. It converges as a follow-up once `SEAT-002`
-lands. Filing that follow-up is in scope; doing it here is not, and
-`depends_on: []` is deliberate — a cross-branch dependency here would block a
-story that has no need to be blocked.
+**The other raising helpers are not converted.** Counted at PLANNED on
+2026-09-28:
 
-**The other four `assert`-using helpers are not converted:**
-`tests/helpers/ClockContract.luau` (11 sites), `tests/helpers/RngContract.luau`
-(15), `tests/helpers/PhaseMachineContract.luau` (7),
-`tests/helpers/TuningSpec.luau` (5) — 38 sites. None was measured to truncate,
-and adding them takes the conversion from 106 sites to 144, which is the "two
-features joined by and" sizing failure. The one-answer argument applies to them
-too, so file the follow-up rather than dropping it: **one story converting the
-remaining helpers, after this one and after `ProjectionContract` converges.**
-`tests/helpers/Fakes.luau` (2 sites) is a stub, not a contract, and is out of
-that follow-up as well.
+| Helper | Raises through | Sites |
+|---|---|---|
+| `ClockContract` | bare `assert` | 11 |
+| `RngContract` | bare `assert` | 15 |
+| `PhaseMachineContract` | bare `assert` | 11 |
+| `TuningSpec` | bare `assert` | 5 |
+| `TelemetryEmitContract` | bare `assert` | 48 |
+| `NetContract` | private `check` → `error(msg, 2)` | 48 |
+| `PhaseContract` | private `check` | 22, + 1 `assert` |
+| `RateContract` | private `check` | 15 |
+| `RejectionContract` | private `check` | 25 |
+| `TelemetryContract` | private `check` | 11 |
+
+The five private `check` wrappers were not in the inventory when the story was
+filed. They make the "one answer becomes six" argument literal: with Ring's and
+Projection's, there are seven copies, and every one's comment quotes the wrong
+cap (512). None was measured to truncate, and adding them would more than double
+the conversion. Converting them is the follow-up, so file it rather than drop it:
+**one story converting every remaining helper to the shared raiser, and correcting
+or deleting the "512" in each wrapper's comment, after this one.**
+`tests/helpers/Fakes.luau` (2 sites) is a stub, not a contract, and is not part
+of that follow-up either.
 
 **The `firstFew(..., 8)` violation cap is not re-tuned.** Whether 8 is the right
 number of violations to show is a separate question with a separate answer, and
@@ -442,6 +474,39 @@ under the existing required `unit` gate.
      AC-4's enumeration, each observed to fail BEFORE the raiser existed. -->
 
 ## Notes
+
+### PO decisions at PLANNED → SCAFFOLD (2026-09-28)
+
+The story was filed before `SEAT-002` and `SEAT-003` merged. Re-read against
+`main` @ `bdc5d61` before leaving PLANNED; the user settled each of these:
+
+- **PO-1 — RingContract's private `check` is converted too.** `SEAT-003` added
+  `check(cond, msg)` → `error(msg, 2)` at 15 sites alongside the 9 remaining
+  `assert` sites. It does not truncate, but it builds every message eagerly,
+  which AC-2 forbids. AC-4 is therefore worded to reject private raisers as
+  well as bare `assert`. The user chose this over narrowing AC-4 to `assert` only.
+- **PO-2 — `ProjectionContract` is brought into scope.** It was excluded only
+  because `SEAT-002` was in flight on another branch; `SEAT-002` is DONE. It
+  adds 9 sites and removes the follow-up that existed only for it. AC-4's set is
+  now four helpers.
+- **PO-3 — the baselines were refreshed in PLANNED.** 197 → 443 in AC-5's
+  rationale, the deferred verification and the baselines table; the site counts
+  and line numbers were re-measured. Filing-time measurements that were not
+  re-taken are marked *(filing)*. AC-5's criterion itself, `0 failed`, is
+  unchanged.
+
+Found during the re-read and handled without widening scope: five **more**
+helpers (`Net`, `Phase`, `Rate`, `Rejection`, `Telemetry`) carry their own
+private `check`, and `TelemetryEmitContract` has 48 bare `assert`s. None was in
+the filed inventory. They are listed under `## Out of scope` and go into the
+follow-up.
+
+**Epic done-when:** the story has no epic (`epic:` is empty), so there is no
+done-when to check it against.
+
+**Gate:** `unit` (`lune run test`) is required and runs every contract helper;
+`lint` (required) also reads `tests`. No optional gate needs promoting.
+`required_gates` stays empty.
 
 ### The phase path, and the option not taken
 
