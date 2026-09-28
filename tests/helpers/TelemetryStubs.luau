@@ -41,6 +41,9 @@ local TelemetryStubs = {}
 	  * `bounceInD2_7`        - `bounce_before_resolution` filed under D2_7
 	                            (AC-2, the one event the story says to get right)
 	  * `unfrozenBuckets`     - BUCKETS is a plain writable table (AC-2, frozen)
+	  * `missingOperational`  - `remote_rejected` absent from BUCKETS (AC-2's
+	                            operational set, TEL-003; what the real module
+	                            fails on in that story's RED)
 	  * `acceptNestedTable`   - a table value in `fields` is carried as-is (AC-6)
 	  * `refuseWithoutKey`    - a non-scalar is refused, but the message names no
 	                            key (AC-6, "naming the offending key")
@@ -52,6 +55,7 @@ export type EventDefects = {
 	extraTenthEvent: boolean?,
 	bounceInD2_7: boolean?,
 	unfrozenBuckets: boolean?,
+	missingOperational: boolean?,
 	acceptNestedTable: boolean?,
 	refuseWithoutKey: boolean?,
 	atIsZero: boolean?,
@@ -70,9 +74,15 @@ function TelemetryStubs.makeEvent(defects: EventDefects): any
 		day_n_return = "D8_28",
 		co_play_with_known_player = "D8_28",
 		purchase = "D8_28",
+		-- Operational, not B6: TEL-003's rejection event. See
+		-- `TelemetryContract.OPERATIONAL`.
+		remote_rejected = "D1",
 	}
 	if defects.missingPurchase then
 		buckets.purchase = nil
+	end
+	if defects.missingOperational then
+		buckets.remote_rejected = nil
 	end
 	if defects.extraTenthEvent then
 		buckets.level_up = "D1"
@@ -211,6 +221,7 @@ TelemetryStubs.missingPurchase = TelemetryStubs.makeEvent({ missingPurchase = tr
 TelemetryStubs.extraTenthEvent = TelemetryStubs.makeEvent({ extraTenthEvent = true })
 TelemetryStubs.bounceInD2_7 = TelemetryStubs.makeEvent({ bounceInD2_7 = true })
 TelemetryStubs.unfrozenBuckets = TelemetryStubs.makeEvent({ unfrozenBuckets = true })
+TelemetryStubs.missingOperational = TelemetryStubs.makeEvent({ missingOperational = true })
 TelemetryStubs.acceptNestedTable = TelemetryStubs.makeEvent({ acceptNestedTable = true })
 TelemetryStubs.refuseWithoutKey = TelemetryStubs.makeEvent({ refuseWithoutKey = true })
 TelemetryStubs.atIsZero = TelemetryStubs.makeEvent({ atIsZero = true })

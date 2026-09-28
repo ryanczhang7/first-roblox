@@ -51,7 +51,7 @@ return {
 
 	--[[ AC-2 ]]
 
-	["AC-2: BUCKETS names all nine B6 events with their settled buckets, nothing else, and is frozen"] = function()
+	["AC-2: BUCKETS names all nine B6 events with their settled buckets plus the operational set (remote_rejected = D1, TEL-003), nothing else, and is frozen"] = function()
 		Contract.bucketsNameExactlyTheNineB6Events(Event())
 	end,
 

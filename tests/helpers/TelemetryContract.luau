@@ -84,6 +84,25 @@ local NAMES: { string } = {
 TelemetryContract.BUCKETS = BUCKETS
 TelemetryContract.NAMES = NAMES
 
+--[[
+	OPERATIONAL events: not B6's, not retention metrics, and added to
+	`Event.BUCKETS` deliberately, one story at a time - which TEL-001 AC-3
+	makes a deliberate act rather than an accident. TEL-003 adds
+	`remote_rejected` (D1: exploit attempts concentrate in first sessions).
+	Listed explicitly so that the mapping is still exactly enumerable: the
+	nine B6 events, plus these, and nothing else.
+]]
+local OPERATIONAL: { [string]: string } = {
+	remote_rejected = "D1",
+}
+
+local OPERATIONAL_NAMES: { string } = { "remote_rejected" }
+
+TelemetryContract.OPERATIONAL = OPERATIONAL
+TelemetryContract.OPERATIONAL_NAMES = OPERATIONAL_NAMES
+
+local EXPECTED_ENTRIES = #NAMES + #OPERATIONAL_NAMES
+
 local VALID_BUCKETS: { [string]: boolean } = { D1 = true, D2_7 = true, D8_28 = true }
 
 --[[
@@ -261,14 +280,18 @@ end
 
 --[[
 	AC-2. `Event.BUCKETS` names all nine B6 events with exactly the settled
-	buckets, contains NOTHING else, and is frozen.
+	buckets, plus exactly the OPERATIONAL set above (TEL-003: `remote_rejected`
+	= D1), contains NOTHING else, and is frozen.
 
-	Both directions: every one of the nine present with the right bucket, and
-	exactly nine entries, so an invented tenth event fails as loudly as a
-	missing one. Frozen is observed rather than asked about: a write to an
-	existing key and a write to a new key must both raise and both leave the
-	table unchanged, which is what frozen means to a caller whether it was
-	`table.freeze` or a metatable.
+	Both directions: every one of the nine (and every operational entry)
+	present with the right bucket, and exactly that many entries, so an
+	invented extra event fails as loudly as a missing one. TEL-001 AC-2 says
+	the mapping names ALL NINE; it does not say it names nothing else, so the
+	operational set is admitted here without amending the criterion, and a
+	stray key outside both sets still fails. Frozen is observed rather than
+	asked about: a write to an existing key and a write to a new key must both
+	raise and both leave the table unchanged, which is what frozen means to a
+	caller whether it was `table.freeze` or a metatable.
 ]]
 function TelemetryContract.bucketsNameExactlyTheNineB6Events(Event: EventModule)
 	local buckets = Event.BUCKETS
@@ -291,12 +314,29 @@ function TelemetryContract.bucketsNameExactlyTheNineB6Events(Event: EventModule)
 		end
 	end
 
+	local operational: { string } = {}
+	for _, name in OPERATIONAL_NAMES do
+		local want = OPERATIONAL[name]
+		local got = buckets[name]
+		if got ~= want then
+			table.insert(
+				operational,
+				`  {name}: expected {want}, got {if got == nil
+					then "nil (missing)"
+					else Deep.show(got)} (operational, TEL-003)`
+			)
+		end
+	end
+
 	local extras: { string } = {}
 	local count = 0
 	for key, value in pairs(buckets :: { [any]: any }) do
 		count += 1
-		if BUCKETS[key] == nil then
-			table.insert(extras, `  {tostring(key)} = {Deep.show(value)} is not a B6 event`)
+		if BUCKETS[key] == nil and OPERATIONAL[key] == nil then
+			table.insert(
+				extras,
+				`  {tostring(key)} = {Deep.show(value)} is neither a B6 event nor an operational one`
+			)
 		elseif not VALID_BUCKETS[value] then
 			table.insert(
 				extras,
@@ -340,11 +380,18 @@ function TelemetryContract.bucketsNameExactlyTheNineB6Events(Event: EventModule)
 	end
 
 	check(
-		#violations == 0 and #extras == 0 and count == 9 and #frozen == 0,
-		`AC-2: BUCKETS does not name exactly the nine B6 events with their settled buckets. `
+		#violations == 0
+			and #operational == 0
+			and #extras == 0
+			and count == EXPECTED_ENTRIES
+			and #frozen == 0,
+		`AC-2: BUCKETS does not name exactly the nine B6 events with their settled buckets plus `
+			.. `the operational set. `
 			.. `{#violations} of 9 wrong or missing:\n{table.concat(violations, "\n")}\n`
-			.. `{#extras} extra or malformed entries ({count} entries in all, 9 expected):\n`
-			.. `{table.concat(extras, "\n")}\n`
+			.. `{#operational} of {#OPERATIONAL_NAMES} operational wrong or missing:\n`
+			.. `{table.concat(operational, "\n")}\n`
+			.. `{#extras} extra or malformed entries ({count} entries in all, {EXPECTED_ENTRIES} `
+			.. `expected):\n{table.concat(extras, "\n")}\n`
 			.. `{#frozen} way(s) it is not frozen:\n{table.concat(frozen, "\n")}`
 	)
 end

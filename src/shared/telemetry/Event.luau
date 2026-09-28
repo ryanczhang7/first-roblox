@@ -80,6 +80,10 @@ local BUCKETS: { [string]: Bucket } = table.freeze({
 	day_n_return = "D8_28" :: Bucket,
 	co_play_with_known_player = "D8_28" :: Bucket,
 	purchase = "D8_28" :: Bucket,
+	-- OPERATIONAL, NOT B6 (TEL-003): a rejected remote call, the exploit
+	-- signal. Not a retention metric; D1 because exploit attempts concentrate
+	-- in first sessions.
+	remote_rejected = "D1" :: Bucket,
 })
 
 Event.BUCKETS = BUCKETS

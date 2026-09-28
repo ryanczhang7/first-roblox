@@ -37,7 +37,8 @@
 	of them. `phase` is read once per guarded call that reaches check 4 and
 	`clock.now()` once per call that reaches check 5 (see below); neither is
 	read by a call an earlier check has already rejected, and neither is read
-	at construction.
+	at construction. The one exception is TEL-003's: with `telemetry` in the
+	context, a REJECTED call reads the clock to stamp its event.
 
 	`PlayerId` and `Phase` are re-declared rather than imported, per
 	`architecture.md` section 1: `src/net/` may not require `src/server/`, and
@@ -46,7 +47,9 @@
 ]]
 
 local Clock = require("@shared/Clock")
+local Event = require("@shared/telemetry/Event")
 local RateLimiter = require("./RateLimiter")
+local RejectionReporter = require("./RejectionReporter")
 local Remotes = require("./Remotes")
 
 local Wrapper = {}
@@ -62,6 +65,14 @@ export type GuardContext = {
 	isSeated: (playerId: PlayerId) -> boolean,
 	phase: () -> Remotes.Phase, -- consumed by NET-002
 	clock: Clock.Clock, -- consumed by NET-003
+	-- TEL-003. The driver's reporter, shared across every remote it guards
+	-- (the driver flushes it), and a batch emitter - expected to be
+	-- `Sink.dispatch`, which is what contains a raising sink. nil: nothing is
+	-- recorded or emitted.
+	telemetry: {
+		reporter: RejectionReporter.RejectionReporter,
+		emit: ({ Event.TelemetryEvent }) -> (),
+	}?,
 }
 
 type Reason = "identity" | "shape" | "range" | "phase" | "rate"
@@ -113,7 +124,7 @@ function Wrapper.guard(
 	local rateLimit = definition.rateLimit
 	local limiter = if rateLimit ~= nil then RateLimiter.new(rateLimit.minIntervalSeconds) else nil
 
-	return function(playerId: PlayerId, rawArgs: any): Rejection?
+	local function check(playerId: PlayerId, rawArgs: any): Rejection?
 		-- 1. identity. First, and short-circuiting: an unseated caller never
 		-- reaches the schema, so a malformed payload from one is `identity`.
 		if context.isSeated(playerId) ~= true then
@@ -195,6 +206,29 @@ function Wrapper.guard(
 
 		handler(playerId, rawArgs)
 		return nil
+	end
+
+	-- TEL-003. Every rejection, and only a rejection, is recorded, and the
+	-- event the reporter answers with (a coalesced `rate` rejection answers
+	-- nil) is emitted before the Rejection is returned. The arguments and the
+	-- detail are never passed on: both can quote hostile input (AC-4). The
+	-- clock is read for the stamp only when `telemetry` is present, so a
+	-- context without it reads the clock exactly as NET-003 pins.
+	return function(playerId: PlayerId, rawArgs: any): Rejection?
+		local rejection = check(playerId, rawArgs)
+		local telemetry = context.telemetry
+		if rejection ~= nil and telemetry ~= nil then
+			local event = telemetry.reporter:record(
+				playerId,
+				definition.name,
+				rejection.reason,
+				context.clock.now()
+			)
+			if event ~= nil then
+				telemetry.emit({ event })
+			end
+		end
+		return rejection
 	end
 end
 
