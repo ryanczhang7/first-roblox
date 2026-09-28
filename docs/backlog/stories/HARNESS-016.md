@@ -4,8 +4,8 @@ title: Every contract helper raises through the shared raiser
 slug: every-contract-helper-raises-through-the
 epic: 
 type: chore
-status: in-progress
-phase: GATES
+status: in-review
+phase: REVIEW
 branch: story/HARNESS-016-every-contract-helper-raises-through-the
 depends_on: [HARNESS-011]   # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -321,6 +321,12 @@ Lock coverage: SUPPRESSED by `Contract.fail` (source), `Contract.firstFew` (sour
 - SCAFFOLD — `lead-po`, run in the orchestrating session with no subagent
   dispatch: **Opus 5.5** (`claude-opus-5-5`). As planned. The RED row (`fable`)
   is not reached on this phase path, and is no verdict either way.
+- GATES — `lead-po`, in the orchestrating session: **Opus 5.5** (`claude-opus-5-5`).
+  The plan names `feature-developer`. It was not dispatched, because GATES had
+  nothing to fix: every code file is `test` and is frozen here, and the first full
+  `gates.sh` over the committed tree passed. The deferred verifications are the
+  orchestrator's by the procedure.
+- REVIEW — `lead-po`, in the orchestrating session: **Opus 5.5**. As planned.
 
 ## Test plan
 
@@ -590,3 +596,23 @@ terminated. Two lessons. Bound a mutation's command with `timeout`, as DV-2's
 re-run did. And a mutation expression containing a backslash should be avoided
 in this shell: `"\n"` arrived at sed as `"\n"`. This was not investigated
 further, because it is outside this story.
+
+## Gate results
+
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-28T23:30:48Z
+    commit: f7b8a43
+    tree:   11895e6bc68b24a67025a048e3969601c4f6365c
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 90)
+    PASS         lint (0s, observed 90, floor 1)
+    PASS         typecheck (3s, observed 17)
+    PASS         unit (51s, observed 452, floor 443)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 57746)
+    PASS         harness (17s, observed 40)
+    UNCONFIGURED mutation
+
