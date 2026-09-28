@@ -16,6 +16,14 @@
 	is OBSERVED to fire - which matters in RED, because the pcall above means
 	not one assertion in THIS file executes until GREEN writes the module.
 
+	SEAT-003 MIGRATED THIS SUITE to the widened `Assignment`: `keyClass` became
+	`keyClasses`, a list per player, and `lens` is stored; the view's `keyClass`
+	became `keyClasses`, p's OWN list, built by an append loop. Every check now
+	also runs over rings the real `Ring.withdraw` has closed, where the
+	supplier holds two classes. Until GREEN lands that function and shape, every
+	test below fails at the fixture - which is the right failure: it names the
+	module that lacks `withdraw`.
+
 	AC-4 IS THE EXCEPTION: it is a guard over the SOURCE TEXT of the module,
 	not over its behaviour, and it lives here rather than in the contract
 	helper because it names one file. It pins the SHAPE of the code - no copy
@@ -89,13 +97,15 @@ return {
 
 	--[[ AC-1 ]]
 
-	["AC-1: the view for p is exactly p's own keyClass, own lensClass, supplierId, dependentId, playerId and a fresh seatOrder - and nothing else"] = function()
+	["AC-1: the view for p is exactly p's own keyClasses (a fresh list), own lensClass, supplierId, dependentId, playerId and a fresh seatOrder - and nothing else, on dealt and withdrawn rings"] = function()
 		Contract.viewIsExactlyTheAllowlist(Projection())
 	end,
 
-	--[[ AC-2 ]]
+	--[[ AC-2. SEAT-003: "exactly two integers" became "exactly one per class p
+	     holds, plus the lens" - and the supplier's second class after a
+	     withdrawal is foreign to everyone whose lens does not read it. ]]
 
-	["AC-2: flattened to scalars at every depth, the view carries exactly two integers and neither is another player's key class"] = function()
+	["AC-2: flattened to scalars at every depth, the view carries exactly one integer per class p holds plus the lens, and none is a class of anyone else's - including a supplier's inherited class"] = function()
 		Contract.noForeignKeyClassAppears(Projection())
 	end,
 
@@ -185,7 +195,7 @@ return {
 	     file's "the copy passes this" is a statement about a check the real
 	     projection is also held to. ]]
 
-	["naive: the view has no sigma key and has a keyClass key"] = function()
+	["naive: the view has no sigma key and has a keyClasses key"] = function()
 		Contract.naiveFieldPresence(Projection())
 	end,
 }

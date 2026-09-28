@@ -31,6 +31,17 @@
 	assertion in it has executed. These controls need only SEAT-001's `Ring`,
 	which is merged, so the numbers below are measurements taken in RED rather
 	than claims left for GREEN.
+
+	SEAT-003 MIGRATED THIS FILE, AND ITS NUMBERS ARE A CLAIM UNTIL GREEN. The
+	fixtures now come from `Ring.assign` in the widened shape AND from
+	`Ring.withdraw`, neither of which the merged `Ring` provides during
+	SEAT-003's RED - so every control here fails at the fixture in that phase.
+	The counts below (168 views, 147 discriminating, 38 at n = 4) were measured
+	in RED by driving these same checks and stubs through a CANDIDATE ring - the
+	real `assign` converted to the new shape plus a reference withdraw, outside
+	the test runner - and are recorded in SEAT-003's `## Handoff` as such.
+	GREEN confirms them against the shipped module; a divergence is a finding,
+	not a number to edit.
 ]]
 
 local Contract = require("../helpers/ProjectionContract")
@@ -94,22 +105,24 @@ return {
 		`table.clone(assignment)` then `view.sigma = nil`. Mutation 1 of the
 		story's `## Notes`.
 
-		BOTH HALVES (PO-6). It PASSES the naive test - no sigma key, a keyClass
-		key - which is what makes it the projection that would otherwise ship.
-		It FAILS AC-2 in every one of the 144 views, because `keyClass` is the
-		table of everyone's classes and a removal-based projection keeps it.
+		BOTH HALVES (PO-6). It PASSES the naive test - no sigma key, a
+		keyClasses key - which is what makes it the projection that would
+		otherwise ship. It FAILS AC-2 in every one of the 168 views, because
+		`keyClasses` is the map of everyone's lists and `lens` the map of
+		everyone's lenses, and a removal-based projection keeps both.
 
-		THE MEASURED NUMBERS. At n = 3, seed 2001, kim's view holds 3 integer
-		leaves against an allowlist of exactly 2, and the one foreign class
-		(zed's) is found by name at `view.keyClass.zed`. At n = 4, seed 2001,
-		the same view holds 4 integers and both foreign classes. It fails AC-1,
-		AC-3, AC-5 and AC-6 as well, because the bare copy has none of the
-		named fields; the story's mutation 1 - the REAL module's literal
-		construction replaced by a clone-and-delete - keeps the named fields
-		and is predicted to fail AC-2 and AC-4 only. Same idea, two
-		implementations, both red on AC-2, which is the point.
+		THE MEASURED NUMBERS (SEAT-003 shape). At n = 3, seed 2001, kim's view
+		holds 6 integer leaves - three classes and three lenses - against an
+		allowlist of exactly 2, and zed's class is found by name twice: at
+		`view.keyClasses.zed[1]` and as amy's lens at `view.lens.amy`. At n = 4,
+		seed 2001, the same view holds 8 integers. It fails AC-1, AC-3, AC-5 and
+		AC-6 as well, because the bare copy has none of the named fields; the
+		story's mutation 1 - the REAL module's literal construction replaced by
+		a clone-and-delete - keeps the named fields and is predicted to fail
+		AC-2 and AC-4 only. Same idea, two implementations, both red on AC-2,
+		which is the point.
 	]]
-	["AC-2 control: copy-and-remove-sigma passes the naive sigma-key test and fails AC-2 on all 144 views - 3 integers at n = 3 and 4 at n = 4, where 2 are allowed"] = function()
+	["AC-2 control: copy-and-remove-sigma passes the naive sigma-key test and fails AC-2 on all 168 views - 6 integers at n = 3 and 8 at n = 4, where 2 are allowed"] = function()
 		local projection = Stubs.copyAndRemoveSigma
 
 		accepts(
@@ -125,13 +138,15 @@ return {
 			"a projection that copies the assignment and removes sigma must fail AC-2"
 		)
 		names(message, "AC-2", "the AC-2 control fires")
-		names(message, "in 144 of 144 views", "the AC-2 failure counts every view")
+		names(message, "in 168 of 168 views", "the AC-2 failure counts every view")
 		-- The MEASURED leak at n = 3, by name: kim's dependent is amy, so
-		-- keyClass[amy] = 3 is kim's legitimate lensClass and zed's is foreign.
+		-- keyClasses[amy] = {3} is kim's legitimate lensClass and zed's is
+		-- foreign - found once as zed's own entry and once as amy's lens.
 		names(
 			message,
-			"n = 3, seed 2001, view of kim: keyClass[zed] = 2 at view.keyClass.zed; "
-				.. "3 integer-valued scalar(s) in the view; the allowlist has exactly two",
+			"n = 3, seed 2001, view of kim: a class of zed's, 2, at view.lens.amy; "
+				.. "a class of zed's, 2, at view.keyClasses.zed[1]; 6 integer-valued scalar(s) "
+				.. "in the view; kim holds 1 class(es), so the allowlist has exactly 2",
 			"the AC-2 failure names the foreign class, where it was found, and the integer count"
 		)
 
@@ -147,16 +162,18 @@ return {
 		end
 		table.sort(integers)
 		assert(
-			#integers == 4,
-			`at n = 4 the copy carries {#integers} integer leaves, not 4: {table.concat(
+			#integers == 8,
+			`at n = 4 the copy carries {#integers} integer leaves, not 8: {table.concat(
 				integers,
 				", "
 			)}`
 		)
 		assert(
 			table.concat(integers, ", ")
-				== "view.keyClass.amy = 3, view.keyClass.bob = 4, view.keyClass.kim = 1, view.keyClass.zed = 2",
-			`the copy's integer leaves at n = 4 are not everyone's key classes: {table.concat(
+				== "view.keyClasses.amy[1] = 3, view.keyClasses.bob[1] = 4, view.keyClasses.kim[1] = 1, "
+					.. "view.keyClasses.zed[1] = 2, view.lens.amy = 1, view.lens.bob = 3, "
+					.. "view.lens.kim = 2, view.lens.zed = 4",
+			`the copy's integer leaves at n = 4 are not everyone's classes and lenses: {table.concat(
 				integers,
 				", "
 			)}`
@@ -178,7 +195,7 @@ return {
 		names(message, "AC-3", "the AC-3 control fires")
 		names(
 			message,
-			"first half - a private field of the Assignment reaches the view in 144 of 144 views",
+			"first half - a private field of the Assignment reaches the view in 168 of 168 views",
 			"the AC-3 failure counts every view in the first half"
 		)
 		names(
@@ -188,14 +205,19 @@ return {
 		)
 		names(
 			message,
-			"second half - after a private field is added, the view changes or carries a secret "
-				.. "in 32 of 32 views at n = 4",
-			"the AC-3 failure counts every re-checked view in the second half"
+			"private field lens is present in the view",
+			"the AC-3 failure names the lens map, private by name (SEAT-003)"
 		)
 		names(
 			message,
-			"keyClass is in the allowlist as p's OWN value, but the view carries a table for it",
-			"the AC-3 failure says keyClass came through as everyone's table"
+			"second half - after a private field is added, the view changes or carries a secret "
+				.. "in 38 of 38 views at n = 4",
+			"the AC-3 failure counts every re-checked view in the second half - 32 dealt, 6 withdrawn"
+		)
+		names(
+			message,
+			"keyClasses is in the allowlist as p's OWN list, but the view carries the map keyed by player",
+			"the AC-3 failure says keyClasses came through as everyone's map"
 		)
 		names(
 			message,
@@ -232,7 +254,7 @@ return {
 			"a lens read from the supplier must fail AC-1 on the lensClass VALUE"
 		)
 		names(message, "AC-1", "the AC-1 check fires on a backwards lens")
-		names(message, "in 144 of 144", "AC-1 fires in every view - the lens is wrong for everyone")
+		names(message, "in 168 of 168", "AC-1 fires in every view - the lens is wrong for everyone")
 		names(message, "value.lensClass: expected", "AC-1 names the field whose value is wrong")
 
 		names(
@@ -241,7 +263,7 @@ return {
 				projection,
 				"the supplier's class is foreign"
 			),
-			"in 144 of 144 views",
+			"in 168 of 168 views",
 			"AC-2 fires on a backwards lens in every view"
 		)
 		names(
@@ -324,7 +346,7 @@ return {
 			"seatOrder IS the assignment's own players table (aliased, not built by a loop - PO-2)",
 			"the AC-1 failure says the table was aliased"
 		)
-		names(message, "in 144 of 144", "every view aliases")
+		names(message, "in 168 of 168", "every view aliases")
 
 		names(
 			refuses(
@@ -355,12 +377,13 @@ return {
 			"is the RING order, which is σ written out as a list",
 			"AC-6 names the leak"
 		)
-		-- THE MEASURED COUNT: how many of the 144 (n, seed, p) cases have a seat
+		-- THE MEASURED COUNT: how many of the 168 (n, seed, p) cases have a seat
 		-- order that is not a rotation of the ring, so that this check can see
-		-- the difference. The rest are the seeds where the two coincide.
+		-- the difference. The rest are the seeds where the two coincide. 123 of
+		-- 144 before SEAT-003 added the 24 withdrawn views, all discriminating.
 		names(
 			message,
-			"in 123 of 144 views (123 cases where",
+			"in 147 of 168 views (147 cases where",
 			"AC-6 fires in every discriminating case"
 		)
 
@@ -387,7 +410,7 @@ return {
 		names(message, "AC-2", "the AC-2 check fires on one integer")
 		names(
 			message,
-			"3 integer-valued scalar(s) in the view; the allowlist has exactly two",
+			"3 integer-valued scalar(s) in the view; kim holds 1 class(es), so the allowlist has exactly 2",
 			"AC-2 counts the third integer"
 		)
 		names(message, "at view.supplierClass", "AC-2 names where the foreign class was found")
@@ -420,7 +443,33 @@ return {
 		names(message, "AC-1", "the AC-1 check fires on swapped neighbours")
 		names(message, "value.supplierId: expected", "AC-1 names supplierId")
 		names(message, "value.dependentId: expected", "AC-1 names dependentId")
-		names(message, "in 144 of 144", "every view has them swapped")
+		names(message, "in 168 of 168", "every view has them swapped")
+	end,
+
+	--[[
+		SEAT-003's control: the class list handed out by reference. Once a
+		player can hold two classes, `keyClasses = assignment.keyClasses[p]`
+		is the shortest way to write the field and it gives every client a
+		table the server appends to on the next withdrawal. Only AC-1's
+		aliasing pin sees it - the values are right - and it sees it in every
+		view.
+	]]
+	["SEAT-003 control: handing out the assignment's own class list as keyClasses passes every leak check and fails AC-1 alone, by aliasing, in every view"] = function()
+		local projection = Stubs.aliasKeyClasses
+		passesTheChecks(projection, "the aliased-keyClasses projection", { ["AC-1"] = true })
+
+		local message = refuses(
+			Contract.viewIsExactlyTheAllowlist,
+			projection,
+			"a keyClasses that IS assignment.keyClasses[p] must fail AC-1"
+		)
+		names(message, "AC-1", "the AC-1 check fires on the aliased list")
+		names(message, "in 168 of 168", "every view aliases")
+		names(
+			message,
+			"keyClasses IS the assignment's own list for kim (aliased, not built by an append loop - SEAT-003)",
+			"the AC-1 failure names the aliased list and the loop that should have built it"
+		)
 	end,
 
 	--[[

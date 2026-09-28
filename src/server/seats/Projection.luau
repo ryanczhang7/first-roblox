@@ -20,9 +20,12 @@
 	WHAT `p` IS TOLD, and why each field is safe (`roles.md` §3):
 
 	  playerId     who this view is for.
-	  keyClass     `k(p)`, p's own key class. Public: `roles.md` §3 puts actuator
-	               key classes in the column "shared with anyone in the room".
-	  lensClass    `λ(p) = k(σ(p))`, the class p's lens reads. Safe because p
+	  keyClasses   p's own key classes - one when dealt, two for a supplier who
+	               inherited a leaver's (SEAT-003). Public: `roles.md` §3 puts
+	               actuator key classes in the column "shared with anyone in the
+	               room". p's OWN list, never anyone else's, never the list itself.
+	  lensClass    `λ(p)`, the class p's lens reads, as `Ring` stores it (dealt as
+	               `k(σ(p))`, never recomputed). Safe because p
 	               sees those values anyway by pointing their light at the panels
 	               (`mechanics.md` §2). It says nothing about what ANYONE ELSE
 	               can see, which is the ignorance the game is made of
@@ -62,8 +65,8 @@ local Projection = {}
 ]]
 export type PublicSeatView = {
 	playerId: Ring.PlayerId,
-	keyClass: Ring.KeyClass, -- k(p): this player's own class
-	lensClass: Ring.KeyClass, -- λ(p) = k(σ(p)): the class this player's lens reads
+	keyClasses: { Ring.KeyClass }, -- this player's own classes, a fresh list
+	lensClass: Ring.KeyClass, -- λ(p): the class this player's lens reads
 	supplierId: Ring.PlayerId, -- σ⁻¹(p): who tells me
 	dependentId: Ring.PlayerId, -- σ(p): who I tell
 	seatOrder: { Ring.PlayerId }, -- public: who is in the round, in SEAT order
@@ -72,7 +75,7 @@ export type PublicSeatView = {
 --[[
 	Is `playerId` seated in this assignment?
 
-	A scan over `players` rather than a lookup in `keyClass`, for the same reason
+	A scan over `players` rather than a lookup in `keyClasses`, for the same reason
 	`Ring.supplierOf` scans it: `players` is the seated list, and a stray key in
 	one of the maps must not be able to become a player. Written as a loop rather
 	than `table.find` so that a `nil` id - which is one of the strangers AC-5
@@ -115,6 +118,10 @@ end
 	preference: selene's `manual_table_clone` fires on the indexed form and its
 	suggested fix is `table.clone(players)` - the one construct AC-4 exists to
 	forbid (SEAT-002 PO-7). Following the linter's advice here writes the leak.
+
+	`keyClasses` IS BUILT THE SAME WAY, for the same reasons (SEAT-003). Handing
+	out `assignment.keyClasses[playerId]` would give a client-bound view a
+	handle on the dealt ring's own list.
 ]]
 function Projection.forPlayer(assignment: Ring.Assignment, playerId: Ring.PlayerId): PublicSeatView
 	if not isSeated(assignment, playerId) then
@@ -126,9 +133,14 @@ function Projection.forPlayer(assignment: Ring.Assignment, playerId: Ring.Player
 		table.insert(seatOrder, seated)
 	end
 
+	local keyClasses: { Ring.KeyClass } = {}
+	for _, class in assignment.keyClasses[playerId] do
+		table.insert(keyClasses, class)
+	end
+
 	return {
 		playerId = playerId,
-		keyClass = assignment.keyClass[playerId],
+		keyClasses = keyClasses,
 		lensClass = Ring.lensOf(assignment, playerId),
 		supplierId = Ring.supplierOf(assignment, playerId),
 		dependentId = Ring.dependentOf(assignment, playerId),

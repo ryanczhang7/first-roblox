@@ -59,28 +59,27 @@ return {
 		)
 	end,
 
-	["Contract: assign returns an Assignment carrying players, sigma and keyClass, and nothing the Contract does not name"] = function()
+	["Contract: assign returns an Assignment carrying players, sigma, keyClasses and lens, and nothing the Contract does not name"] = function()
 		local players = Contract.seated(4)
 		local assignment = Ring().assign(players, Contract.rngFor(1))
 
 		assert(typeof(assignment) == "table", `assign returned {typeof(assignment)}`)
+		for _, field in Contract.ASSIGNMENT_FIELDS do
+			assert(
+				typeof(assignment[field]) == "table",
+				`assignment.{field} is {typeof(assignment[field])}: {Deep.show(assignment[field])}`
+			)
+		end
+		-- SEAT-003: the singular map is GONE, not kept beside the list.
 		assert(
-			typeof(assignment.players) == "table",
-			`assignment.players is {typeof(assignment.players)}: {Deep.show(assignment.players)}`
-		)
-		assert(
-			typeof(assignment.sigma) == "table",
-			`assignment.sigma is {typeof(assignment.sigma)}: {Deep.show(assignment.sigma)}`
-		)
-		assert(
-			typeof(assignment.keyClass) == "table",
-			`assignment.keyClass is {typeof(assignment.keyClass)}: `
-				.. Deep.show(assignment.keyClass)
+			assignment.keyClass == nil,
+			`assignment.keyClass is still present: {Deep.show(assignment.keyClass)} - SEAT-003 `
+				.. `replaced it with keyClasses (a list per player) and lens`
 		)
 
 		local extra: { string } = {}
 		for key in pairs(assignment) do
-			if key ~= "players" and key ~= "sigma" and key ~= "keyClass" then
+			if not table.find(Contract.ASSIGNMENT_FIELDS, key) then
 				table.insert(extra, tostring(key))
 			end
 		end
@@ -88,6 +87,20 @@ return {
 			#extra == 0,
 			`assignment carries fields the Contract does not name: {table.concat(extra, ", ")}. `
 				.. `Lens CONTENTS are M3 and out of scope; SEAT-002 replicates this shape as is`
+		)
+	end,
+
+	["Contract: Ring exports withdraw and rejoin as plain field functions (SEAT-003)"] = function()
+		local ring = Ring()
+		local missing: { string } = {}
+		for _, name in { "withdraw", "rejoin" } do
+			if typeof(ring[name]) ~= "function" then
+				table.insert(missing, `Ring.{name} is {typeof(ring[name])}`)
+			end
+		end
+		assert(
+			#missing == 0,
+			`SEAT-003's two exports are not both functions: {table.concat(missing, ", ")}`
 		)
 	end,
 
@@ -144,5 +157,66 @@ return {
 
 	["AC-7: the input list is not mutated and the result keeps the input's seat order, for every n in 3..6"] = function()
 		Contract.inputIsNotMutatedAndSeatOrderIsKept(Ring())
+	end,
+
+	--[[ ==================================================================
+	     SEAT-003. Withdraw and rejoin. The checks are in RingContract's second
+	     half and each is observed to fire in ring_controls_test.luau against a
+	     one-defect stub - which matters here twice over: in RED the real
+	     module has neither function, so every test below fails before its
+	     assertion runs, and the first three checks are the ones whose wrong
+	     answer is structurally invisible.
+	================================================================== ]]
+
+	["SEAT-003 AC-1: after q leaves a 4-ring, q's key class is held by the supplier σ⁻¹(q) and by nobody else - never the dependent"] = function()
+		Contract.withdrawTransfersTheKeyClassToTheSupplier(Ring())
+	end,
+
+	["SEAT-003 AC-2: the withdrawn ring is a single (n − 1)-cycle with no fixed point and the remaining players keep their relative order, in players and in σ"] = function()
+		Contract.withdrawnRingIsOneCycleInTheOriginalOrder(Ring())
+	end,
+
+	["SEAT-003 AC-3: the supplier holds two key classes and is the only player who can act on a class their own lens covers (deliberately degraded, roles.md §6)"] = function()
+		Contract.supplierHoldsTwoAndIsTheOnlyPlayerWhoCanActOnTheirOwnLens(Ring())
+	end,
+
+	["SEAT-003 AC-4: the leaver's lens is lost - no remaining player acquires it, every other lens is untouched, and lensOf reads the stored lens"] = function()
+		Contract.leaversLensIsLost(Ring())
+	end,
+
+	["SEAT-003 AC-5: a rejoin at t + disconnect_grace_seconds − 0.1 restores the pre-withdrawal ring exactly"] = function()
+		Contract.rejoinInsideTheGraceWindowRestoresTheSeat(Ring())
+	end,
+
+	["SEAT-003 AC-6: a rejoin at exactly t + disconnect_grace_seconds returns nil, the ring stays at n − 1 and the rejoiner is not seated"] = function()
+		Contract.rejoinAtOrAfterTheGraceBoundaryIsRefused(Ring())
+	end,
+
+	["SEAT-003 AC-7: two withdrawals from a 5-ring leave a single 3-cycle, every class held once, each transfer to the supplier in the ring as it stood at the time"] = function()
+		Contract.twoWithdrawalsEachTransferToTheSupplierAtTheTime(Ring())
+	end,
+
+	["SEAT-003 AC-8: a withdrawal from a 3-ring does not raise, yields a well-formed 2-ring, and carries exactly the four Assignment fields - the round's fate is not decided here"] = function()
+		Contract.withdrawalFromThreeYieldsAWellFormedTwoRingAndDecidesNothing(Ring())
+	end,
+
+	["SEAT-003 naive: every key class is held by somebody after a withdrawal - the test the dependent-transfer control passes"] = function()
+		Contract.naiveEveryClassIsHeldBySomebody(Ring())
+	end,
+
+	["SEAT-003 Contract: withdraw returns a fresh table at every level and never mutates its argument (PO-3)"] = function()
+		Contract.withdrawDoesNotMutateOrAliasItsArgument(Ring())
+	end,
+
+	["SEAT-003 Contract: withdrawing an unseated player raises, naming the player and blaming the caller; a seated one does not"] = function()
+		Contract.withdrawOfAnUnseatedPlayerRaises(Ring())
+	end,
+
+	["SEAT-003 Contract: rejoin never mutates its arguments and returns a deep copy of the snapshot (PO-4)"] = function()
+		Contract.rejoinDoesNotMutateOrAliasItsArguments(Ring())
+	end,
+
+	["SEAT-003 Contract: the supplier's list is their own classes first, then all of the leaver's in order, through two withdrawals"] = function()
+		Contract.supplierListIsOwnClassesThenTheLeaversInOrder(Ring())
 	end,
 }
