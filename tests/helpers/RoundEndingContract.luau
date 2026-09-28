@@ -36,13 +36,17 @@
 	what to do if the design ever stops supplying it.
 
 	Every message names its criterion, because the controls assert on the text.
-	Messages are kept under about 480 characters: Luau truncates an `assert`
-	message at roughly 500, position prefix included, and a truncated message
-	takes the evidence with it (measured on this suite in ROUND-004's RED).
+	Messages were kept under about 480 characters because `assert` cut them at
+	511 (message only; `docs/wiki/stack.md`). Every failure now goes through
+	`Raise.fail`, which does not truncate (HARNESS-011); the messages themselves
+	are unchanged.
 ]]
 
 local Contract = require("./PhaseMachineContract")
 local Deep = require("./Deep")
+-- The shared raiser, `tests/helpers/Contract.luau` (HARNESS-011). Bound as
+-- `Raise` because `Contract` here is already the phase machine's contract.
+local Raise = require("./Contract")
 
 local RoundEndingContract = {}
 
@@ -114,11 +118,12 @@ end
 	what sees it. A state written down by hand would test my idea of the machine.
 ]]
 function RoundEndingContract.roundOf(machine: any, config: any, count: number): any
-	assert(
-		count >= config.playersMin and count <= config.playersMax,
-		`fixture: a round of {count} cannot be started - playersMin is {config.playersMin} and `
-			.. `playersMax is {config.playersMax}`
-	)
+	if not (count >= config.playersMin and count <= config.playersMax) then
+		Raise.fail(
+			`fixture: a round of {count} cannot be started - playersMin is {config.playersMin} and `
+				.. `playersMax is {config.playersMax}`
+		)
+	end
 
 	local state = machine.initial(
 		config,
@@ -131,19 +136,21 @@ function RoundEndingContract.roundOf(machine: any, config: any, count: number): 
 	end
 
 	local assignment = machine.step(state, RoundEndingContract.tick(), config.lobbySeconds * 1.5)
-	assert(
-		assignment.phase == "Assignment",
-		`fixture: a lobby of {count} ticked at {config.lobbySeconds * 1.5} is in `
-			.. `{tostring(assignment.phase)}, not Assignment (ROUND-003 AC-1, ROUND-004 AC-2)`
-	)
+	if assignment.phase ~= "Assignment" then
+		Raise.fail(
+			`fixture: a lobby of {count} ticked at {config.lobbySeconds * 1.5} is in `
+				.. `{tostring(assignment.phase)}, not Assignment (ROUND-003 AC-1, ROUND-004 AC-2)`
+		)
+	end
 
 	local enteredAt = config.lobbySeconds * 2
 	local round = machine.step(assignment, RoundEndingContract.seatsAssigned(), enteredAt)
-	assert(
-		round.phase == "Round" and #round.players == count,
-		`fixture: SeatsAssigned at {enteredAt} produced phase {tostring(round.phase)} with `
-			.. `{Deep.show(round.players)} seated, wanted a Round of {count}`
-	)
+	if not (round.phase == "Round" and #round.players == count) then
+		Raise.fail(
+			`fixture: SeatsAssigned at {enteredAt} produced phase {tostring(round.phase)} with `
+				.. `{Deep.show(round.players)} seated, wanted a Round of {count}`
+		)
+	end
 	return round
 end
 
@@ -163,11 +170,12 @@ end
 	the round.
 ]]
 function RoundEndingContract.belowQuorumRound(machine: any, config: any): any
-	assert(
-		config.minPlayersToContinue >= 1,
-		`fixture: minPlayersToContinue is {config.minPlayersToContinue}; no seated count can be `
-			.. `below it, and AC-5 has nothing to stand on. That is an Amendments question`
-	)
+	if not (config.minPlayersToContinue >= 1) then
+		Raise.fail(
+			`fixture: minPlayersToContinue is {config.minPlayersToContinue}; no seated count can be `
+				.. `below it, and AC-5 has nothing to stand on. That is an Amendments question`
+		)
+	end
 
 	local round = RoundEndingContract.roundOf(machine, config, config.playersMin)
 	local state = Deep.copy(round)
@@ -177,14 +185,19 @@ function RoundEndingContract.belowQuorumRound(machine: any, config: any): any
 	end
 	state.players = short
 
-	assert(
-		state.phase == "Round"
+	if
+		not (
+			state.phase == "Round"
 			and #state.players < config.minPlayersToContinue
-			and state.outcome == nil,
-		`fixture: the below-quorum Round is {Deep.show(state.phase)} with `
-			.. `{Deep.show(state.players)} seated against minPlayersToContinue `
-			.. `{config.minPlayersToContinue}`
-	)
+			and state.outcome == nil
+		)
+	then
+		Raise.fail(
+			`fixture: the below-quorum Round is {Deep.show(state.phase)} with `
+				.. `{Deep.show(state.players)} seated against minPlayersToContinue `
+				.. `{config.minPlayersToContinue}`
+		)
+	end
 	return state
 end
 
@@ -201,22 +214,24 @@ function RoundEndingContract.endByClock(
 	config: any,
 	criterion: string
 ): (any, { any })
-	assert(
-		config.playersMin >= config.minPlayersToContinue,
-		`fixture: a round of playersMin ({config.playersMin}) is already below `
-			.. `minPlayersToContinue ({config.minPlayersToContinue}), so the clock is not the `
-			.. `only terminal condition in play and this ending is not the clock's`
-	)
+	if not (config.playersMin >= config.minPlayersToContinue) then
+		Raise.fail(
+			`fixture: a round of playersMin ({config.playersMin}) is already below `
+				.. `minPlayersToContinue ({config.minPlayersToContinue}), so the clock is not the `
+				.. `only terminal condition in play and this ending is not the clock's`
+		)
+	end
 
 	local round = RoundEndingContract.roundOf(machine, config, config.playersMin)
 	local due = round.phaseEnteredAt + config.roundSeconds
 	local after, effects = machine.step(round, RoundEndingContract.tick(), due)
-	assert(
-		after.phase == "Resolution",
-		`{criterion}: a Tick at now = {due} - exactly roundSeconds ({config.roundSeconds}) after `
-			.. `the Round was entered at {round.phaseEnteredAt} - left the machine in `
-			.. `{tostring(after.phase)}. round_seconds elapsed ends the round`
-	)
+	if after.phase ~= "Resolution" then
+		Raise.fail(
+			`{criterion}: a Tick at now = {due} - exactly roundSeconds ({config.roundSeconds}) after `
+				.. `the Round was entered at {round.phaseEnteredAt} - left the machine in `
+				.. `{tostring(after.phase)}. round_seconds elapsed ends the round`
+		)
+	end
 	return after, effects
 end
 
@@ -227,12 +242,13 @@ function RoundEndingContract.endByQuorum(
 ): (any, { any })
 	local round = RoundEndingContract.roundOf(machine, config, config.playersMin)
 	local leaves = config.playersMin - config.minPlayersToContinue + 1
-	assert(
-		leaves < config.roundSeconds,
-		`fixture: the {leaves} departure(s) span {leaves} second(s) against a roundSeconds of `
-			.. `{config.roundSeconds}; the clock must not be due, or this ending could be the `
-			.. `clock's`
-	)
+	if not (leaves < config.roundSeconds) then
+		Raise.fail(
+			`fixture: the {leaves} departure(s) span {leaves} second(s) against a roundSeconds of `
+				.. `{config.roundSeconds}; the clock must not be due, or this ending could be the `
+				.. `clock's`
+		)
+	end
 
 	local state = round
 	local effects: { any } = {}
@@ -241,12 +257,13 @@ function RoundEndingContract.endByQuorum(
 		state, effects = machine.step(state, RoundEndingContract.left(`p{index + 1}`), at)
 	end
 
-	assert(
-		state.phase == "Resolution",
-		`{criterion}: {leaves} player(s) left a round of {config.playersMin}, taking the seated `
-			.. `count below minPlayersToContinue ({config.minPlayersToContinue}), and the machine `
-			.. `is in {tostring(state.phase)} with {Deep.show(state.players)} seated`
-	)
+	if state.phase ~= "Resolution" then
+		Raise.fail(
+			`{criterion}: {leaves} player(s) left a round of {config.playersMin}, taking the seated `
+				.. `count below minPlayersToContinue ({config.minPlayersToContinue}), and the machine `
+				.. `is in {tostring(state.phase)} with {Deep.show(state.players)} seated`
+		)
+	end
 	return state, effects
 end
 
@@ -259,11 +276,12 @@ function RoundEndingContract.endByEvent(
 	local at = round.phaseEnteredAt + 1
 	local event = RoundEndingContract.resolved(RoundEndingContract.eventOutcome())
 	local after, effects = machine.step(round, event, at)
-	assert(
-		after.phase == "Resolution",
-		`{criterion}: a RoundResolved at now = {at} left the machine in {tostring(after.phase)} `
-			.. `(ROUND-003 AC-3)`
-	)
+	if after.phase ~= "Resolution" then
+		Raise.fail(
+			`{criterion}: a RoundResolved at now = {at} left the machine in {tostring(after.phase)} `
+				.. `(ROUND-003 AC-3)`
+		)
+	end
 	return after, effects
 end
 
@@ -288,50 +306,57 @@ function RoundEndingContract.roundEndsOnTheClock(machine: any, config: any)
 
 	local justShort = enteredAt + config.roundSeconds - 0.1
 	local running, runningEffects = machine.step(round, RoundEndingContract.tick(), justShort)
-	assert(
-		running.phase == "Round",
-		`AC-1: at now = {justShort}, a tenth of a second short of roundSeconds `
-			.. `({config.roundSeconds}) since the Round was entered at {enteredAt}, the phase is `
-			.. `{tostring(running.phase)}. The round ends when the clock elapses and NOT BEFORE`
-	)
-	assert(
-		running.outcome == nil,
-		`AC-1: an outcome ({Deep.show(running.outcome)}) was recorded at now = {justShort}, `
-			.. `before roundSeconds ({config.roundSeconds}) elapsed`
-	)
-	assert(
-		#runningEffects == 0,
-		`AC-1: a round still running emitted {Deep.show(Deep.kinds(runningEffects))} at `
-			.. `now = {justShort}`
-	)
+	if running.phase ~= "Round" then
+		Raise.fail(
+			`AC-1: at now = {justShort}, a tenth of a second short of roundSeconds `
+				.. `({config.roundSeconds}) since the Round was entered at {enteredAt}, the phase is `
+				.. `{tostring(running.phase)}. The round ends when the clock elapses and NOT BEFORE`
+		)
+	end
+	if running.outcome ~= nil then
+		Raise.fail(
+			`AC-1: an outcome ({Deep.show(running.outcome)}) was recorded at now = {justShort}, `
+				.. `before roundSeconds ({config.roundSeconds}) elapsed`
+		)
+	end
+	if #runningEffects > 0 then
+		Raise.fail(
+			`AC-1: a round still running emitted {Deep.show(Deep.kinds(runningEffects))} at `
+				.. `now = {justShort}`
+		)
+	end
 
 	local due = enteredAt + config.roundSeconds
 	local ended = machine.step(round, RoundEndingContract.tick(), due)
-	assert(
-		ended.phase == "Resolution",
-		`AC-1: at now = {due} - exactly roundSeconds ({config.roundSeconds}) after the Round was `
-			.. `entered at {enteredAt} - the phase is {tostring(ended.phase)}. The comparison is `
-			.. `inclusive at the boundary (architecture.md section 3)`
-	)
-	assert(
-		Deep.equal(ended.outcome, expected),
-		`AC-1: the clock ended the round and the outcome recorded is `
-			.. `{Deep.show(ended.outcome)}:\n{Deep.diff(expected, ended.outcome)}`
-	)
-	assert(
-		#ended.players == config.playersMin,
-		`AC-1: the clock ending changed the seated list to {Deep.show(ended.players)}; it ends `
-			.. `the round, it does not unseat anybody`
-	)
+	if ended.phase ~= "Resolution" then
+		Raise.fail(
+			`AC-1: at now = {due} - exactly roundSeconds ({config.roundSeconds}) after the Round was `
+				.. `entered at {enteredAt} - the phase is {tostring(ended.phase)}. The comparison is `
+				.. `inclusive at the boundary (architecture.md section 3)`
+		)
+	end
+	if not (Deep.equal(ended.outcome, expected)) then
+		Raise.fail(
+			`AC-1: the clock ended the round and the outcome recorded is `
+				.. `{Deep.show(ended.outcome)}:\n{Deep.diff(expected, ended.outcome)}`
+		)
+	end
+	if #ended.players ~= config.playersMin then
+		Raise.fail(
+			`AC-1: the clock ending changed the seated list to {Deep.show(ended.players)}; it ends `
+				.. `the round, it does not unseat anybody`
+		)
+	end
 
 	local wellPast = enteredAt + config.roundSeconds * 3
 	local late = machine.step(round, RoundEndingContract.tick(), wellPast)
-	assert(
-		late.phase == "Resolution" and Deep.equal(late.outcome, expected),
-		`AC-1: a Tick well past the clock (now = {wellPast}) left the machine in `
-			.. `{tostring(late.phase)} with outcome {Deep.show(late.outcome)}. A driver that `
-			.. `ticks irregularly cannot stretch a round`
-	)
+	if not (late.phase == "Resolution" and Deep.equal(late.outcome, expected)) then
+		Raise.fail(
+			`AC-1: a Tick well past the clock (now = {wellPast}) left the machine in `
+				.. `{tostring(late.phase)} with outcome {Deep.show(late.outcome)}. A driver that `
+				.. `ticks irregularly cannot stretch a round`
+		)
+	end
 
 	Contract.stepDoesNotMutateItsInput(machine, {
 		label = "the Tick that ends a round on the clock",
@@ -355,13 +380,14 @@ end
 	chances to end the round and this check takes both away.
 ]]
 function RoundEndingContract.roundContinuesAtExactlyTheThreshold(machine: any, config: any)
-	assert(
-		config.playersMin > config.minPlayersToContinue,
-		`fixture: playersMin ({config.playersMin}) is not above minPlayersToContinue `
-			.. `({config.minPlayersToContinue}), so no departure from a round that could start `
-			.. `lands exactly ON the threshold and AC-7's boundary is unreachable. That is an `
-			.. `Amendments question about AC-7, not a number to edit here`
-	)
+	if not (config.playersMin > config.minPlayersToContinue) then
+		Raise.fail(
+			`fixture: playersMin ({config.playersMin}) is not above minPlayersToContinue `
+				.. `({config.minPlayersToContinue}), so no departure from a round that could start `
+				.. `lands exactly ON the threshold and AC-7's boundary is unreachable. That is an `
+				.. `Amendments question about AC-7, not a number to edit here`
+		)
+	end
 
 	local round = RoundEndingContract.roundOf(machine, config, config.playersMin)
 	local state = round
@@ -373,60 +399,68 @@ function RoundEndingContract.roundContinuesAtExactlyTheThreshold(machine: any, c
 		local after, effects = machine.step(state, RoundEndingContract.left(id), now)
 		local remaining = config.playersMin - index
 
-		assert(
-			#after.players == remaining,
-			`AC-7: {id} left a round of {#state.players} at now = {now} and `
-				.. `{Deep.show(after.players)} are seated, wanted {remaining}. A mid-round `
-				.. `departure unseats (Contract pin 1)`
-		)
-		assert(
-			after.phase == "Round",
-			`AC-7: {remaining} seated is not below minPlayersToContinue `
-				.. `({config.minPlayersToContinue}) and the phase is {tostring(after.phase)}. `
-				.. `The threshold is "below", not "at or below"`
-		)
-		assert(
-			after.outcome == nil,
-			`AC-7: an outcome ({Deep.show(after.outcome)}) was recorded with {remaining} seated `
-				.. `against minPlayersToContinue {config.minPlayersToContinue}`
-		)
+		if #after.players ~= remaining then
+			Raise.fail(
+				`AC-7: {id} left a round of {#state.players} at now = {now} and `
+					.. `{Deep.show(after.players)} are seated, wanted {remaining}. A mid-round `
+					.. `departure unseats (Contract pin 1)`
+			)
+		end
+		if after.phase ~= "Round" then
+			Raise.fail(
+				`AC-7: {remaining} seated is not below minPlayersToContinue `
+					.. `({config.minPlayersToContinue}) and the phase is {tostring(after.phase)}. `
+					.. `The threshold is "below", not "at or below"`
+			)
+		end
+		if after.outcome ~= nil then
+			Raise.fail(
+				`AC-7: an outcome ({Deep.show(after.outcome)}) was recorded with {remaining} seated `
+					.. `against minPlayersToContinue {config.minPlayersToContinue}`
+			)
+		end
 		-- TEL-002 Contract §5: the departure itself carries a
 		-- `bounce_before_resolution` Emit, which TelemetryEmitContract pins.
 		-- This assertion is about CONTROL effects and excludes telemetry.
 		local control = Deep.controlKinds(effects)
-		assert(
-			#control == 0,
-			`AC-7: a continuing round emitted control effect(s) {Deep.show(control)} `
-				.. `(telemetry Emit effects excluded)`
-		)
+		if #control > 0 then
+			Raise.fail(
+				`AC-7: a continuing round emitted control effect(s) {Deep.show(control)} `
+					.. `(telemetry Emit effects excluded)`
+			)
+		end
 		state = after
 	end
 
-	assert(
-		#state.players == config.minPlayersToContinue,
-		`AC-7: the departures left {Deep.show(state.players)} seated, wanted exactly `
-			.. `minPlayersToContinue ({config.minPlayersToContinue})`
-	)
+	if #state.players ~= config.minPlayersToContinue then
+		Raise.fail(
+			`AC-7: the departures left {Deep.show(state.players)} seated, wanted exactly `
+				.. `minPlayersToContinue ({config.minPlayersToContinue})`
+		)
+	end
 
 	local tickAt = now + 1
-	assert(
-		tickAt - round.phaseEnteredAt < config.roundSeconds,
-		`fixture: the tick at {tickAt} is roundSeconds ({config.roundSeconds}) or more after the `
-			.. `Round was entered at {round.phaseEnteredAt}; the clock would end the round and `
-			.. `AC-7 would pass for the wrong reason`
-	)
+	if not (tickAt - round.phaseEnteredAt < config.roundSeconds) then
+		Raise.fail(
+			`fixture: the tick at {tickAt} is roundSeconds ({config.roundSeconds}) or more after the `
+				.. `Round was entered at {round.phaseEnteredAt}; the clock would end the round and `
+				.. `AC-7 would pass for the wrong reason`
+		)
+	end
 	local ticked, tickEffects = machine.step(state, RoundEndingContract.tick(), tickAt)
-	assert(
-		ticked.phase == "Round",
-		`AC-7: with exactly minPlayersToContinue ({config.minPlayersToContinue}) seated, a Tick `
-			.. `at now = {tickAt} moved the machine to {tostring(ticked.phase)}. Three is a ring `
-			.. `(roles.md section 6): the comparison is #players < minPlayersToContinue, strict`
-	)
-	assert(
-		ticked.outcome == nil and #tickEffects == 0,
-		`AC-7: the Tick at {tickAt} recorded {Deep.show(ticked.outcome)} and emitted `
-			.. `{Deep.show(Deep.kinds(tickEffects))} on a round that is still running`
-	)
+	if ticked.phase ~= "Round" then
+		Raise.fail(
+			`AC-7: with exactly minPlayersToContinue ({config.minPlayersToContinue}) seated, a Tick `
+				.. `at now = {tickAt} moved the machine to {tostring(ticked.phase)}. Three is a ring `
+				.. `(roles.md section 6): the comparison is #players < minPlayersToContinue, strict`
+		)
+	end
+	if not (ticked.outcome == nil and #tickEffects == 0) then
+		Raise.fail(
+			`AC-7: the Tick at {tickAt} recorded {Deep.show(ticked.outcome)} and emitted `
+				.. `{Deep.show(Deep.kinds(tickEffects))} on a round that is still running`
+		)
+	end
 
 	Contract.stepDoesNotMutateItsInput(machine, {
 		label = "a PlayerLeft unseating a player in Round, above the quorum threshold",
@@ -452,13 +486,14 @@ function RoundEndingContract.roundEndsNoContestWhenTheCountFallsBelowTheThreshol
 	config: any
 )
 	local leaves = config.playersMin - config.minPlayersToContinue + 1
-	assert(
-		leaves >= 1 and config.playersMin >= leaves,
-		`fixture: playersMin ({config.playersMin}) and minPlayersToContinue `
-			.. `({config.minPlayersToContinue}) leave no room for the count to fall below the `
-			.. `threshold from a round that could start. That is an Amendments question about `
-			.. `AC-2, not a number to edit here`
-	)
+	if not (leaves >= 1 and config.playersMin >= leaves) then
+		Raise.fail(
+			`fixture: playersMin ({config.playersMin}) and minPlayersToContinue `
+				.. `({config.minPlayersToContinue}) leave no room for the count to fall below the `
+				.. `threshold from a round that could start. That is an Amendments question about `
+				.. `AC-2, not a number to edit here`
+		)
+	end
 
 	local round = RoundEndingContract.roundOf(machine, config, config.playersMin)
 	local state = round
@@ -472,19 +507,21 @@ function RoundEndingContract.roundEndsNoContestWhenTheCountFallsBelowTheThreshol
 		local after = machine.step(state, RoundEndingContract.left(id), now)
 		local remaining = config.playersMin - index
 
-		assert(
-			#after.players == remaining,
-			`AC-2: {id} left a round of {#state.players} at now = {now} and `
-				.. `{Deep.show(after.players)} are seated, wanted {remaining}. A mid-round `
-				.. `departure unseats (Contract pin 1)`
-		)
-		if remaining >= config.minPlayersToContinue then
-			assert(
-				after.phase == "Round",
-				`AC-2: {remaining} seated is not below minPlayersToContinue `
-					.. `({config.minPlayersToContinue}) and the phase is already `
-					.. `{tostring(after.phase)}`
+		if #after.players ~= remaining then
+			Raise.fail(
+				`AC-2: {id} left a round of {#state.players} at now = {now} and `
+					.. `{Deep.show(after.players)} are seated, wanted {remaining}. A mid-round `
+					.. `departure unseats (Contract pin 1)`
 			)
+		end
+		if remaining >= config.minPlayersToContinue then
+			if after.phase ~= "Round" then
+				Raise.fail(
+					`AC-2: {remaining} seated is not below minPlayersToContinue `
+						.. `({config.minPlayersToContinue}) and the phase is already `
+						.. `{tostring(after.phase)}`
+				)
+			end
 		else
 			before, lastId, lastNow = state, id, now
 			ending = after
@@ -492,31 +529,35 @@ function RoundEndingContract.roundEndsNoContestWhenTheCountFallsBelowTheThreshol
 		state = after
 	end
 
-	assert(
-		lastNow - round.phaseEnteredAt < config.roundSeconds,
-		`fixture: the last departure is at {lastNow}, roundSeconds ({config.roundSeconds}) or `
-			.. `more after the Round was entered at {round.phaseEnteredAt}; the ending could be `
-			.. `the clock's`
-	)
-	assert(
-		ending ~= nil and ending.phase == "Resolution",
-		`AC-2: {lastId} left at now = {lastNow}, taking the count below minPlayersToContinue `
-			.. `({config.minPlayersToContinue}), and the phase is `
-			.. `{tostring(if ending == nil then "Round" else ending.phase)}. The round ends on `
-			.. `THAT step`
-	)
+	if not (lastNow - round.phaseEnteredAt < config.roundSeconds) then
+		Raise.fail(
+			`fixture: the last departure is at {lastNow}, roundSeconds ({config.roundSeconds}) or `
+				.. `more after the Round was entered at {round.phaseEnteredAt}; the ending could be `
+				.. `the clock's`
+		)
+	end
+	if not (ending ~= nil and ending.phase == "Resolution") then
+		Raise.fail(
+			`AC-2: {lastId} left at now = {lastNow}, taking the count below minPlayersToContinue `
+				.. `({config.minPlayersToContinue}), and the phase is `
+				.. `{tostring(if ending == nil then "Round" else ending.phase)}. The round ends on `
+				.. `THAT step`
+		)
+	end
 
 	local expected = RoundEndingContract.quorumOutcome()
-	assert(
-		Deep.equal(ending.outcome, expected),
-		`AC-2: the round ended below quorum and the outcome recorded is `
-			.. `{Deep.show(ending.outcome)}:\n{Deep.diff(expected, ending.outcome)}`
-	)
-	assert(
-		#ending.players == config.minPlayersToContinue - 1,
-		`AC-2: the ending state holds {Deep.show(ending.players)}, wanted the `
-			.. `{config.minPlayersToContinue - 1} player(s) left after {lastId} departed`
-	)
+	if not (Deep.equal(ending.outcome, expected)) then
+		Raise.fail(
+			`AC-2: the round ended below quorum and the outcome recorded is `
+				.. `{Deep.show(ending.outcome)}:\n{Deep.diff(expected, ending.outcome)}`
+		)
+	end
+	if #ending.players ~= config.minPlayersToContinue - 1 then
+		Raise.fail(
+			`AC-2: the ending state holds {Deep.show(ending.players)}, wanted the `
+				.. `{config.minPlayersToContinue - 1} player(s) left after {lastId} departed`
+		)
+	end
 	--[[
 		The effects of the ending step are NOT asserted here, and that is
 		deliberate: `endingSequenceEmitsExactlyOneComputeTrace` owns Contract
@@ -547,38 +588,44 @@ function RoundEndingContract.quorumEndingIsDistinguishableFromALoss(machine: any
 	local quorum = RoundEndingContract.endByQuorum(machine, config, "AC-3")
 	local clock = RoundEndingContract.endByClock(machine, config, "AC-3")
 
-	assert(
-		typeof(quorum.outcome) == "table",
-		`AC-3: the round ended below quorum and recorded {Deep.show(quorum.outcome)} as its `
-			.. `outcome; there is nothing to distinguish`
-	)
-	assert(
-		quorum.outcome.result ~= "lost",
-		`AC-3: the round ended because the lobby fell below minPlayersToContinue and the result `
-			.. `recorded is "lost". No loss is recorded and season progress is unaffected: the `
-			.. `group did not fail, the lobby did (mechanics.md section 8)`
-	)
-	assert(
-		quorum.outcome.result == "no_contest",
-		`AC-3: the quorum ending recorded result "{tostring(quorum.outcome.result)}", wanted `
-			.. `"no_contest". Recording it as anything else punishes three players for a fourth `
-			.. `person's connection`
-	)
-	assert(
-		quorum.outcome.reason == "below_quorum",
-		`AC-3: the quorum ending recorded reason "{tostring(quorum.outcome.reason)}", wanted `
-			.. `"below_quorum"`
-	)
+	if typeof(quorum.outcome) ~= "table" then
+		Raise.fail(
+			`AC-3: the round ended below quorum and recorded {Deep.show(quorum.outcome)} as its `
+				.. `outcome; there is nothing to distinguish`
+		)
+	end
+	if quorum.outcome.result == "lost" then
+		Raise.fail(
+			`AC-3: the round ended because the lobby fell below minPlayersToContinue and the result `
+				.. `recorded is "lost". No loss is recorded and season progress is unaffected: the `
+				.. `group did not fail, the lobby did (mechanics.md section 8)`
+		)
+	end
+	if quorum.outcome.result ~= "no_contest" then
+		Raise.fail(
+			`AC-3: the quorum ending recorded result "{tostring(quorum.outcome.result)}", wanted `
+				.. `"no_contest". Recording it as anything else punishes three players for a fourth `
+				.. `person's connection`
+		)
+	end
+	if quorum.outcome.reason ~= "below_quorum" then
+		Raise.fail(
+			`AC-3: the quorum ending recorded reason "{tostring(quorum.outcome.reason)}", wanted `
+				.. `"below_quorum"`
+		)
+	end
 
-	assert(
-		typeof(clock.outcome) == "table" and clock.outcome.result == "lost",
-		`AC-3: the CLOCK ending recorded {Deep.show(clock.outcome)}, wanted result "lost". If `
-			.. `both endings record the same result there is nothing for AC-3 to tell apart`
-	)
-	assert(
-		not Deep.equal(quorum.outcome, clock.outcome),
-		`AC-3: the quorum ending and the clock ending both recorded {Deep.show(quorum.outcome)}`
-	)
+	if not (typeof(clock.outcome) == "table" and clock.outcome.result == "lost") then
+		Raise.fail(
+			`AC-3: the CLOCK ending recorded {Deep.show(clock.outcome)}, wanted result "lost". If `
+				.. `both endings record the same result there is nothing for AC-3 to tell apart`
+		)
+	end
+	if not (not Deep.equal(quorum.outcome, clock.outcome)) then
+		Raise.fail(
+			`AC-3: the quorum ending and the clock ending both recorded {Deep.show(quorum.outcome)}`
+		)
+	end
 end
 
 --[[
@@ -595,42 +642,47 @@ end
 ]]
 function RoundEndingContract.resolvingEventOutranksTheClock(machine: any, config: any)
 	local round = RoundEndingContract.roundOf(machine, config, config.playersMin)
-	assert(
-		#round.players >= config.minPlayersToContinue,
-		`fixture: a round of {#round.players} is already below minPlayersToContinue `
-			.. `({config.minPlayersToContinue}); AC-4 needs quorum to HOLD so that only the `
-			.. `event and the clock are in play`
-	)
+	if not (#round.players >= config.minPlayersToContinue) then
+		Raise.fail(
+			`fixture: a round of {#round.players} is already below minPlayersToContinue `
+				.. `({config.minPlayersToContinue}); AC-4 needs quorum to HOLD so that only the `
+				.. `event and the clock are in play`
+		)
+	end
 
 	local expired = round.phaseEnteredAt + config.roundSeconds + 5
-	assert(
-		expired - round.phaseEnteredAt >= config.roundSeconds,
-		`fixture: now = {expired} is not past roundSeconds ({config.roundSeconds}) since the `
-			.. `Round was entered at {round.phaseEnteredAt}; the clock is not expired and there `
-			.. `is no simultaneity to resolve`
-	)
+	if not (expired - round.phaseEnteredAt >= config.roundSeconds) then
+		Raise.fail(
+			`fixture: now = {expired} is not past roundSeconds ({config.roundSeconds}) since the `
+				.. `Round was entered at {round.phaseEnteredAt}; the clock is not expired and there `
+				.. `is no simultaneity to resolve`
+		)
+	end
 
 	local carried = RoundEndingContract.eventOutcome()
 	local event = RoundEndingContract.resolved(carried)
 	local after = machine.step(round, event, expired)
 
-	assert(
-		after.phase == "Resolution",
-		`AC-4: a RoundResolved at now = {expired}, with the clock expired, left the machine in `
-			.. `{tostring(after.phase)}`
-	)
-	assert(
-		Deep.equal(after.outcome, carried),
-		`AC-4: the clock had expired and the event arrived on the SAME step; the outcome `
-			.. `recorded is {Deep.show(after.outcome)}, not the one the event carried. The event `
-			.. `describes something that happened inside the round; the clock describes the `
-			.. `round running out around it. The event wins`
-	)
-	assert(
-		#after.players == config.playersMin,
-		`AC-4: the count was intact ({config.playersMin} seated) and the ending changed it to `
-			.. `{Deep.show(after.players)}`
-	)
+	if after.phase ~= "Resolution" then
+		Raise.fail(
+			`AC-4: a RoundResolved at now = {expired}, with the clock expired, left the machine in `
+				.. `{tostring(after.phase)}`
+		)
+	end
+	if not (Deep.equal(after.outcome, carried)) then
+		Raise.fail(
+			`AC-4: the clock had expired and the event arrived on the SAME step; the outcome `
+				.. `recorded is {Deep.show(after.outcome)}, not the one the event carried. The event `
+				.. `describes something that happened inside the round; the clock describes the `
+				.. `round running out around it. The event wins`
+		)
+	end
+	if #after.players ~= config.playersMin then
+		Raise.fail(
+			`AC-4: the count was intact ({config.playersMin} seated) and the ending changed it to `
+				.. `{Deep.show(after.players)}`
+		)
+	end
 
 	Contract.stepIsDeterministic(machine, {
 		label = "a RoundResolved arriving on a step whose clock has already expired",
@@ -661,17 +713,19 @@ function RoundEndingContract.resolvingEventOutranksQuorumAndTheClock(machine: an
 	local carried = RoundEndingContract.eventOutcome()
 	local after = machine.step(round, RoundEndingContract.resolved(carried), expired)
 
-	assert(
-		after.phase == "Resolution",
-		`AC-4: a RoundResolved at now = {expired}, below quorum and with the clock expired, left `
-			.. `the machine in {tostring(after.phase)}`
-	)
-	assert(
-		Deep.equal(after.outcome, carried),
-		`AC-4: all three terminal conditions held on one step and the outcome recorded is `
-			.. `{Deep.show(after.outcome)}, not the event's. RoundResolved is first in the `
-			.. `precedence list (architecture.md section 3)`
-	)
+	if after.phase ~= "Resolution" then
+		Raise.fail(
+			`AC-4: a RoundResolved at now = {expired}, below quorum and with the clock expired, left `
+				.. `the machine in {tostring(after.phase)}`
+		)
+	end
+	if not (Deep.equal(after.outcome, carried)) then
+		Raise.fail(
+			`AC-4: all three terminal conditions held on one step and the outcome recorded is `
+				.. `{Deep.show(after.outcome)}, not the event's. RoundResolved is first in the `
+				.. `precedence list (architecture.md section 3)`
+		)
+	end
 end
 
 --[[
@@ -692,28 +746,30 @@ function RoundEndingContract.quorumOutranksTheClockInOneStep(machine: any, confi
 
 	local after = machine.step(round, event, expired)
 
-	assert(
-		after.phase == "Resolution",
-		`AC-5: a Tick at now = {expired}, below quorum ({#round.players} seated against `
-			.. `minPlayersToContinue {config.minPlayersToContinue}) and past roundSeconds `
-			.. `({config.roundSeconds}), left the machine in {tostring(after.phase)}`
-	)
-	assert(
-		typeof(after.outcome) == "table",
-		`AC-5: the round ended and recorded {Deep.show(after.outcome)} as its outcome`
-	)
-	assert(
-		after.outcome.reason == "below_quorum",
-		`AC-5: the clock had expired AND the count was below minPlayersToContinue on the same `
-			.. `step, and the reason recorded is "{tostring(after.outcome.reason)}". A round `
-			.. `nobody can play did not run out of time: the precedence is RoundResolved > `
-			.. `below_quorum > clock (architecture.md section 3)`
-	)
-	assert(
-		after.outcome.result == "no_contest",
-		`AC-5: the quorum ending recorded result "{tostring(after.outcome.result)}", wanted `
-			.. `"no_contest" (AC-3)`
-	)
+	if after.phase ~= "Resolution" then
+		Raise.fail(
+			`AC-5: a Tick at now = {expired}, below quorum ({#round.players} seated against `
+				.. `minPlayersToContinue {config.minPlayersToContinue}) and past roundSeconds `
+				.. `({config.roundSeconds}), left the machine in {tostring(after.phase)}`
+		)
+	end
+	if typeof(after.outcome) ~= "table" then
+		Raise.fail(`AC-5: the round ended and recorded {Deep.show(after.outcome)} as its outcome`)
+	end
+	if after.outcome.reason ~= "below_quorum" then
+		Raise.fail(
+			`AC-5: the clock had expired AND the count was below minPlayersToContinue on the same `
+				.. `step, and the reason recorded is "{tostring(after.outcome.reason)}". A round `
+				.. `nobody can play did not run out of time: the precedence is RoundResolved > `
+				.. `below_quorum > clock (architecture.md section 3)`
+		)
+	end
+	if after.outcome.result ~= "no_contest" then
+		Raise.fail(
+			`AC-5: the quorum ending recorded result "{tostring(after.outcome.result)}", wanted `
+				.. `"no_contest" (AC-3)`
+		)
+	end
 
 	Contract.stepIsDeterministic(machine, {
 		label = "a Tick on a round that is below quorum AND past roundSeconds",
@@ -726,13 +782,14 @@ function RoundEndingContract.quorumOutranksTheClockInOneStep(machine: any, confi
 	local repeatedReason = if typeof(repeated.outcome) == "table"
 		then tostring(repeated.outcome.reason)
 		else Deep.show(repeated.outcome)
-	assert(
-		repeatedReason == tostring(after.outcome.reason),
-		`AC-5: two identical steps recorded reasons "{tostring(after.outcome.reason)}" and `
-			.. `"{repeatedReason}". The reason is the same on every run, because the trace `
-			.. `reports it and a reason that depends on evaluation order is a bug report nobody `
-			.. `can reproduce`
-	)
+	if repeatedReason ~= tostring(after.outcome.reason) then
+		Raise.fail(
+			`AC-5: two identical steps recorded reasons "{tostring(after.outcome.reason)}" and `
+				.. `"{repeatedReason}". The reason is the same on every run, because the trace `
+				.. `reports it and a reason that depends on evaluation order is a bug report nobody `
+				.. `can reproduce`
+		)
+	end
 end
 
 --[[
@@ -747,26 +804,29 @@ end
 function RoundEndingContract.quorumIsConsultedOnATick(machine: any, config: any)
 	local round = RoundEndingContract.belowQuorumRound(machine, config)
 	local at = round.phaseEnteredAt + 1
-	assert(
-		at - round.phaseEnteredAt < config.roundSeconds,
-		`fixture: the tick at {at} is roundSeconds ({config.roundSeconds}) or more after the `
-			.. `Round was entered at {round.phaseEnteredAt}; the ending could be the clock's`
-	)
+	if not (at - round.phaseEnteredAt < config.roundSeconds) then
+		Raise.fail(
+			`fixture: the tick at {at} is roundSeconds ({config.roundSeconds}) or more after the `
+				.. `Round was entered at {round.phaseEnteredAt}; the ending could be the clock's`
+		)
+	end
 
 	local after = machine.step(round, RoundEndingContract.tick(), at)
 	local expected = RoundEndingContract.quorumOutcome()
 
-	assert(
-		after.phase == "Resolution",
-		`AC-2: a Tick at now = {at} on a round holding {Deep.show(round.players)} against `
-			.. `minPlayersToContinue {config.minPlayersToContinue} left the machine in `
-			.. `{tostring(after.phase)}. Quorum is consulted on Tick as well as on PlayerLeft`
-	)
-	assert(
-		Deep.equal(after.outcome, expected),
-		`AC-2: the Tick ended the round below quorum and recorded `
-			.. `{Deep.show(after.outcome)}:\n{Deep.diff(expected, after.outcome)}`
-	)
+	if after.phase ~= "Resolution" then
+		Raise.fail(
+			`AC-2: a Tick at now = {at} on a round holding {Deep.show(round.players)} against `
+				.. `minPlayersToContinue {config.minPlayersToContinue} left the machine in `
+				.. `{tostring(after.phase)}. Quorum is consulted on Tick as well as on PlayerLeft`
+		)
+	end
+	if not (Deep.equal(after.outcome, expected)) then
+		Raise.fail(
+			`AC-2: the Tick ended the round below quorum and recorded `
+				.. `{Deep.show(after.outcome)}:\n{Deep.diff(expected, after.outcome)}`
+		)
+	end
 end
 
 --[[
@@ -815,13 +875,14 @@ function RoundEndingContract.endingSequenceEmitsExactlyOneComputeTrace(machine: 
 			state = after
 		end
 
-		assert(
-			state.phase == "Lobby",
-			`AC-6: the round ended by {ending.label}; stepping from the ending through Post `
-				.. `(postRoundSeconds {config.postRoundSeconds}) reached `
-				.. `{tostring(state.phase)}, not Lobby, so the sequence AC-6 counts over is not `
-				.. `complete`
-		)
+		if state.phase ~= "Lobby" then
+			Raise.fail(
+				`AC-6: the round ended by {ending.label}; stepping from the ending through Post `
+					.. `(postRoundSeconds {config.postRoundSeconds}) reached `
+					.. `{tostring(state.phase)}, not Lobby, so the sequence AC-6 counts over is not `
+					.. `complete`
+			)
+		end
 
 		local traces: { any } = {}
 		for _, effect in collected do
@@ -830,19 +891,21 @@ function RoundEndingContract.endingSequenceEmitsExactlyOneComputeTrace(machine: 
 			end
 		end
 
-		assert(
-			#traces == 1,
-			`AC-6: the round ended by {ending.label} and the sequence from the ending step back `
-				.. `to Lobby emitted {#traces} ComputeTrace effect(s): `
-				.. `{Deep.show(Deep.kinds(collected))}. Exactly one - and a machine that keeps `
-				.. `ticking a finished round emits a second`
-		)
-		assert(
-			traces[1].roundId == ending.ended.roundId,
-			`AC-6: the ComputeTrace for the {ending.label} ending carries roundId `
-				.. `{Deep.show(traces[1].roundId)}, and the round is `
-				.. `{Deep.show(ending.ended.roundId)}`
-		)
+		if #traces ~= 1 then
+			Raise.fail(
+				`AC-6: the round ended by {ending.label} and the sequence from the ending step back `
+					.. `to Lobby emitted {#traces} ComputeTrace effect(s): `
+					.. `{Deep.show(Deep.kinds(collected))}. Exactly one - and a machine that keeps `
+					.. `ticking a finished round emits a second`
+			)
+		end
+		if traces[1].roundId ~= ending.ended.roundId then
+			Raise.fail(
+				`AC-6: the ComputeTrace for the {ending.label} ending carries roundId `
+					.. `{Deep.show(traces[1].roundId)}, and the round is `
+					.. `{Deep.show(ending.ended.roundId)}`
+			)
+		end
 		--[[
 			TEL-002 Contract §5: the step that enters Resolution carries
 			`round_complete` and `first_round_complete` Emits, pinned by
@@ -851,23 +914,25 @@ function RoundEndingContract.endingSequenceEmitsExactlyOneComputeTrace(machine: 
 			exclude telemetry through the one shared filter.
 		]]
 		local endingControl = Deep.controlKinds(ending.effects)
-		assert(
-			#endingControl == 0,
-			`AC-6 (Contract pin 3): the step that ended the round by {ending.label} emitted `
-				.. `control effect(s) {Deep.show(endingControl)} (telemetry Emit effects `
-				.. `excluded). The ending step emits no control effect; the single ComputeTrace `
-				.. `is emitted by Resolution -> Post (ROUND-003 AC-4)`
-		)
+		if #endingControl > 0 then
+			Raise.fail(
+				`AC-6 (Contract pin 3): the step that ended the round by {ending.label} emitted `
+					.. `control effect(s) {Deep.show(endingControl)} (telemetry Emit effects `
+					.. `excluded). The ending step emits no control effect; the single ComputeTrace `
+					.. `is emitted by Resolution -> Post (ROUND-003 AC-4)`
+			)
+		end
 
 		local wanted = { "ComputeTrace", "PromptRematch" }
 		local collectedControl = Deep.controlKinds(collected)
-		assert(
-			Deep.equal(collectedControl, wanted),
-			`AC-6: the {ending.label} ending sequence emitted control effects `
-				.. `{Deep.show(collectedControl)}, wanted {Deep.show(wanted)} (ROUND-003 `
-				.. `AC-8, minus the AssignSeats that started the round; telemetry Emit effects `
-				.. `excluded)`
-		)
+		if not (Deep.equal(collectedControl, wanted)) then
+			Raise.fail(
+				`AC-6: the {ending.label} ending sequence emitted control effects `
+					.. `{Deep.show(collectedControl)}, wanted {Deep.show(wanted)} (ROUND-003 `
+					.. `AC-8, minus the AssignSeats that started the round; telemetry Emit effects `
+					.. `excluded)`
+			)
+		end
 	end
 end
 
@@ -886,23 +951,26 @@ function RoundEndingContract.aResolvedRoundIsNotReResolved(machine: any, config:
 
 	local wellPast = resolution.phaseEnteredAt + config.roundSeconds * 3
 	local post = machine.step(resolution, RoundEndingContract.tick(), wellPast)
-	assert(
-		post.phase == "Post",
-		`Contract pin 5: Resolution moved to {tostring(post.phase)} on the next Tick `
-			.. `(ROUND-003 AC-4)`
-	)
-	assert(
-		Deep.equal(post.outcome, expected),
-		`Contract pin 5: the outcome was rewritten on the way to Post - a clock that expired `
-			.. `long ago was consulted again:\n{Deep.diff(expected, post.outcome)}`
-	)
+	if post.phase ~= "Post" then
+		Raise.fail(
+			`Contract pin 5: Resolution moved to {tostring(post.phase)} on the next Tick `
+				.. `(ROUND-003 AC-4)`
+		)
+	end
+	if not (Deep.equal(post.outcome, expected)) then
+		Raise.fail(
+			`Contract pin 5: the outcome was rewritten on the way to Post - a clock that expired `
+				.. `long ago was consulted again:\n{Deep.diff(expected, post.outcome)}`
+		)
+	end
 
 	local seated = post.players[1]
-	assert(
-		seated ~= nil,
-		`fixture: the round ended below quorum with nobody seated, so there is no departure to `
-			.. `ignore in Post`
-	)
+	if seated == nil then
+		Raise.fail(
+			`fixture: the round ended below quorum with nobody seated, so there is no departure to `
+				.. `ignore in Post`
+		)
+	end
 	-- TEL-002 Contract §5 / P2, P3: this departure now emits a `session_end`
 	-- and records itself in `departed`; the seated list, the outcome and the
 	-- control effects are still exactly what pin 5 says. See the helper.
@@ -955,12 +1023,13 @@ function RoundEndingContract.unrecognisedEventsAreIgnoredBelowQuorum(machine: an
 
 	local ended = machine.step(round, RoundEndingContract.tick(), at)
 	local expected = RoundEndingContract.quorumOutcome()
-	assert(
-		ended.phase == "Resolution" and Deep.equal(ended.outcome, expected),
-		`Contract pin 2: the events above are ignored, and the NEXT Tick ends the round - it `
-			.. `left the machine in {tostring(ended.phase)} with {Deep.show(ended.outcome)}. `
-			.. `Without this half, ignoring everything would satisfy the check`
-	)
+	if not (ended.phase == "Resolution" and Deep.equal(ended.outcome, expected)) then
+		Raise.fail(
+			`Contract pin 2: the events above are ignored, and the NEXT Tick ends the round - it `
+				.. `left the machine in {tostring(ended.phase)} with {Deep.show(ended.outcome)}. `
+				.. `Without this half, ignoring everything would satisfy the check`
+		)
+	end
 end
 
 --[[
@@ -978,11 +1047,12 @@ function RoundEndingContract.aLeaveNamingSomebodyNotSeatedIsIgnoredInRound(
 )
 	local round = RoundEndingContract.roundOf(machine, config, config.playersMin)
 	local at = round.phaseEnteredAt + 1
-	assert(
-		at - round.phaseEnteredAt < config.roundSeconds,
-		`fixture: the leave at {at} is roundSeconds ({config.roundSeconds}) or more after the `
-			.. `Round was entered at {round.phaseEnteredAt}`
-	)
+	if not (at - round.phaseEnteredAt < config.roundSeconds) then
+		Raise.fail(
+			`fixture: the leave at {at} is roundSeconds ({config.roundSeconds}) or more after the `
+				.. `Round was entered at {round.phaseEnteredAt}`
+		)
+	end
 
 	Contract.eventIsIgnored(machine, {
 		label = "a PlayerLeft naming never-seated-p99, in Round",

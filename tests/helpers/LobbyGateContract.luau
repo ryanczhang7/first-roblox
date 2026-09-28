@@ -28,6 +28,9 @@
 
 local Contract = require("./PhaseMachineContract")
 local Deep = require("./Deep")
+-- The shared raiser, `tests/helpers/Contract.luau` (HARNESS-011). Bound as
+-- `Raise` because `Contract` here is already the phase machine's contract.
+local Raise = require("./Contract")
 
 local LobbyGateContract = {}
 
@@ -73,11 +76,12 @@ function LobbyGateContract.lobbyOf(machine: any, config: any, count: number): an
 	for _, id in LobbyGateContract.roster(count) do
 		state = machine.step(state, LobbyGateContract.joined(id), 0)
 	end
-	assert(
-		typeof(state) == "table" and #state.players == count,
-		`fixture: seating {count} player(s) into a fresh Lobby produced `
-			.. `{Deep.show(if typeof(state) == "table" then state.players else state)}`
-	)
+	if not (typeof(state) == "table" and #state.players == count) then
+		Raise.fail(
+			`fixture: seating {count} player(s) into a fresh Lobby produced `
+				.. `{Deep.show(if typeof(state) == "table" then state.players else state)}`
+		)
+	end
 	return state
 end
 
@@ -123,20 +127,22 @@ function LobbyGateContract.lobbyHoldsBelowMinimum(machine: any, config: any)
 	local wellPast = config.lobbySeconds * 5
 	local after, effects = machine.step(state, LobbyGateContract.tick(), wellPast)
 
-	assert(
-		after.phase == "Lobby",
-		`AC-1: {short} player(s) is one short of playersMin ({config.playersMin}), and at `
-			.. `now = {wellPast} - {wellPast / config.lobbySeconds} times lobbySeconds `
-			.. `({config.lobbySeconds}) since the Lobby was entered at 0 - the phase is `
-			.. `{tostring(after.phase)}. The clock is a FLOOR on lobby dwell time, not the `
-			.. `only condition for starting a round`
-	)
-	assert(
-		#effects == 0,
-		`AC-1: a lobby of {short}, below playersMin ({config.playersMin}), emitted `
-			.. `{Deep.show(Deep.kinds(effects))} at now = {wellPast}. A round that did not `
-			.. `start emits nothing`
-	)
+	if after.phase ~= "Lobby" then
+		Raise.fail(
+			`AC-1: {short} player(s) is one short of playersMin ({config.playersMin}), and at `
+				.. `now = {wellPast} - {wellPast / config.lobbySeconds} times lobbySeconds `
+				.. `({config.lobbySeconds}) since the Lobby was entered at 0 - the phase is `
+				.. `{tostring(after.phase)}. The clock is a FLOOR on lobby dwell time, not the `
+				.. `only condition for starting a round`
+		)
+	end
+	if #effects > 0 then
+		Raise.fail(
+			`AC-1: a lobby of {short}, below playersMin ({config.playersMin}), emitted `
+				.. `{Deep.show(Deep.kinds(effects))} at now = {wellPast}. A round that did not `
+				.. `start emits nothing`
+		)
+	end
 end
 
 --[[
@@ -158,58 +164,65 @@ function LobbyGateContract.roundStartsOnTheTickAfterReachingMinimum(machine: any
 	local joinAt = config.lobbySeconds * 3
 	local gap = config.lobbySeconds / 4
 	local nextTick = joinAt + gap
-	assert(
-		nextTick < joinAt + config.lobbySeconds,
-		`fixture: the tick after the join is {nextTick}, which is not inside the `
-			.. `{config.lobbySeconds} seconds a resetting implementation would make the lobby `
-			.. `serve again. The test cannot distinguish hold from reset`
-	)
+	if not (nextTick < joinAt + config.lobbySeconds) then
+		Raise.fail(
+			`fixture: the tick after the join is {nextTick}, which is not inside the `
+				.. `{config.lobbySeconds} seconds a resetting implementation would make the lobby `
+				.. `serve again. The test cannot distinguish hold from reset`
+		)
+	end
 
 	local held = machine.step(state, LobbyGateContract.tick(), joinAt)
-	assert(
-		held.phase == "Lobby",
-		`AC-2 (precondition, AC-1): at now = {joinAt} with {config.playersMin - 1} player(s) `
-			.. `the phase is {tostring(held.phase)}; the lobby must still be holding when the `
-			.. `last player arrives or there is no held time to discard`
-	)
+	if held.phase ~= "Lobby" then
+		Raise.fail(
+			`AC-2 (precondition, AC-1): at now = {joinAt} with {config.playersMin - 1} player(s) `
+				.. `the phase is {tostring(held.phase)}; the lobby must still be holding when the `
+				.. `last player arrives or there is no held time to discard`
+		)
+	end
 
 	local last = `p{config.playersMin}`
 	local afterJoin = machine.step(held, LobbyGateContract.joined(last), joinAt)
-	assert(
-		#afterJoin.players == config.playersMin,
-		`AC-2: after {last} joined, {#afterJoin.players} player(s) are seated and playersMin is `
-			.. `{config.playersMin}: {Deep.show(afterJoin.players)}`
-	)
+	if #afterJoin.players ~= config.playersMin then
+		Raise.fail(
+			`AC-2: after {last} joined, {#afterJoin.players} player(s) are seated and playersMin is `
+				.. `{config.playersMin}: {Deep.show(afterJoin.players)}`
+		)
+	end
 
 	local started, effects = machine.step(afterJoin, LobbyGateContract.tick(), nextTick)
 
-	assert(
-		started.phase == "Assignment",
-		`AC-2: the lobby was entered at {enteredAt}, held past lobbySeconds `
-			.. `({config.lobbySeconds}) with {config.playersMin - 1} player(s), reached `
-			.. `playersMin ({config.playersMin}) at now = {joinAt}, and at the next tick `
-			.. `(now = {nextTick}) the phase is {tostring(started.phase)}. The {joinAt} seconds `
-			.. `already served are not discarded by a join: a machine still waiting here is one `
-			.. `that restamped phaseEnteredAt and is serving another {config.lobbySeconds}`
-	)
-	assert(
-		started.phaseEnteredAt == nextTick,
-		`AC-2: the round started, but Assignment records phaseEnteredAt = `
-			.. `{tostring(started.phaseEnteredAt)} and the tick that started it was at `
-			.. `{nextTick}. AC-2 asserts the TIME the round starts, because "it eventually `
-			.. `starts" is true of a resetting lobby too`
-	)
-	assert(
-		afterJoin.phaseEnteredAt == enteredAt,
-		`AC-2: the join rewrote phaseEnteredAt from {enteredAt} to `
-			.. `{tostring(afterJoin.phaseEnteredAt)}. phaseEnteredAt is never rewritten by a `
-			.. `join - that one line is the hold`
-	)
-	assert(
-		#effects == 1 and effects[1].kind == "AssignSeats",
-		`AC-2: starting the round emitted {Deep.show(Deep.kinds(effects))}, wanted exactly one `
-			.. `AssignSeats`
-	)
+	if started.phase ~= "Assignment" then
+		Raise.fail(
+			`AC-2: the lobby was entered at {enteredAt}, held past lobbySeconds `
+				.. `({config.lobbySeconds}) with {config.playersMin - 1} player(s), reached `
+				.. `playersMin ({config.playersMin}) at now = {joinAt}, and at the next tick `
+				.. `(now = {nextTick}) the phase is {tostring(started.phase)}. The {joinAt} seconds `
+				.. `already served are not discarded by a join: a machine still waiting here is one `
+				.. `that restamped phaseEnteredAt and is serving another {config.lobbySeconds}`
+		)
+	end
+	if started.phaseEnteredAt ~= nextTick then
+		Raise.fail(
+			`AC-2: the round started, but Assignment records phaseEnteredAt = `
+				.. `{tostring(started.phaseEnteredAt)} and the tick that started it was at `
+				.. `{nextTick}. AC-2 asserts the TIME the round starts, because "it eventually `
+				.. `starts" is true of a resetting lobby too`
+		)
+	end
+	if afterJoin.phaseEnteredAt ~= enteredAt then
+		Raise.fail(
+			`AC-2: the join rewrote phaseEnteredAt from {enteredAt} to `
+				.. `{tostring(afterJoin.phaseEnteredAt)}. phaseEnteredAt is never rewritten by a `
+				.. `join - that one line is the hold`
+		)
+	end
+	if not (#effects == 1 and effects[1].kind == "AssignSeats") then
+		Raise.fail(
+			`AC-2: starting the round emitted {Deep.show(Deep.kinds(effects))}, wanted exactly one `
+				.. `AssignSeats`
+		)
+	end
 end
 
 --[[
@@ -230,60 +243,68 @@ function LobbyGateContract.lobbyHoldsWhenTheCountFallsAndStartsWhenRestored(
 	local enteredAt = full.phaseEnteredAt
 
 	local leaveAt = config.lobbySeconds / 2
-	assert(
-		leaveAt < config.lobbySeconds,
-		`fixture: the departure at {leaveAt} is not before lobbySeconds ({config.lobbySeconds})`
-	)
+	if not (leaveAt < config.lobbySeconds) then
+		Raise.fail(
+			`fixture: the departure at {leaveAt} is not before lobbySeconds ({config.lobbySeconds})`
+		)
+	end
 	local short = machine.step(full, LobbyGateContract.left("p2"), leaveAt)
-	assert(
-		#short.players == config.playersMin - 1,
-		`AC-3: p2 left a lobby of {config.playersMin} at now = {leaveAt} and `
-			.. `{#short.players} player(s) are seated: {Deep.show(short.players)}. A player who `
-			.. `leaves the LOBBY is unseated (Contract pin 2; a departure in any other phase is `
-			.. `ROUND-005 and stays ignored)`
-	)
+	if #short.players ~= config.playersMin - 1 then
+		Raise.fail(
+			`AC-3: p2 left a lobby of {config.playersMin} at now = {leaveAt} and `
+				.. `{#short.players} player(s) are seated: {Deep.show(short.players)}. A player who `
+				.. `leaves the LOBBY is unseated (Contract pin 2; a departure in any other phase is `
+				.. `ROUND-005 and stays ignored)`
+		)
+	end
 
 	local wellPast = config.lobbySeconds * 5
 	local stillLobby, heldEffects = machine.step(short, LobbyGateContract.tick(), wellPast)
-	assert(
-		stillLobby.phase == "Lobby",
-		`AC-3: the count fell to {config.playersMin - 1}, one short of playersMin `
-			.. `({config.playersMin}), and at now = {wellPast} the phase is `
-			.. `{tostring(stillLobby.phase)}. A lobby that dropped below the minimum does not `
-			.. `start a round just because the clock is past lobbySeconds`
-	)
-	assert(
-		#heldEffects == 0,
-		`AC-3: the held lobby emitted {Deep.show(Deep.kinds(heldEffects))} at now = {wellPast}`
-	)
+	if stillLobby.phase ~= "Lobby" then
+		Raise.fail(
+			`AC-3: the count fell to {config.playersMin - 1}, one short of playersMin `
+				.. `({config.playersMin}), and at now = {wellPast} the phase is `
+				.. `{tostring(stillLobby.phase)}. A lobby that dropped below the minimum does not `
+				.. `start a round just because the clock is past lobbySeconds`
+		)
+	end
+	if #heldEffects > 0 then
+		Raise.fail(
+			`AC-3: the held lobby emitted {Deep.show(Deep.kinds(heldEffects))} at now = {wellPast}`
+		)
+	end
 
 	local replacement = `p{config.playersMin + 1}`
 	local restored = machine.step(stillLobby, LobbyGateContract.joined(replacement), wellPast)
-	assert(
-		#restored.players == config.playersMin,
-		`AC-3: {replacement} joined to restore the count and {#restored.players} player(s) are `
-			.. `seated: {Deep.show(restored.players)}`
-	)
-	assert(
-		restored.phaseEnteredAt == enteredAt,
-		`AC-3: restoring the count rewrote phaseEnteredAt from {enteredAt} to `
-			.. `{tostring(restored.phaseEnteredAt)}; neither a join nor a leave touches it`
-	)
+	if #restored.players ~= config.playersMin then
+		Raise.fail(
+			`AC-3: {replacement} joined to restore the count and {#restored.players} player(s) are `
+				.. `seated: {Deep.show(restored.players)}`
+		)
+	end
+	if restored.phaseEnteredAt ~= enteredAt then
+		Raise.fail(
+			`AC-3: restoring the count rewrote phaseEnteredAt from {enteredAt} to `
+				.. `{tostring(restored.phaseEnteredAt)}; neither a join nor a leave touches it`
+		)
+	end
 
 	local nextTick = wellPast + config.lobbySeconds / 4
 	local started = machine.step(restored, LobbyGateContract.tick(), nextTick)
-	assert(
-		started.phase == "Assignment",
-		`AC-3: the count was restored at now = {wellPast} and at the next tick `
-			.. `(now = {nextTick}) the phase is {tostring(started.phase)}. The restored lobby `
-			.. `has served {nextTick} seconds against a lobbySeconds of {config.lobbySeconds} `
-			.. `and must not be made to serve another one`
-	)
-	assert(
-		started.phaseEnteredAt == nextTick,
-		`AC-3: Assignment records phaseEnteredAt = {tostring(started.phaseEnteredAt)}, and the `
-			.. `tick that started the round was at {nextTick}`
-	)
+	if started.phase ~= "Assignment" then
+		Raise.fail(
+			`AC-3: the count was restored at now = {wellPast} and at the next tick `
+				.. `(now = {nextTick}) the phase is {tostring(started.phase)}. The restored lobby `
+				.. `has served {nextTick} seconds against a lobbySeconds of {config.lobbySeconds} `
+				.. `and must not be made to serve another one`
+		)
+	end
+	if started.phaseEnteredAt ~= nextTick then
+		Raise.fail(
+			`AC-3: Assignment records phaseEnteredAt = {tostring(started.phaseEnteredAt)}, and the `
+				.. `tick that started the round was at {nextTick}`
+		)
+	end
 end
 
 --[[
@@ -301,32 +322,38 @@ end
 function LobbyGateContract.fullLobbyRefusesTheSurplusJoin(machine: any, config: any)
 	local expected = LobbyGateContract.roster(config.playersMax)
 	local full = LobbyGateContract.lobbyOf(machine, config, config.playersMax)
-	assert(
-		Deep.equal(full.players, expected),
-		`fixture: a lobby seated with playersMax ({config.playersMax}) players holds `
-			.. `{Deep.show(full.players)}, wanted {Deep.show(expected)}`
-	)
+	if not (Deep.equal(full.players, expected)) then
+		Raise.fail(
+			`fixture: a lobby seated with playersMax ({config.playersMax}) players holds `
+				.. `{Deep.show(full.players)}, wanted {Deep.show(expected)}`
+		)
+	end
 
 	local surplus = `p{config.playersMax + 1}`
 	local after, effects = machine.step(full, LobbyGateContract.joined(surplus), 1)
 
-	assert(
-		#after.players == config.playersMax,
-		`AC-4: {surplus} joined a lobby already holding playersMax ({config.playersMax}) and `
-			.. `{#after.players} player(s) are now seated: {Deep.show(after.players)}. Rejecting `
-			.. `the surplus join at the door is the machine's job, not the driver's`
-	)
-	assert(
-		occurrences(after.players, surplus) == 0,
-		`AC-4: the lobby is still {config.playersMax} long but {surplus} is among them: `
-			.. `{Deep.show(after.players)}. Somebody already seated was evicted to make room, `
-			.. `which a length check alone cannot see`
-	)
-	assert(
-		Deep.equal(after.players, expected),
-		`AC-4: the refused join changed the seated list:\n{Deep.diff(expected, after.players)}`
-	)
-	assert(#effects == 0, `AC-4: a refused join emitted {Deep.show(Deep.kinds(effects))}`)
+	if #after.players ~= config.playersMax then
+		Raise.fail(
+			`AC-4: {surplus} joined a lobby already holding playersMax ({config.playersMax}) and `
+				.. `{#after.players} player(s) are now seated: {Deep.show(after.players)}. Rejecting `
+				.. `the surplus join at the door is the machine's job, not the driver's`
+		)
+	end
+	if occurrences(after.players, surplus) ~= 0 then
+		Raise.fail(
+			`AC-4: the lobby is still {config.playersMax} long but {surplus} is among them: `
+				.. `{Deep.show(after.players)}. Somebody already seated was evicted to make room, `
+				.. `which a length check alone cannot see`
+		)
+	end
+	if not (Deep.equal(after.players, expected)) then
+		Raise.fail(
+			`AC-4: the refused join changed the seated list:\n{Deep.diff(expected, after.players)}`
+		)
+	end
+	if #effects > 0 then
+		Raise.fail(`AC-4: a refused join emitted {Deep.show(Deep.kinds(effects))}`)
+	end
 
 	Contract.eventIsIgnored(machine, {
 		label = `a PlayerJoined into a lobby already holding playersMax ({config.playersMax})`,
@@ -348,42 +375,52 @@ end
 ]]
 function LobbyGateContract.duplicateJoinSeatsOnce(machine: any, config: any)
 	local seats = config.playersMin + 1
-	assert(
-		seats < config.playersMax,
-		`fixture: this check needs a seat count strictly between playersMin `
-			.. `({config.playersMin}) and playersMax ({config.playersMax}), so that neither `
-			.. `threshold can be what refuses the duplicate. There is none. If a playtest has `
-			.. `narrowed the band to adjacent values, AC-5 needs an Amendments decision about `
-			.. `what "not at a boundary" now means - it is not a number to edit here`
-	)
+	if not (seats < config.playersMax) then
+		Raise.fail(
+			`fixture: this check needs a seat count strictly between playersMin `
+				.. `({config.playersMin}) and playersMax ({config.playersMax}), so that neither `
+				.. `threshold can be what refuses the duplicate. There is none. If a playtest has `
+				.. `narrowed the band to adjacent values, AC-5 needs an Amendments decision about `
+				.. `what "not at a boundary" now means - it is not a number to edit here`
+		)
+	end
 
 	local base = LobbyGateContract.lobbyOf(machine, config, config.playersMin)
 	local newcomer = `p{seats}`
 
 	local once = machine.step(base, LobbyGateContract.joined(newcomer), 1)
-	assert(
-		#once.players == seats
+	if
+		not (
+			#once.players == seats
 			and #once.players > config.playersMin
-			and #once.players < config.playersMax,
-		`AC-5: the fixture must be at neither threshold before the duplicate arrives; `
-			.. `{#once.players} player(s) are seated against playersMin {config.playersMin} and `
-			.. `playersMax {config.playersMax}: {Deep.show(once.players)}`
-	)
+			and #once.players < config.playersMax
+		)
+	then
+		Raise.fail(
+			`AC-5: the fixture must be at neither threshold before the duplicate arrives; `
+				.. `{#once.players} player(s) are seated against playersMin {config.playersMin} and `
+				.. `playersMax {config.playersMax}: {Deep.show(once.players)}`
+		)
+	end
 
 	local twice, effects = machine.step(once, LobbyGateContract.joined(newcomer), 2)
 
-	assert(
-		occurrences(twice.players, newcomer) == 1,
-		`AC-5: the same PlayerJoined for {newcomer} was applied twice and {newcomer} appears `
-			.. `{occurrences(twice.players, newcomer)} time(s): {Deep.show(twice.players)}. `
-			.. `Seating one player twice puts them in two seats of the same ring`
-	)
-	assert(
-		Deep.equal(twice.players, once.players),
-		`AC-5: the duplicate join changed the seated list:\n`
-			.. Deep.diff(once.players, twice.players)
-	)
-	assert(#effects == 0, `AC-5: a duplicate join emitted {Deep.show(Deep.kinds(effects))}`)
+	if occurrences(twice.players, newcomer) ~= 1 then
+		Raise.fail(
+			`AC-5: the same PlayerJoined for {newcomer} was applied twice and {newcomer} appears `
+				.. `{occurrences(twice.players, newcomer)} time(s): {Deep.show(twice.players)}. `
+				.. `Seating one player twice puts them in two seats of the same ring`
+		)
+	end
+	if not (Deep.equal(twice.players, once.players)) then
+		Raise.fail(
+			`AC-5: the duplicate join changed the seated list:\n`
+				.. Deep.diff(once.players, twice.players)
+		)
+	end
+	if #effects > 0 then
+		Raise.fail(`AC-5: a duplicate join emitted {Deep.show(Deep.kinds(effects))}`)
+	end
 
 	Contract.eventIsIgnored(machine, {
 		label = `a duplicate PlayerJoined for {newcomer}, in a lobby of {#once.players} `
@@ -411,13 +448,14 @@ end
 	so no clock semantics are in play and the `now` values are step indices.
 ]]
 function LobbyGateContract.removalPreservesJoinOrder(machine: any, config: any)
-	assert(
-		config.playersMax >= 5,
-		`fixture: this check seats five players so that a removal from the MIDDLE of five is `
-			.. `distinguishable from a swap-with-the-last, and playersMax is `
-			.. `{config.playersMax}. A band that cannot hold five needs an Amendments decision `
-			.. `about how AC-6 is falsified, not a shorter sequence here`
-	)
+	if not (config.playersMax >= 5) then
+		Raise.fail(
+			`fixture: this check seats five players so that a removal from the MIDDLE of five is `
+				.. `distinguishable from a swap-with-the-last, and playersMax is `
+				.. `{config.playersMax}. A band that cannot hold five needs an Amendments decision `
+				.. `about how AC-6 is falsified, not a shorter sequence here`
+		)
+	end
 
 	local joinOrder = LobbyGateContract.roster(8)
 	local script: { { any } } = {
@@ -452,27 +490,30 @@ function LobbyGateContract.removalPreservesJoinOrder(machine: any, config: any)
 	end
 
 	--[[
-		Both messages are kept under about 480 characters ON PURPOSE. Luau
-		truncates an `assert` message at roughly 500, position prefix included -
-		measured on this suite in RED, where the first draft of the message below
-		was cut off mid-trail and took the evidence with it. Hence the compact
+		Both messages were kept under about 480 characters because `assert` cut
+		them at 511 (message only; `docs/wiki/stack.md`) - in ROUND-004's RED the
+		first draft of the message below was cut off mid-trail. Hence the compact
 		`[p1 p2]` rendering rather than `Deep.show`, and the explanation living in
-		the second assert rather than being repeated in the first.
+		the second check rather than being repeated in the first. Both now go
+		through `Raise.fail`, which does not truncate (HARNESS-011); the text is
+		unchanged.
 	]]
-	assert(
-		Deep.equal(state.players, expected),
-		`AC-6: the seated list is [{table.concat(state.players, " ")}], wanted `
-			.. `[{table.concat(expected, " ")}]; removal preserves join order (Contract pin 4).\n`
-			.. `The sequence was:\n{table.concat(trail, "\n")}`
-	)
-	assert(
-		isSubsequenceOf(state.players, joinOrder),
-		`AC-6: [{table.concat(state.players, " ")}] is not a subsequence of the join order `
-			.. `[{table.concat(joinOrder, " ")}] - the same members in the same relative order. `
-			.. `Seat order is join order and SEAT-001 deals the ring from this list; a removal `
-			.. `that copies the last element over the hole is a correct SET removal, and relative `
-			.. `order is the only thing that sees it`
-	)
+	if not (Deep.equal(state.players, expected)) then
+		Raise.fail(
+			`AC-6: the seated list is [{table.concat(state.players, " ")}], wanted `
+				.. `[{table.concat(expected, " ")}]; removal preserves join order (Contract pin 4).\n`
+				.. `The sequence was:\n{table.concat(trail, "\n")}`
+		)
+	end
+	if not (isSubsequenceOf(state.players, joinOrder)) then
+		Raise.fail(
+			`AC-6: [{table.concat(state.players, " ")}] is not a subsequence of the join order `
+				.. `[{table.concat(joinOrder, " ")}] - the same members in the same relative order. `
+				.. `Seat order is join order and SEAT-001 deals the ring from this list; a removal `
+				.. `that copies the last element over the hole is a correct SET removal, and relative `
+				.. `order is the only thing that sees it`
+		)
+	end
 end
 
 --[[
@@ -496,13 +537,14 @@ function LobbyGateContract.leaveDoesNotMutateItsInput(machine: any, config: any)
 	Contract.stepDoesNotMutateItsInput(machine, case)
 
 	local after = machine.step(state, case.event, case.now)
-	assert(
-		occurrences(after.players, "p2") == 0 and #after.players == config.playersMin - 1,
-		`AC-3/AC-6: the leave returned {Deep.show(after.players)} from a lobby of `
-			.. `{config.playersMin}; p2 was seated and must be gone. A step that does not `
-			.. `mutate its input because it does nothing at all satisfies the check above `
-			.. `vacuously, and this is the assertion that stops it`
-	)
+	if not (occurrences(after.players, "p2") == 0 and #after.players == config.playersMin - 1) then
+		Raise.fail(
+			`AC-3/AC-6: the leave returned {Deep.show(after.players)} from a lobby of `
+				.. `{config.playersMin}; p2 was seated and must be gone. A step that does not `
+				.. `mutate its input because it does nothing at all satisfies the check above `
+				.. `vacuously, and this is the assertion that stops it`
+		)
+	end
 end
 
 return LobbyGateContract

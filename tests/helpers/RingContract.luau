@@ -46,6 +46,7 @@
 	Every message names its criterion, because the controls assert on the text.
 ]]
 
+local Contract = require("./Contract")
 local Deep = require("./Deep")
 local Rng = require("../../src/shared/Rng")
 
@@ -146,28 +147,14 @@ local function render(list: { string }): string
 	return table.concat(list, " → ")
 end
 
-local function firstFew(list: { string }, count: number): string
-	local shown: { string } = {}
-	for i = 1, math.min(count, #list) do
-		shown[i] = list[i]
-	end
-	local more = #list - #shown
-	return table.concat(shown, "\n") .. (if more > 0 then `\n  ... and {more} more` else "")
-end
-
 --[[
-	`error(message, 2)` rather than `assert`. MEASURED (SEAT-002): under Lune
-	`assert(false, message)` truncates the message to 512 characters after the
-	location prefix and `error(message)` does not. AC-6's degenerate-ring
-	rendering grew past that cut when SEAT-003 widened the Assignment, and a
-	control whose needle lies beyond the cut can never match. Level 2
-	attributes the failure to the test that called the check.
+	Every failure here goes through `Contract.fail`, and every message is built
+	only on the path that raises it (HARNESS-011). `assert` cut these messages
+	at 511 characters and built them on every passing run; the private
+	`check` -> `error(message, 2)` SEAT-003 used instead escaped the cut but not
+	the eager build. See `tests/helpers/Contract.luau`.
 ]]
-local function check(condition: boolean, message: string)
-	if not condition then
-		error(message, 2)
-	end
-end
+local firstFew = Contract.firstFew
 
 --[[ AC-1. σ is a permutation of exactly the seated players with no fixed point. ]]
 function RingContract.sigmaIsAFixedPointFreePermutation(ring: Ring)
@@ -212,11 +199,12 @@ function RingContract.sigmaIsAFixedPointFreePermutation(ring: Ring)
 		end
 	end
 
-	assert(
-		#violations == 0,
-		`AC-1: σ is not a fixed-point-free permutation of the seated players in `
-			.. `{#violations} of {total} (n, seed) cases:\n{firstFew(violations, 8)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-1: σ is not a fixed-point-free permutation of the seated players in `
+				.. `{#violations} of {total} (n, seed) cases:\n{firstFew(violations, 8)}`
+		)
+	end
 end
 
 --[[
@@ -250,12 +238,13 @@ function RingContract.sigmaIsASingleCycle(ring: Ring)
 		table.insert(perCount, `n = {n}: {failedHere} of {SEED_COUNT} seeds`)
 	end
 
-	assert(
-		#violations == 0,
-		`AC-2: σ is not a single n-cycle in {#violations} of {total} (n, seed) cases `
-			.. `[{table.concat(perCount, "; ")}]. Two disjoint cycles are two independent `
-			.. `games sharing a map (roles.md §2):\n{firstFew(violations, 8)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-2: σ is not a single n-cycle in {#violations} of {total} (n, seed) cases `
+				.. `[{table.concat(perCount, "; ")}]. Two disjoint cycles are two independent `
+				.. `games sharing a map (roles.md §2):\n{firstFew(violations, 8)}`
+		)
+	end
 end
 
 --[[ AC-3, first half: same seed, same seated list, identical Assignment. ]]
@@ -274,11 +263,12 @@ function RingContract.sameSeedSameAssignment(ring: Ring)
 		end
 	end
 
-	assert(
-		#violations == 0,
-		`AC-3: the same seed and seated list produced two different assignments in `
-			.. `{#violations} case(s):\n{firstFew(violations, 4)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-3: the same seed and seated list produced two different assignments in `
+				.. `{#violations} case(s):\n{firstFew(violations, 4)}`
+		)
+	end
 end
 
 -- The seeds AC-3's second half samples: a small spread, fixed, at every n.
@@ -313,11 +303,12 @@ function RingContract.differentSeedsProduceDifferentRings(ring: Ring)
 		end
 	end
 
-	assert(
-		#violations == 0,
-		`AC-3: different seeds did not produce different rings, so the seed is not being `
-			.. `used, at {#violations} value(s) of n:\n{firstFew(violations, 4)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-3: different seeds did not produce different rings, so the seed is not being `
+				.. `used, at {#violations} value(s) of n:\n{firstFew(violations, 4)}`
+		)
+	end
 end
 
 -- A smaller seed sample for the AC-4 checks: they are per-player and per-seed,
@@ -388,11 +379,12 @@ function RingContract.keyClassesAreOneToNEachOnce(ring: Ring)
 		end
 	end
 
-	assert(
-		#violations == 0,
-		`AC-4: the key classes are not the integers 1..n each used once, in {#violations} `
-			.. `case(s):\n{firstFew(violations, 8)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-4: the key classes are not the integers 1..n each used once, in {#violations} `
+				.. `case(s):\n{firstFew(violations, 8)}`
+		)
+	end
 end
 
 --[[
@@ -509,11 +501,12 @@ function RingContract.lensIsTheDependentsKeyClass(ring: Ring)
 		end
 	end
 
-	assert(
-		#violations == 0,
-		`AC-4: λ(p) = k(σ(p)) does not hold, or supplierOf/dependentOf do not read σ⁻¹/σ, `
-			.. `in {#violations} case(s):\n{firstFew(violations, 4)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-4: λ(p) = k(σ(p)) does not hold, or supplierOf/dependentOf do not read σ⁻¹/σ, `
+				.. `in {#violations} case(s):\n{firstFew(violations, 4)}`
+		)
+	end
 end
 
 --[[
@@ -608,15 +601,16 @@ function RingContract.ringsOfFourAreUniformlyDistributed(ring: Ring)
 		table.insert(lines, `  not a single cycle at all: {other} ({percent(other)})`)
 	end
 
-	assert(
-		absent == 0 and outOfBand == 0,
-		`AC-5: over {RingContract.SAMPLE} seeds at n = 4, {absent} of the 6 cyclic derangements `
-			.. `never appeared and {outOfBand} fell outside the `
-			.. `{percent(RingContract.LOW_SHARE * RingContract.SAMPLE)}-`
-			.. `{percent(RingContract.HIGH_SHARE * RingContract.SAMPLE)} band (uniform is 16.7%). `
-			.. `roles.md §2: the ring's shape is itself variance:\n`
-			.. table.concat(lines, "\n")
-	)
+	if not (absent == 0 and outOfBand == 0) then
+		Contract.fail(
+			`AC-5: over {RingContract.SAMPLE} seeds at n = 4, {absent} of the 6 cyclic derangements `
+				.. `never appeared and {outOfBand} fell outside the `
+				.. `{percent(RingContract.LOW_SHARE * RingContract.SAMPLE)}-`
+				.. `{percent(RingContract.HIGH_SHARE * RingContract.SAMPLE)} band (uniform is 16.7%). `
+				.. `roles.md §2: the ring's shape is itself variance:\n`
+				.. table.concat(lines, "\n")
+		)
+	end
 end
 
 --[[
@@ -653,11 +647,12 @@ function RingContract.fewerThanThreeSeatedRaises(ring: Ring)
 		)
 	end
 
-	check(
-		#violations == 0,
-		`AC-6: fewer than 3 seated must raise rather than return a degenerate ring, and `
-			.. `exactly 3 must not:\n{firstFew(violations, 4)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-6: fewer than 3 seated must raise rather than return a degenerate ring, and `
+				.. `exactly 3 must not:\n{firstFew(violations, 4)}`
+		)
+	end
 end
 
 --[[
@@ -690,11 +685,12 @@ function RingContract.inputIsNotMutatedAndSeatOrderIsKept(ring: Ring)
 		end
 	end
 
-	assert(
-		#violations == 0,
-		`AC-7: the input list must come back untouched and the result must keep its seat `
-			.. `order, violated at {#violations} value(s) of n:\n{firstFew(violations, 8)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-7: the input list must come back untouched and the result must keep its seat `
+				.. `order, violated at {#violations} value(s) of n:\n{firstFew(violations, 8)}`
+		)
+	end
 end
 
 --[[
@@ -730,12 +726,13 @@ function RingContract.assignDrawsFromItsOwnSubStream(ring: Ring)
 		end
 	end
 
-	assert(
-		#violations == 0,
-		`Contract: assign must draw from its own derived sub-stream, so that draws taken from `
-			.. `the parent rng beforehand do not move the seats, violated at {#violations} `
-			.. `value(s) of n:\n{firstFew(violations, 4)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`Contract: assign must draw from its own derived sub-stream, so that draws taken from `
+				.. `the parent rng beforehand do not move the seats, violated at {#violations} `
+				.. `value(s) of n:\n{firstFew(violations, 4)}`
+		)
+	end
 end
 
 --[[ ======================================================================
@@ -836,11 +833,12 @@ end
 ]]
 local function exportOf(ring: Ring, name: string): any
 	local export = ring[name]
-	check(
-		typeof(export) == "function",
-		`Ring.{name} is {typeof(export)} - SEAT-003 exports withdraw(assignment, playerId) and `
-			.. `rejoin(assignment, absence, now) as plain field functions`
-	)
+	if typeof(export) ~= "function" then
+		Contract.fail(
+			`Ring.{name} is {typeof(export)} - SEAT-003 exports withdraw(assignment, playerId) and `
+				.. `rejoin(assignment, absence, now) as plain field functions`
+		)
+	end
 	return export
 end
 
@@ -940,11 +938,15 @@ function RingContract.withdrawTransfersTheKeyClassToTheSupplier(ring: Ring)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-1: the leaver's key class did not go to the supplier σ⁻¹(q) and nobody else, in `
-			.. `{#violations} of {#cases} (seed, leaver) cases at n = 4:\n{firstFew(violations, 6)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-1: the leaver's key class did not go to the supplier σ⁻¹(q) and nobody else, in `
+				.. `{#violations} of {#cases} (seed, leaver) cases at n = 4:\n{firstFew(
+					violations,
+					6
+				)}`
+		)
+	end
 end
 
 --[[
@@ -971,11 +973,12 @@ function RingContract.naiveEveryClassIsHeldBySomebody(ring: Ring)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`naive: a key class is held by nobody after the withdrawal in {#violations} of {#cases} `
-			.. `cases:\n{firstFew(violations, 6)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`naive: a key class is held by nobody after the withdrawal in {#violations} of {#cases} `
+				.. `cases:\n{firstFew(violations, 6)}`
+		)
+	end
 end
 
 --[[
@@ -1042,11 +1045,12 @@ function RingContract.withdrawnRingIsOneCycleInTheOriginalOrder(ring: Ring)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-2: the withdrawn ring is not a single (n − 1)-cycle in the original order in `
-			.. `{#violations} of {#cases} (n, seed, leaver) cases:\n{firstFew(violations, 6)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-2: the withdrawn ring is not a single (n − 1)-cycle in the original order in `
+				.. `{#violations} of {#cases} (n, seed, leaver) cases:\n{firstFew(violations, 6)}`
+		)
+	end
 end
 
 --[[
@@ -1117,12 +1121,13 @@ function RingContract.supplierHoldsTwoAndIsTheOnlyPlayerWhoCanActOnTheirOwnLens(
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-3: the supplier does not hold two classes, or the number of players who can act on `
-			.. `their own lens is not exactly one, in {#violations} of {#cases} cases at n = 4:\n`
-			.. firstFew(violations, 6)
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-3: the supplier does not hold two classes, or the number of players who can act on `
+				.. `their own lens is not exactly one, in {#violations} of {#cases} cases at n = 4:\n`
+				.. firstFew(violations, 6)
+		)
+	end
 end
 
 --[[
@@ -1179,11 +1184,12 @@ function RingContract.leaversLensIsLost(ring: Ring)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-4: the leaver's lens was not lost, or another lens moved, in {#violations} of `
-			.. `{#cases} (n, seed, leaver) cases:\n{firstFew(violations, 6)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-4: the leaver's lens was not lost, or another lens moved, in {#violations} of `
+				.. `{#cases} (n, seed, leaver) cases:\n{firstFew(violations, 6)}`
+		)
+	end
 end
 
 --[[
@@ -1228,11 +1234,12 @@ function RingContract.rejoinInsideTheGraceWindowRestoresTheSeat(ring: Ring)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-5: a rejoin inside disconnect_grace_seconds ({grace}) did not restore the `
-			.. `pre-withdrawal ring in {#violations} of {total} cases:\n{firstFew(violations, 4)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-5: a rejoin inside disconnect_grace_seconds ({grace}) did not restore the `
+				.. `pre-withdrawal ring in {#violations} of {total} cases:\n{firstFew(violations, 4)}`
+		)
+	end
 end
 
 --[[
@@ -1292,11 +1299,12 @@ function RingContract.rejoinAtOrAfterTheGraceBoundaryIsRefused(ring: Ring)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-6: a rejoin at or after t + disconnect_grace_seconds ({grace}) was not refused, or `
-			.. `the seat came back, in {#violations} of {total} cases:\n{firstFew(violations, 4)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-6: a rejoin at or after t + disconnect_grace_seconds ({grace}) was not refused, or `
+				.. `the seat came back, in {#violations} of {total} cases:\n{firstFew(violations, 4)}`
+		)
+	end
 end
 
 --[[
@@ -1413,12 +1421,13 @@ function RingContract.twoWithdrawalsEachTransferToTheSupplierAtTheTime(ring: Rin
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-7: after two withdrawals from a 5-ring the classes are not each held by the supplier `
-			.. `at the time, or the ring is not a 3-cycle, in {#violations} of {total} cases:\n`
-			.. firstFew(violations, 6)
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-7: after two withdrawals from a 5-ring the classes are not each held by the supplier `
+				.. `at the time, or the ring is not a 3-cycle, in {#violations} of {total} cases:\n`
+				.. firstFew(violations, 6)
+		)
+	end
 end
 
 --[[
@@ -1519,11 +1528,12 @@ function RingContract.withdrawalFromThreeYieldsAWellFormedTwoRingAndDecidesNothi
 		end
 	end
 
-	check(
-		#violations == 0,
-		`AC-8: a withdrawal from a 3-ring did not produce a well-formed 2-ring and nothing else `
-			.. `in {#violations} of {total} cases:\n{firstFew(violations, 6)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`AC-8: a withdrawal from a 3-ring did not produce a well-formed 2-ring and nothing else `
+				.. `in {#violations} of {total} cases:\n{firstFew(violations, 6)}`
+		)
+	end
 end
 
 --[[
@@ -1583,11 +1593,12 @@ function RingContract.withdrawDoesNotMutateOrAliasItsArgument(ring: Ring)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`Contract: withdraw must return a fresh table and leave its argument untouched (PO-3), `
-			.. `violated in {#violations} of {total} cases:\n{firstFew(violations, 4)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`Contract: withdraw must return a fresh table and leave its argument untouched (PO-3), `
+				.. `violated in {#violations} of {total} cases:\n{firstFew(violations, 4)}`
+		)
+	end
 end
 
 local function splitLocation(message: string): (string, string)
@@ -1653,11 +1664,12 @@ function RingContract.withdrawOfAnUnseatedPlayerRaises(ring: Ring)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`Contract: withdrawing an unseated player must raise, and a seated one must not, violated `
-			.. `in {#violations} case(s):\n{table.concat(violations, "\n")}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`Contract: withdrawing an unseated player must raise, and a seated one must not, violated `
+				.. `in {#violations} case(s):\n{table.concat(violations, "\n")}`
+		)
+	end
 end
 
 --[[
@@ -1739,14 +1751,15 @@ function RingContract.rejoinDoesNotMutateOrAliasItsArguments(ring: Ring)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`Contract: rejoin must not mutate its arguments and must return a deep copy of the `
-			.. `snapshot (PO-4), violated in {#violations} of {total} cases:\n{firstFew(
-				violations,
-				4
-			)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`Contract: rejoin must not mutate its arguments and must return a deep copy of the `
+				.. `snapshot (PO-4), violated in {#violations} of {total} cases:\n{firstFew(
+					violations,
+					4
+				)}`
+		)
+	end
 end
 
 --[[
@@ -1810,11 +1823,12 @@ function RingContract.supplierListIsOwnClassesThenTheLeaversInOrder(ring: Ring)
 		end
 	end
 
-	check(
-		#violations == 0,
-		`Contract: the supplier's list must be their own classes followed by all of the leaver's, `
-			.. `in order, violated in {#violations} of {total} cases:\n{firstFew(violations, 4)}`
-	)
+	if #violations > 0 then
+		Contract.fail(
+			`Contract: the supplier's list must be their own classes followed by all of the leaver's, `
+				.. `in order, violated in {#violations} of {total} cases:\n{firstFew(violations, 4)}`
+		)
+	end
 end
 
 return RingContract
