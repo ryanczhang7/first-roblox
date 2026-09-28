@@ -232,22 +232,13 @@ local function longBracketCloseAt(text: string, p: number, level: number): numbe
 end
 
 --[[
-	`text` with every comment and string literal replaced by spaces, newlines
-	kept so line numbers still mean something.
-
-	This is not decoration. `src/shared/Scaffold.luau` names `os.clock`, `tick`,
-	`task.wait`, `math.random` and `Random.new` in a doc comment explaining that
-	nothing may call them, and a line-grep guard fires on that comment - flagging
-	the one file in the tree that documents the rule it is enforcing. A guard
-	that cannot tell a call from a sentence about calls would be reverted within
-	a story, and the way it gets reverted is by deleting the guard.
-
-	Luau string interpolation is handled rather than skipped: the braces in a
-	backtick string are CODE, so an `os.clock()` call written inside one is real
-	and is reported. Blanking the whole backtick string would leave a hole in the
-	guard shaped exactly like this repository's favourite way to write a message.
+	The one lexer behind `codeOnly` and `commentsOnly`. `want` picks which half
+	survives; everything else is blanked to spaces, newlines kept. HARNESS-016
+	split it out so that a guard over COMMENT text (AC-3: no comment quotes
+	the wrong `assert` cap) reads the same lexing as every guard over code,
+	rather than a second copy of it.
 ]]
-function SourceScan.codeOnly(text: string): string
+local function walk(text: string, want: "code" | "comments"): string
 	local out: { string } = {}
 	local n = #text
 	local i = 1
@@ -258,11 +249,16 @@ function SourceScan.codeOnly(text: string): string
 	local interpStack: { number } = {}
 
 	local function keep(ch: string)
-		table.insert(out, ch)
+		table.insert(out, if want == "code" or ch == "\n" then ch else " ")
 	end
 
 	local function drop(ch: string)
-		table.insert(out, if ch == "\n" then "\n" else " ")
+		local inComment = mode == "lineComment" or mode == "longComment"
+		if want == "comments" and inComment then
+			table.insert(out, ch)
+		else
+			table.insert(out, if ch == "\n" then "\n" else " ")
+		end
 	end
 
 	local function dropRange(from: number, to: number)
@@ -381,6 +377,32 @@ function SourceScan.codeOnly(text: string): string
 	end
 
 	return table.concat(out)
+end
+
+--[[
+	`text` with every comment and string literal replaced by spaces, newlines
+	kept so line numbers still mean something.
+
+	This is not decoration. `src/shared/Scaffold.luau` names `os.clock`, `tick`,
+	`task.wait`, `math.random` and `Random.new` in a doc comment explaining that
+	nothing may call them, and a line-grep guard fires on that comment - flagging
+	the one file in the tree that documents the rule it is enforcing. A guard
+	that cannot tell a call from a sentence about calls would be reverted within
+	a story, and the way it gets reverted is by deleting the guard.
+
+	Luau string interpolation is handled rather than skipped: the braces in a
+	backtick string are CODE, so an `os.clock()` call written inside one is real
+	and is reported. Blanking the whole backtick string would leave a hole in the
+	guard shaped exactly like this repository's favourite way to write a message.
+]]
+function SourceScan.codeOnly(text: string): string
+	return walk(text, "code")
+end
+
+-- `text` with only its COMMENTS left, delimiters included; code and string
+-- literals are spaces, newlines kept. The complement of `codeOnly`.
+function SourceScan.commentsOnly(text: string): string
+	return walk(text, "comments")
 end
 
 --[[

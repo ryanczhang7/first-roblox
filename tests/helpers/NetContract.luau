@@ -48,6 +48,7 @@
 ]]
 
 local Clock = require("../../src/shared/Clock")
+local Contract = require("./Contract")
 local Deep = require("./Deep")
 
 local NetContract = {}
@@ -55,20 +56,6 @@ local NetContract = {}
 export type Net = { Schema: any, Remotes: any, Wrapper: any }
 
 export type Case = { label: string, args: any }
-
---[[
-	The final assertion of every check goes through this rather than `assert`.
-	MEASURED in SEAT-002's RED: under Lune, `assert(false, message)` truncates
-	the message to 512 characters after the location prefix and `error` does
-	not. The checks accumulate every violation, and a control whose needle lies
-	beyond the cut can never match. Level 2 attributes the failure to the
-	caller.
-]]
-local function check(condition: boolean, message: string)
-	if not condition then
-		error(message, 2)
-	end
-end
 
 local function indent(text: string): string
 	return "  " .. (string.gsub(text, "\n", "\n  "))
@@ -272,37 +259,45 @@ function NetContract.handlerRunsExactlyOnceWithTheValidatedArguments(net: Net)
 	local guarded = net.Wrapper.guard(definition, NetContract.context({ "p1" }), handler)
 
 	local ok, result = call(guarded, "p1", { token = 4, flag = true })
-	check(ok, `AC-1: a valid call raised: {tostring(result)}`)
-	check(
-		result == nil,
-		`AC-1: a valid call by a seated player was rejected: {describeResult(result)}`
-	)
-	check(
-		#calls == 1,
-		`AC-1: the handler ran {#calls} time(s) for one valid call; it must run exactly once`
-	)
-	check(
-		calls[1].playerId == "p1",
-		`AC-1: the handler received playerId {Deep.show(calls[1].playerId)}, expected "p1"`
-	)
+	if not ok then
+		Contract.fail(`AC-1: a valid call raised: {tostring(result)}`)
+	end
+	if result ~= nil then
+		Contract.fail(
+			`AC-1: a valid call by a seated player was rejected: {describeResult(result)}`
+		)
+	end
+	if #calls ~= 1 then
+		Contract.fail(
+			`AC-1: the handler ran {#calls} time(s) for one valid call; it must run exactly once`
+		)
+	end
+	if calls[1].playerId ~= "p1" then
+		Contract.fail(
+			`AC-1: the handler received playerId {Deep.show(calls[1].playerId)}, expected "p1"`
+		)
+	end
 	local diff = Deep.diff({ token = 4, flag = true }, calls[1].args)
-	check(
-		diff == "",
-		`AC-1: the handler did not receive the validated arguments:\n{indent(diff)}\n`
-			.. `  received: {Deep.show(calls[1].args)}`
-	)
+	if diff ~= "" then
+		Contract.fail(
+			`AC-1: the handler did not receive the validated arguments:\n{indent(diff)}\n`
+				.. `  received: {Deep.show(calls[1].args)}`
+		)
+	end
 
 	local ok2, result2 = call(guarded, "p1", { token = 16, flag = false })
-	check(
-		ok2 and result2 == nil,
-		`AC-1: a second valid call was not accepted: {describeResult(result2)}`
-	)
-	check(
-		#calls == 2,
-		`AC-1: after two valid calls the handler ran {#calls} time(s); once per call means 2`
-	)
+	if not (ok2 and result2 == nil) then
+		Contract.fail(`AC-1: a second valid call was not accepted: {describeResult(result2)}`)
+	end
+	if #calls ~= 2 then
+		Contract.fail(
+			`AC-1: after two valid calls the handler ran {#calls} time(s); once per call means 2`
+		)
+	end
 	local diff2 = Deep.diff({ token = 16, flag = false }, calls[2].args)
-	check(diff2 == "", `AC-1: the second call's arguments were wrong:\n{indent(diff2)}`)
+	if diff2 ~= "" then
+		Contract.fail(`AC-1: the second call's arguments were wrong:\n{indent(diff2)}`)
+	end
 end
 
 --[[
@@ -330,12 +325,13 @@ function NetContract.malformedPayloadIsRejectedForShape(net: Net)
 				.. `it must not run at all`
 		)
 	end
-	check(
-		#violations == 0,
-		`AC-2 failed in {#violations} case(s) of {#NetContract.SHAPE_CASES}:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-2 failed in {#violations} case(s) of {#NetContract.SHAPE_CASES}:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 --[[
@@ -362,12 +358,13 @@ function NetContract.outOfRangeNumberIsRejectedForRange(net: Net)
 			`AC-3: the handler ran {#calls} time(s) across {#NetContract.RANGE_CASES} out-of-range payloads`
 		)
 	end
-	check(
-		#violations == 0,
-		`AC-3 failed in {#violations} case(s) of {#NetContract.RANGE_CASES}:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-3 failed in {#violations} case(s) of {#NetContract.RANGE_CASES}:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 --[[
@@ -412,7 +409,9 @@ function NetContract.unseatedPlayerIsRejectedForIdentity(net: Net)
 			)}`
 		)
 	end
-	check(#violations == 0, `AC-4 failed:\n{indent(table.concat(violations, "\n"))}`)
+	if #violations ~= 0 then
+		Contract.fail(`AC-4 failed:\n{indent(Contract.firstFew(violations, #violations))}`)
+	end
 end
 
 --[[
@@ -438,11 +437,12 @@ function NetContract.validCallIsAccepted(net: Net)
 			)
 		end
 	end
-	check(
-		#violations == 0,
-		`AC-5 failed in {#violations} case(s) of {#NetContract.VALID_CASES} - a wrapper that rejects `
-			.. `everything fails here:\n{indent(table.concat(violations, "\n"))}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-5 failed in {#violations} case(s) of {#NetContract.VALID_CASES} - a wrapper that rejects `
+				.. `everything fails here:\n{indent(Contract.firstFew(violations, #violations))}`
+		)
+	end
 end
 
 --[[
@@ -487,11 +487,12 @@ function NetContract.rejectionNamesTheCheckThatFired(net: Net)
 			)
 		end
 	end
-	check(
-		#violations == 0,
-		`AC-6 failed in {#violations} case(s) of {#cases} - an implementation returning a single `
-			.. `boolean false fails here:\n{indent(table.concat(violations, "\n"))}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-6 failed in {#violations} case(s) of {#cases} - an implementation returning a single `
+				.. `boolean false fails here:\n{indent(Contract.firstFew(violations, #violations))}`
+		)
+	end
 end
 
 --[[
@@ -577,12 +578,13 @@ function NetContract.checksRunIdentityThenShapeThenRange(net: Net)
 			`AC-6 order: the handler ran {#calls} time(s); every case is a rejection`
 		)
 	end
-	check(
-		#violations == 0,
-		`AC-6 order failed in {#violations} case(s) of {#cases}:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-6 order failed in {#violations} case(s) of {#cases}:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 --[[ ------------------------------------------------------------------------
@@ -643,11 +645,12 @@ function NetContract.guardedCallNeverRaises(net: Net)
 			)
 		end
 	end
-	check(
-		#violations == 0,
-		`the guarded function raised or returned a non-Rejection in {#violations} case(s) of {#hostile}:\n`
-			.. indent(table.concat(violations, "\n"))
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`the guarded function raised or returned a non-Rejection in {#violations} case(s) of {#hostile}:\n`
+				.. indent(Contract.firstFew(violations, #violations))
+		)
+	end
 end
 
 --[[
@@ -672,28 +675,36 @@ function NetContract.identityFailureShortCircuitsBeforeTheSchema(net: Net)
 	local guarded = net.Wrapper.guard(definition, NetContract.context({ "p1" }), handler)
 
 	local ok, result = call(guarded, "p2", { anything = 1 })
-	check(ok, `short-circuit: the unseated call raised: {tostring(result)}`)
-	check(
-		typeof(result) == "table" and result.reason == "identity",
-		`short-circuit: the unseated call was not rejected for identity: {describeResult(result)}`
-	)
-	check(
-		consulted == 0,
-		`short-circuit: the schema was consulted {consulted} time(s) for an unseated caller; identity `
-			.. `fails first and nothing after it runs`
-	)
-	check(#calls == 0, `short-circuit: the handler ran {#calls} time(s) for an unseated caller`)
+	if not ok then
+		Contract.fail(`short-circuit: the unseated call raised: {tostring(result)}`)
+	end
+	if not (typeof(result) == "table" and result.reason == "identity") then
+		Contract.fail(
+			`short-circuit: the unseated call was not rejected for identity: {describeResult(result)}`
+		)
+	end
+	if consulted ~= 0 then
+		Contract.fail(
+			`short-circuit: the schema was consulted {consulted} time(s) for an unseated caller; identity `
+				.. `fails first and nothing after it runs`
+		)
+	end
+	if #calls ~= 0 then
+		Contract.fail(`short-circuit: the handler ran {#calls} time(s) for an unseated caller`)
+	end
 
 	local ok2, result2 = call(guarded, "p1", { anything = 1 })
-	check(
-		ok2 and result2 == nil,
-		`short-circuit: the seated call was not accepted: {describeResult(result2)}`
-	)
-	check(
-		consulted == 1,
-		`short-circuit: the schema was consulted {consulted} time(s) for one seated call`
-	)
-	check(#calls == 1, `short-circuit: the handler ran {#calls} time(s) for one accepted call`)
+	if not (ok2 and result2 == nil) then
+		Contract.fail(`short-circuit: the seated call was not accepted: {describeResult(result2)}`)
+	end
+	if consulted ~= 1 then
+		Contract.fail(
+			`short-circuit: the schema was consulted {consulted} time(s) for one seated call`
+		)
+	end
+	if #calls ~= 1 then
+		Contract.fail(`short-circuit: the handler ran {#calls} time(s) for one accepted call`)
+	end
 end
 
 --[[
@@ -716,36 +727,49 @@ function NetContract.wrapperReadsTheKindFromTheSchemasFailureString(net: Net)
 
 	answer, message = false, "range: token 99 is above the maximum 16"
 	local ok, result = call(guarded, "p1", { token = 99 })
-	check(ok, `kind: the range call raised: {tostring(result)}`)
-	check(
-		typeof(result) == "table" and result.reason == "range",
-		`kind: "range: ..." from the schema became {describeResult(result)}, expected reason "range"`
-	)
-	check(
-		typeof(result) == "table"
+	if not ok then
+		Contract.fail(`kind: the range call raised: {tostring(result)}`)
+	end
+	if not (typeof(result) == "table" and result.reason == "range") then
+		Contract.fail(
+			`kind: "range: ..." from the schema became {describeResult(result)}, expected reason "range"`
+		)
+	end
+	if
+		not (
+			typeof(result) == "table"
 			and typeof(result.detail) == "string"
-			and string.find(result.detail, "token 99 is above the maximum 16", 1, true) ~= nil,
-		`kind: the rejection's detail does not carry the schema's text: {describeResult(result)}`
-	)
+			and string.find(result.detail, "token 99 is above the maximum 16", 1, true) ~= nil
+		)
+	then
+		Contract.fail(
+			`kind: the rejection's detail does not carry the schema's text: {describeResult(result)}`
+		)
+	end
 
 	answer, message = false, "shape: expected a table"
 	local ok2, result2 = call(guarded, "p1", 7)
-	check(ok2, `kind: the shape call raised: {tostring(result2)}`)
-	check(
-		typeof(result2) == "table" and result2.reason == "shape",
-		`kind: "shape: ..." from the schema became {describeResult(result2)}, expected reason "shape"`
-	)
+	if not ok2 then
+		Contract.fail(`kind: the shape call raised: {tostring(result2)}`)
+	end
+	if not (typeof(result2) == "table" and result2.reason == "shape") then
+		Contract.fail(
+			`kind: "shape: ..." from the schema became {describeResult(result2)}, expected reason "shape"`
+		)
+	end
 
 	answer, message = true, nil
 	local ok3, result3 = call(guarded, "p1", { token = 4 })
-	check(
-		ok3 and result3 == nil,
-		`kind: a schema that accepts did not lead to acceptance: {describeResult(result3)}`
-	)
-	check(
-		#calls == 1,
-		`kind: the handler ran {#calls} time(s) across two rejections and one acceptance`
-	)
+	if not (ok3 and result3 == nil) then
+		Contract.fail(
+			`kind: a schema that accepts did not lead to acceptance: {describeResult(result3)}`
+		)
+	end
+	if #calls ~= 1 then
+		Contract.fail(
+			`kind: the handler ran {#calls} time(s) across two rejections and one acceptance`
+		)
+	end
 end
 
 --[[ ------------------------------------------------------------------------
@@ -768,41 +792,47 @@ function NetContract.defineReturnsTheDeclarationAndAllListsIt(net: Net)
 		rateLimit = { minIntervalSeconds = 1.5 },
 	})
 
-	check(
-		typeof(definition) == "table",
-		`define returned {Deep.show(definition)}, not a definition`
-	)
-	check(
-		definition.name == name,
-		`definition.name is {Deep.show(definition.name)}, expected "{name}"`
-	)
-	check(definition.args == schema, `definition.args is not the schema that was declared`)
+	if typeof(definition) ~= "table" then
+		Contract.fail(`define returned {Deep.show(definition)}, not a definition`)
+	end
+	if definition.name ~= name then
+		Contract.fail(`definition.name is {Deep.show(definition.name)}, expected "{name}"`)
+	end
+	if definition.args ~= schema then
+		Contract.fail(`definition.args is not the schema that was declared`)
+	end
 	local phases = Deep.diff({ "Round", "Lobby" }, definition.legalPhases)
-	check(phases == "", `definition.legalPhases differs from what was declared:\n{indent(phases)}`)
+	if phases ~= "" then
+		Contract.fail(`definition.legalPhases differs from what was declared:\n{indent(phases)}`)
+	end
 	local rate = Deep.diff({ minIntervalSeconds = 1.5 }, definition.rateLimit)
-	check(rate == "", `definition.rateLimit differs from what was declared:\n{indent(rate)}`)
+	if rate ~= "" then
+		Contract.fail(`definition.rateLimit differs from what was declared:\n{indent(rate)}`)
+	end
 
 	local all = net.Remotes.all()
-	check(typeof(all) == "table", `Remotes.all() returned {Deep.show(all)}`)
-	check(
-		#all == before + 1,
-		`Remotes.all() has {#all} entries after one define; it had {before} before`
-	)
+	if typeof(all) ~= "table" then
+		Contract.fail(`Remotes.all() returned {Deep.show(all)}`)
+	end
+	if #all ~= before + 1 then
+		Contract.fail(`Remotes.all() has {#all} entries after one define; it had {before} before`)
+	end
 	local listed = false
 	for _, entry in all do
 		if entry == definition then
 			listed = true
 		end
 	end
-	check(listed, `Remotes.all() does not contain the definition define() returned`)
+	if not listed then
+		Contract.fail(`Remotes.all() does not contain the definition define() returned`)
+	end
 
 	-- The optional field is optional.
 	local bare =
 		net.Remotes.define(uniqueName("bare"), { args = schema, legalPhases = { "Round" } })
-	check(
-		bare.rateLimit == nil,
-		`a declaration with no rateLimit has rateLimit = {Deep.show(bare.rateLimit)}`
-	)
+	if bare.rateLimit ~= nil then
+		Contract.fail(`a declaration with no rateLimit has rateLimit = {Deep.show(bare.rateLimit)}`)
+	end
 
 	-- A copy, not the registry.
 	local escaped = net.Remotes.all()
@@ -813,10 +843,11 @@ function NetContract.defineReturnsTheDeclarationAndAllListsIt(net: Net)
 			smuggled = true
 		end
 	end
-	check(
-		not smuggled,
-		`Remotes.all() hands out the live registry; a caller inserted a definition into it`
-	)
+	if not not smuggled then
+		Contract.fail(
+			`Remotes.all() hands out the live registry; a caller inserted a definition into it`
+		)
+	end
 end
 
 --[[
@@ -834,20 +865,23 @@ function NetContract.redeclaringANameFails(net: Net)
 
 	local looser = net.Schema.shape({})
 	local ok, err = pcall(net.Remotes.define, name, { args = looser, legalPhases = { "Round" } })
-	check(
-		ok == false,
-		`AC-8: declaring "{name}" a second time did not fail; it returned {Deep.show(err)}`
-	)
-	check(
-		string.find(tostring(err), name, 1, true) ~= nil,
-		`AC-8: the failure does not name the duplicated remote "{name}": {tostring(err)}`
-	)
+	if ok ~= false then
+		Contract.fail(
+			`AC-8: declaring "{name}" a second time did not fail; it returned {Deep.show(err)}`
+		)
+	end
+	if string.find(tostring(err), name, 1, true) == nil then
+		Contract.fail(
+			`AC-8: the failure does not name the duplicated remote "{name}": {tostring(err)}`
+		)
+	end
 
 	local all = net.Remotes.all()
-	check(
-		#all == before,
-		`AC-8: the registry has {#all} entries after the refused declaration; it had {before}`
-	)
+	if #all ~= before then
+		Contract.fail(
+			`AC-8: the registry has {#all} entries after the refused declaration; it had {before}`
+		)
+	end
 	local kept, replaced = false, false
 	for _, entry in all do
 		if entry == first then
@@ -856,20 +890,24 @@ function NetContract.redeclaringANameFails(net: Net)
 			replaced = true
 		end
 	end
-	check(kept, `AC-8: the first declaration of "{name}" is no longer in Remotes.all()`)
-	check(
-		not replaced,
-		`AC-8: a different declaration of "{name}" is in Remotes.all(); the first was replaced`
-	)
-	check(first.args ~= looser, `AC-8: the first declaration's schema was overwritten in place`)
+	if not kept then
+		Contract.fail(`AC-8: the first declaration of "{name}" is no longer in Remotes.all()`)
+	end
+	if not not replaced then
+		Contract.fail(
+			`AC-8: a different declaration of "{name}" is in Remotes.all(); the first was replaced`
+		)
+	end
+	if first.args == looser then
+		Contract.fail(`AC-8: the first declaration's schema was overwritten in place`)
+	end
 
 	-- The registry is not poisoned by the refusal.
 	local other =
 		net.Remotes.define(uniqueName("ac8other"), { args = looser, legalPhases = { "Round" } })
-	check(
-		typeof(other) == "table",
-		`AC-8: a fresh name could not be declared after a refused duplicate`
-	)
+	if typeof(other) ~= "table" then
+		Contract.fail(`AC-8: a fresh name could not be declared after a refused duplicate`)
+	end
 end
 
 --[[ ------------------------------------------------------------------------
@@ -920,10 +958,13 @@ local function runExpectations(who: string, schema: any, cases: { Expectation })
 end
 
 local function report(who: string, violations: { string }, total: number)
-	check(
-		#violations == 0,
-		`{who} failed in {#violations} case(s) of {total}:\n{indent(table.concat(violations, "\n"))}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`{who} failed in {#violations} case(s) of {total}:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 function NetContract.integerSchemaAcceptsTheInclusiveDomainAndRejectsByKind(net: Net)
@@ -1235,12 +1276,13 @@ function NetContract.validateNeverRaisesOnHostileInput(net: Net)
 			end
 		end
 	end
-	check(
-		#violations == 0,
-		`validate raised or misreported in {#violations} case(s) of {total}:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`validate raised or misreported in {#violations} case(s) of {total}:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 return NetContract

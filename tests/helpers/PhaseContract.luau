@@ -40,6 +40,7 @@
 ]]
 
 local Clock = require("../../src/shared/Clock")
+local Contract = require("./Contract")
 local Deep = require("./Deep")
 local NetContract = require("./NetContract")
 
@@ -62,18 +63,6 @@ function PhaseContract.phasesExcept(except: { string }): { string }
 		end
 	end
 	return out
-end
-
---[[
-	The final assertion of every check goes through this rather than `assert`.
-	MEASURED in SEAT-002's RED: under Lune, `assert(false, message)` truncates
-	the message to 512 characters after the location prefix and `error` does
-	not. Level 2 attributes the failure to the caller.
-]]
-local function check(condition: boolean, message: string)
-	if not condition then
-		error(message, 2)
-	end
 end
 
 local function indent(text: string): string
@@ -126,10 +115,9 @@ end
 -- name carrying one would satisfy the needle by accident.
 function PhaseContract.remote(net: Net, label: string, legalPhases: { string }): any
 	for _, phase in PhaseContract.PHASES do
-		assert(
-			string.find(label, phase, 1, true) == nil,
-			`the remote label "{label}" contains the phase name "{phase}"`
-		)
+		if string.find(label, phase, 1, true) ~= nil then
+			Contract.fail(`the remote label "{label}" contains the phase name "{phase}"`)
+		end
 	end
 	return net.Remotes.define(NetContract.uniqueName(label), {
 		args = net.Schema.shape({
@@ -199,19 +187,27 @@ function PhaseContract.handlerRunsInTheOnlyLegalPhase(net: Net)
 	local guarded = net.Wrapper.guard(definition, context, handler)
 
 	local ok, result = call(guarded, "p1", VALID)
-	check(ok, `AC-1: a valid call in the legal phase raised: {tostring(result)}`)
-	check(
-		result == nil,
-		`AC-1: a valid call by a seated player in the remote's only legal phase was rejected: `
-			.. describeResult(result)
-	)
-	check(#calls == 1, `AC-1: the handler ran {#calls} time(s) for one valid call in phase`)
-	check(
-		calls[1].playerId == "p1",
-		`AC-1: the handler received playerId {Deep.show(calls[1].playerId)}, expected "p1"`
-	)
+	if not ok then
+		Contract.fail(`AC-1: a valid call in the legal phase raised: {tostring(result)}`)
+	end
+	if result ~= nil then
+		Contract.fail(
+			`AC-1: a valid call by a seated player in the remote's only legal phase was rejected: `
+				.. describeResult(result)
+		)
+	end
+	if #calls ~= 1 then
+		Contract.fail(`AC-1: the handler ran {#calls} time(s) for one valid call in phase`)
+	end
+	if calls[1].playerId ~= "p1" then
+		Contract.fail(
+			`AC-1: the handler received playerId {Deep.show(calls[1].playerId)}, expected "p1"`
+		)
+	end
 	local diff = Deep.diff(VALID, calls[1].args)
-	check(diff == "", `AC-1: the handler did not receive the validated arguments:\n{indent(diff)}`)
+	if diff ~= "" then
+		Contract.fail(`AC-1: the handler did not receive the validated arguments:\n{indent(diff)}`)
+	end
 end
 
 --[[
@@ -248,12 +244,13 @@ function PhaseContract.outOfPhaseCallIsRejectedForPhase(net: Net)
 				.. `run at all`
 		)
 	end
-	check(
-		#violations == 0,
-		`AC-2: {#violations} violation(s) across {#phases} out-of-phase calls:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-2: {#violations} violation(s) across {#phases} out-of-phase calls:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 --[[
@@ -392,12 +389,13 @@ function PhaseContract.earlierChecksWinOverPhase(net: Net)
 		)
 	end
 
-	check(
-		#violations == 0,
-		`AC-3: {#violations} violation(s) across {#cases + 3} calls:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-3: {#violations} violation(s) across {#cases + 3} calls:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 --[[
@@ -439,13 +437,14 @@ function PhaseContract.multiPhaseRemoteRunsInEachLegalPhaseAndNowhereElse(net: N
 			end
 		end
 	end
-	check(
-		#violations == 0,
-		`AC-4: {#violations} violation(s) across {#PhaseContract.PHASES} phases - an implementation `
-			.. `comparing against one entry of legalPhases fails here:\n{indent(
-				table.concat(violations, "\n")
-			)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-4: {#violations} violation(s) across {#PhaseContract.PHASES} phases - an implementation `
+				.. `comparing against one entry of legalPhases fails here:\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[
@@ -460,46 +459,53 @@ function PhaseContract.emptyLegalPhasesIsADeclarationError(net: Net)
 	local before = #net.Remotes.all()
 
 	local ok, err = pcall(net.Remotes.define, name, { args = schema, legalPhases = {} })
-	check(
-		ok == false,
-		`AC-5: declaring "{name}" with an empty legalPhases did not fail; define returned {Deep.show(
-			err
-		)}`
-	)
-	check(
-		string.find(tostring(err), name, 1, true) ~= nil,
-		`AC-5: the failure does not name the remote "{name}": {tostring(err)}`
-	)
-	check(
-		string.find(tostring(err), "legalPhases", 1, true) ~= nil,
-		`AC-5: the failure does not name the field legalPhases: {tostring(err)}`
-	)
+	if ok ~= false then
+		Contract.fail(
+			`AC-5: declaring "{name}" with an empty legalPhases did not fail; define returned {Deep.show(
+				err
+			)}`
+		)
+	end
+	if string.find(tostring(err), name, 1, true) == nil then
+		Contract.fail(`AC-5: the failure does not name the remote "{name}": {tostring(err)}`)
+	end
+	if string.find(tostring(err), "legalPhases", 1, true) == nil then
+		Contract.fail(`AC-5: the failure does not name the field legalPhases: {tostring(err)}`)
+	end
 
 	local all = net.Remotes.all()
-	check(
-		#all == before,
-		`AC-5: the registry has {#all} entries after the refused declaration; it had {before}`
-	)
+	if #all ~= before then
+		Contract.fail(
+			`AC-5: the registry has {#all} entries after the refused declaration; it had {before}`
+		)
+	end
 	for _, entry in all do
-		check(entry.name ~= name, `AC-5: the refused remote "{name}" is in Remotes.all()`)
+		if entry.name == name then
+			Contract.fail(`AC-5: the refused remote "{name}" is in Remotes.all()`)
+		end
 	end
 
 	local ok2, retried =
 		pcall(net.Remotes.define, name, { args = schema, legalPhases = { "Round" } })
-	check(
-		ok2 == true,
-		`AC-5: after the refusal, declaring "{name}" with one legal phase failed: {tostring(retried)}`
-	)
-	check(
-		typeof(retried) == "table" and retried.name == name,
-		`AC-5: the retried declaration returned {Deep.show(retried)}`
-	)
+	if ok2 ~= true then
+		Contract.fail(
+			`AC-5: after the refusal, declaring "{name}" with one legal phase failed: {tostring(
+				retried
+			)}`
+		)
+	end
+	if not (typeof(retried) == "table" and retried.name == name) then
+		Contract.fail(`AC-5: the retried declaration returned {Deep.show(retried)}`)
+	end
 	local diff = Deep.diff({ "Round" }, retried.legalPhases)
-	check(diff == "", `AC-5: the retried declaration's legalPhases differ:\n{indent(diff)}`)
-	check(
-		#net.Remotes.all() == before + 1,
-		`AC-5: Remotes.all() has {#net.Remotes.all()} entries after the retry; expected {before + 1}`
-	)
+	if diff ~= "" then
+		Contract.fail(`AC-5: the retried declaration's legalPhases differ:\n{indent(diff)}`)
+	end
+	if #net.Remotes.all() ~= before + 1 then
+		Contract.fail(
+			`AC-5: Remotes.all() has {#net.Remotes.all()} entries after the retry; expected {before + 1}`
+		)
+	end
 end
 
 --[[
@@ -586,13 +592,14 @@ function PhaseContract.phaseIsReadAtTheMomentOfEachCall(net: Net)
 		)
 	end
 
-	check(
-		#violations == 0,
-		`AC-6: {#violations} violation(s) across {#sequence + #sequence2} calls - an implementation that `
-			.. `captures the phase when the remote is guarded fails here:\n{indent(
-				table.concat(violations, "\n")
-			)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`AC-6: {#violations} violation(s) across {#sequence + #sequence2} calls - an implementation that `
+				.. `captures the phase when the remote is guarded fails here:\n{indent(
+					Contract.firstFew(violations, #violations)
+				)}`
+		)
+	end
 end
 
 --[[ ------------------------------------------------------------------------
@@ -621,12 +628,15 @@ function PhaseContract.phaseRejectionDetailNamesTheCurrentAndEveryLegalPhase(net
 		result,
 		"phase"
 	)
-	check(rejected == nil, rejected or "")
+	if rejected ~= nil then
+		Contract.fail(rejected or "")
+	end
 	local detail = result.detail
-	check(
-		typeof(detail) == "string" and detail ~= "",
-		`detail: the phase rejection's detail is {Deep.show(detail)}; must be a non-empty string`
-	)
+	if not (typeof(detail) == "string" and detail ~= "") then
+		Contract.fail(
+			`detail: the phase rejection's detail is {Deep.show(detail)}; must be a non-empty string`
+		)
+	end
 
 	local violations: { string } = {}
 	if string.match(detail, "^phase:") ~= nil then
@@ -653,12 +663,13 @@ function PhaseContract.phaseRejectionDetailNamesTheCurrentAndEveryLegalPhase(net
 			)
 		end
 	end
-	check(
-		#violations == 0,
-		`the phase rejection's detail failed in {#violations} way(s):\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`the phase rejection's detail failed in {#violations} way(s):\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 --[[
@@ -733,12 +744,13 @@ function PhaseContract.phaseIsNotConsultedWhenAnEarlierCheckFails(net: Net)
 			`short-circuit: the handler ran {#calls} time(s); every case is a rejection`
 		)
 	end
-	check(
-		#violations == 0,
-		`short-circuit: {#violations} violation(s) across {#cases} calls:\n{indent(
-			table.concat(violations, "\n")
-		)}`
-	)
+	if #violations ~= 0 then
+		Contract.fail(
+			`short-circuit: {#violations} violation(s) across {#cases} calls:\n{indent(
+				Contract.firstFew(violations, #violations)
+			)}`
+		)
+	end
 end
 
 return PhaseContract

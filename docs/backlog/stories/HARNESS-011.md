@@ -4,8 +4,8 @@ title: A contract helper's failure message survives past 511 characters
 slug: a-contract-helper-s-failure-message-surv
 epic: 
 type: chore
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-011-a-contract-helper-s-failure-message-surv
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -636,6 +636,22 @@ case could not fail.
     PASS         build (0s, observed 57746)
     PASS         harness (14s, observed 40)
     UNCONFIGURED mutation
+
+## Close-out (REVIEW → DONE)
+
+Merged as PR #32 (`1d57657`) on 2026-09-28. Timings from the first CI run
+(the only run; both jobs green):
+
+| Job / gate | CI | Limit | Headroom |
+|---|---|---|---|
+| `gates` job | 2m41s (19:28:28 → 19:31:09) | `timeout-minutes: 45` | ~94 % |
+| `unit` | 4s, `450 passed, 0 failed` (13–22s locally) | none | — |
+| `harness` | 14s, `project-counters: 40 passed, 0 failed` | none | — |
+| `typecheck` / `lint` / `format` / `build` | 3s / 1s / 0s / 0s | none | — |
+| `boundaries` job | 5s | — | — |
+
+Nothing is within 10 % of a limit. No gate reached REVIEW *pending CI*.
+The follow-up is `HARNESS-016`, now unblocked.
 
 ## Scaffold inventory
 
