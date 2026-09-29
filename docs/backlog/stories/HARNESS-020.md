@@ -908,19 +908,19 @@ shipped files. Confirming them against what GREEN ships is GREEN's job.
 
 <!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
 
-    run:    2026-09-29T22:18:43Z
-    commit: 2f1b524
+    run:    2026-09-29T22:52:40Z
+    commit: 1d1bc00
     tree:   b4a9cb21f834bf4a1f1b6111def4985c5cb6090b
     result: pass (6 ran, 3 unconfigured, 0 known)
 
-    PASS         format (1s, observed 90)
-    PASS         lint (1s, observed 90, floor 1)
-    PASS         typecheck (3s, observed 17)
-    PASS         unit (33s, observed 452, floor 443)
+    PASS         format (0s, observed 90)
+    PASS         lint (0s, observed 90, floor 1)
+    PASS         typecheck (2s, observed 17)
+    PASS         unit (30s, observed 452, floor 443)
     UNCONFIGURED coverage
     UNCONFIGURED integration
-    PASS         build (1s, observed 57746)
-    PASS         harness (14s, observed 40)
+    PASS         build (0s, observed 57746)
+    PASS         harness (13s, observed 40)
     UNCONFIGURED mutation
 
 ## Notes
