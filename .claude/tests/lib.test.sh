@@ -96,7 +96,7 @@ mask() { printf '%s' "$1" | mask_shell_quotes; }
 roundtrip() { printf '%s' "$1" | mask_shell_quotes | unmask_shell_quotes; }
 
 # What the masker is for: no operator survives inside a quoted span.
-has_operator() { printf '%s' "$1" | grep -qE '[|&;<>]'; }
+has_operator() { grep -qE '[|&;<>]' <<< "$1"; }
 
 for cmd in \
   "sed -i 's|a|b|' f.txt" \
@@ -123,7 +123,7 @@ done
 # match at `(`, so the group truncated the command mid-word and the fragment
 # left behind was taken for the write target. Masking it is not a special case
 # for sed: a subshell paren is syntax, a quoted one is a character.
-has_paren() { printf '%s' "$1" | grep -qF '('; }
+has_paren() { grep -qF '(' <<< "$1"; }
 for cmd in \
   "sed -i 's/\(a\)/b/' f.txt" \
   "sed -i 's/(43)/(47)/' f.txt" \
@@ -164,7 +164,7 @@ describe "mask_shell_quotes: heredocs and escapes"
 
 hd="$(mask "$(printf 'cat > notes.md <<%sEOF%s\nrun: cat > src/main.ts\nEOF\n' "'" "'")")"
 assert_contains "the real redirect survives" "> notes.md" "$hd"
-if printf '%s' "$hd" | grep -q '> src/main.ts'; then
+if grep -q '> src/main.ts' <<< "$hd"; then
   _bad "a heredoc body is masked" "the body's redirect survived: $hd"
 else
   _ok "a heredoc body is masked"

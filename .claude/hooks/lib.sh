@@ -51,8 +51,11 @@ json_get_string() {
 }
 
 # json_is_true <key>   exit 0 if "key": true appears in $HOOK_INPUT
+# A here-string, never `printf | grep -q`: $HOOK_INPUT carries a whole file body
+# on a Write, grep -q exits at its first match, and under pipefail the writer's
+# SIGPIPE turns a match into "false". HARNESS-018.
 json_is_true() {
-  printf '%s' "$HOOK_INPUT" | grep -qE "\"$1\"[[:space:]]*:[[:space:]]*true"
+  grep -qE "\"$1\"[[:space:]]*:[[:space:]]*true" <<< "$HOOK_INPUT"
 }
 
 
@@ -354,7 +357,7 @@ path_is_implausible() {
   case "$t" in
     *'`'*|*'$'*|*'('*|*')'*) return 0 ;;
   esac
-  printf '%s' "$t" | grep -q '[[:alnum:]]' || return 0
+  grep -q '[[:alnum:]]' <<< "$t" || return 0
   return 1
 }
 
@@ -411,7 +414,7 @@ normalize_rel() {
 command_cwd() {
   local masked="$1" tgt cur="" rel joined lp lr
   # A bare `cd` goes home. Nothing after it is a repo path.
-  printf '%s\n' "$masked" | grep -qE '(^|[|&;(])[[:space:]]*cd[[:space:]]*($|[|&;)])' && return 1
+  grep -qE '(^|[|&;(])[[:space:]]*cd[[:space:]]*($|[|&;)])' <<< "$masked" && return 1
   lr="$(lower "$(printf '%s' "${HARNESS_ROOT%/}" | tr '\134' '/')")"
   while IFS= read -r tgt; do
     [ -z "$tgt" ] && continue

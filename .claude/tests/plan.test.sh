@@ -267,7 +267,7 @@ assert_contains "a bootstrap story keeps RED on the stronger model" \
 unplanned=""
 for ph in $(awk -F'|' '!/^#|^[[:space:]]*$/ { gsub(/ /,"",$1); print $1 }' "$FIX/.claude/harness/phases.conf"); do
   case "$ph" in IDLE|DONE) continue ;; esac
-  printf '%s\n' "$out" | grep -q "^$ph	" || unplanned="$unplanned $ph"
+  grep -q "^$ph	" <<< "$out" || unplanned="$unplanned $ph"
 done
 assert_eq "every dispatching phase has a model" "" "$unplanned"
 

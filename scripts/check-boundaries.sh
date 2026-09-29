@@ -141,7 +141,7 @@ story_fail_start=$fail
 for f in docs/backlog/stories/*.md; do
   [ -e "$f" ] || continue
   base=$(basename "$f" .md)
-  head -1 "$f" | grep -q '^---' || { problem "$f: missing YAML frontmatter"; continue; }
+  case "$(head -1 "$f")" in ---*) ;; *) problem "$f: missing YAML frontmatter"; continue ;; esac
   for key in id title type status phase; do
     grep -qE "^$key:" "$f" || problem "$f: frontmatter missing '$key'"
   done
@@ -231,7 +231,7 @@ if [ "$src" -gt 0 ] && [ "$tst" -eq 0 ]; then
         missing=""
         while IFS= read -r p; do
           [ -z "$p" ] && continue
-          printf '%s\n' "$inv" | grep -qF -- "$p" || missing="$missing $p"
+          grep -qF -- "$p" <<< "$inv" || missing="$missing $p"
         done <<< "$src_files"
         if [ -n "$missing" ]; then
           problem "story $sid: changed source file(s) not named in ## Scaffold inventory:$missing"
@@ -320,7 +320,7 @@ case "$ph:$story_type" in
   REVIEW:spike|DONE:spike) note "spike story; gate record not required" ;;
   REVIEW:*|DONE:*)
     gr="$(section "$sfile" "Gate results")"
-    if ! printf '%s\n' "$gr" | grep -qF -- "$GATE_MARKER"; then
+    if ! grep -qF -- "$GATE_MARKER" <<< "$gr"; then
       problem "story $sid: ## Gate results was not written by scripts/gates.sh. Run 'bash scripts/gates.sh' - it records its own result; a pasted summary is not evidence."
     else
       res=$(printf '%s\n' "$gr" | sed -nE 's/^[[:space:]]*result:[[:space:]]*//p' | head -1)
@@ -379,7 +379,7 @@ case "$ph:$story_type" in
       # before the escalation was added, where the gate is optional again by
       # the time anyone looks.
       for g in $(frontmatter_list "$sfile" required_gates); do
-        if printf '%s\n' "$gr" | grep -qE "^[[:space:]]*PASS[[:space:]]+$g( |\(|$)"; then
+        if grep -qE "^[[:space:]]*PASS[[:space:]]+$g( |\(|$)" <<< "$gr"; then
           ok "story-required gate '$g' passed in the recorded run"
         else
           problem "story $sid: frontmatter requires gate '$g', but the recorded run has no PASS for it. Run 'bash scripts/gates.sh' again."

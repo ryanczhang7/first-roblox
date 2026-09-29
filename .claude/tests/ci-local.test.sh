@@ -41,7 +41,7 @@ missing=""
 while IFS= read -r cmd; do
   [ -z "$cmd" ] && continue
   case "$cmd" in *'${{'*) continue ;; esac
-  printf '%s\n' "$dry" | grep -qF -- "$cmd" || missing="$missing
+  grep -qF -- "$cmd" <<< "$dry" || missing="$missing
   $cmd"
 # Both spellings. This derivation reads THIS repository's workflows, and every
 # one of them happens to use the two-line `name:` / `run:` form - so a grep for
