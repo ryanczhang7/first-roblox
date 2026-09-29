@@ -5,7 +5,7 @@ slug: the-harness-s-own-test-suites-obey-the-t
 epic: 
 type: chore
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/HARNESS-009-the-harness-s-own-test-suites-obey-the-t
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -317,6 +317,50 @@ The AC-3 and AC-5 rows are the ones that matter: "accepted" is also what a
 **presence or absence of the `ok` line**, which is why AC-3 pins it. GREEN
 confirms that distinction by running the AC-1 fixture in the same session and
 showing the `ok` line does appear there.
+
+**Result (GREEN, orchestrator, 2026-09-29).** GREEN was a no-op after both
+returns: the 3j that GREEN wrote was unchanged. One run, in one session, against the shipped 3j:
+`VERBOSE=1 bash .claude/tests/boundaries.test.sh` → `boundaries: 125 passed, 0 failed`.
+The readings for this block, verbatim:
+
+    ok   a suite edited in GREEN is refused, naming the commit, the path and the phase   <- AC-1: refusal fires
+    ok   and in GATES
+    ok   the verdict follows the phase AT THE COMMIT, not the phase at the tip
+    ok   nor the phase in the environment
+    ok   a garbled phase in the commit's frontmatter fails closed
+    ok   a suite edited in RED is not refused                                   <- AC-2: accepted
+    ok   and the ok line reports the one commit inspected                       <- AC-2: ok line count = 1 (grep -Fxc)
+    ok   SCAFFOLD may write a suite too
+    ok   and is counted the same way
+    ok   two suites in one commit count as one commit
+    ok   two RED commits are both fine
+    ok   and both are counted
+    ok   a branch that touches no suite is not refused                          <- AC-3: accepted
+    ok   and 3j prints no ok line for it - nothing was inspected                <- AC-3: NO ok line
+    ok   a commit with no story file to read is skipped, as 3i skips it
+    ok   and not counted
+    ok   GREEN may still write .claude/harness/project.conf                     <- AC-5 (each path)
+    ok   GREEN may still write .gitignore
+    ok   GREEN may still write CLAUDE.md
+    ok   GREEN may still write .claude/commands/advance-story.md
+    ok   GREEN may still write scripts/new-tool.sh
+    ok   GREEN may still write docs/.claude/tests/x.md
+    ok   and none of them counts as a suite inspection                          <- AC-5: NO ok line
+    ok   when GREEN's row gains test, the same GREEN commit is accepted         <- AC-4 both directions
+    ok   and counted as inspected
+    ok   phases.conf restored byte-for-byte
+    ok   restored, the same commit is refused again - the row was the cause
+    ok   when RED's row loses test, a RED commit is refused, naming RED
+    ok   phases.conf restored byte-for-byte
+    ok   restored, the RED commit is accepted again
+
+Every expected value matches. The distinguishing observation holds: in the same run, the refusal and the
+`ok … (1 commit(s))` line appear on the AC-1 and AC-2 fixtures, and are absent on the
+AC-3 and AC-5 fixtures. That run predates Return 2, which changed only the phases.conf
+fixture guard. The test-developer's run after Return 2 was also `125 passed, 0 failed`.
+The suite's discrimination is confirmed by three mutate.sh probes in `## Regressions`,
+each of which turned exactly its target assertion red. Freeze: `frozen: OK — 22 path(s)
+unchanged since the snapshot for HARNESS-009`, checked at the end of the first GREEN and again at the end of this one.
 
 ## Amendments
 
