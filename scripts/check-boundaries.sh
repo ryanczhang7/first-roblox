@@ -567,4 +567,39 @@ if [ "$red_manifest_checked" -gt 0 ] && [ "$red_manifest_problem" -eq 0 ]; then
   ok "RED touched only test dependencies ($red_manifest_checked manifest change(s))"
 fi
 
+# 3j. The harness's own suites obey the test freeze. `.claude/tests/**`
+# classifies as `harness` (paths.conf's `.claude/**` rule precedes every `test`
+# rule), and `harness` is writable in every phase - so the lock never freezes
+# these files, and a weakened harness assertion passes its own suite, which is
+# what weakening means. This asks the question per commit, as 3i does: was the
+# story, AT THAT COMMIT, in a phase whose phases.conf row includes `test`?
+#
+# The path predicate is the literal, anchored prefix - not the classifier,
+# which says `harness` for .claude/commands/*.md and .gitignore too, and those
+# keep their every-phase permission deliberately (rules.md). The phase
+# predicate is lib.sh's phase_allows, never a list of phase names: it reads the
+# global PHASE, which this script never sets and which `set -u` would abort on,
+# so each call runs in a subshell with PHASE set to the COMMIT's phase - not the
+# working tree's, and not whatever the environment carried in. It fails closed
+# on a phase no row lists (`GREEN.`), and that is wanted here.
+harness_test_problem=0
+harness_test_checked=0
+for c in $(git rev-list "$BASE"..HEAD 2>/dev/null); do
+  ph_at="$(git show "$c:$sfile" 2>/dev/null | sed -nE 's/^phase:[[:space:]]*//p' | head -1 | tr -d '[:space:]')"
+  [ -n "$ph_at" ] || continue
+  touched=0
+  for f in $(git diff-tree --no-commit-id --name-only -r "$c" 2>/dev/null); do
+    case "$f" in .claude/tests/*) ;; *) continue ;; esac
+    touched=1
+    if ! ( PHASE="$ph_at"; phase_allows test ); then
+      harness_test_problem=1
+      problem "story $sid: commit ${c%${c#???????}} changed '$f' while the story was in $ph_at, which may not write tests. A harness suite is a test, and law 2 freezes tests outside RED; the lock cannot see this because the path classifies as harness. Return to RED ('bash scripts/phase.sh set $sid RED'), make the change there, and record why in ## Regressions."
+    fi
+  done
+  [ "$touched" -eq 1 ] && harness_test_checked=$((harness_test_checked+1))
+done
+if [ "$harness_test_checked" -gt 0 ] && [ "$harness_test_problem" -eq 0 ]; then
+  ok "harness suites changed only where the phase may write tests ($harness_test_checked commit(s))"
+fi
+
 exit $fail
