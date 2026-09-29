@@ -4,8 +4,8 @@ title: no pipe feeds an early-exiting grep under pipefail
 slug: no-pipe-feeds-an-early-exiting-grep-unde
 epic: 
 type: fix
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/HARNESS-018-no-pipe-feeds-an-early-exiting-grep-unde
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -306,6 +306,22 @@ Lock coverage: SUPPRESSED by `1.5` (source), `boundaries.test.sh` (test), `check
 <!-- Filled by the Test Developer during RED: which tests, at which level,
      and which AC each one covers. -->
 
+All the tests are in `.claude/tests/pipe-readers.test.sh`. It is a new file,
+discovered by `scripts/selftest.sh` through its `*.test.sh` glob.
+
+| Assertion | Input | AC |
+|---|---|---|
+| `the text really is large` | the AC-1 text is more than 1,572,864 bytes | AC-1 (guards the input) |
+| `a token on line 1 of 1.5 MiB is found on 3 of 3 calls` | `stylua` on line 1, then 1.5 MiB of filler; `missing_tokens` extracted from `profile-counters.test.sh`, 3 calls | AC-1 |
+| `a token that appears nowhere is still reported missing` | same text, tokens `stylua zq-nowhere-token`; output must be exactly `zq-nowhere-token` | AC-1 control |
+| `evidence on line 1 of 2 MB is PASS` / `and not 'no evidence of work'` | gate prints the evidence line, then `seq 1 300000`, and exits 0 | AC-2 (a) |
+| `a launch failure on line 1 of 2 MB is BLOCKED, not FAIL` | gate prints `command not found`, then `seq 1 300000`, and exits 127 | AC-2 (b) |
+| `2 MB with no evidence line is still no evidence of work` | gate prints `No test files found`, then `seq`, and exits 0 | AC-2 control |
+| `the scanner flags every piped quiet grep` | probe `bad.sh`: `-qF`, `-Eq`, a trailing-`\|` continuation, and a two-stage `\| sed \| grep -qE` | AC-3 control |
+| `and nothing that is not one` | probe `good.sh`: `\|\|`, a here-string, a process substitution, two comments, a heredoc body, a `grep -c` | AC-3 control |
+| `an unclosed heredoc in a string does not hide the next line` | probe `after.sh` | AC-3 control (scanner soundness) |
+| `scripts/, .claude/tests/ and .claude/hooks/ pipe into no quiet grep` | the real tree | AC-3 |
+
 ## Handoff: RED -> GREEN
 
 <!-- Filled by the Test Developer at the end of RED. This is the ONLY channel
@@ -325,6 +341,77 @@ Lock coverage: SUPPRESSED by `1.5` (source), `boundaries.test.sh` (test), `check
          suite fails at import, so no assertion in it has run - the controls
          are claims until GREEN confirms them against the shipped module
        * anything discovered that changes the approach -->
+
+**Command.** `bash .claude/tests/pipe-readers.test.sh`. It takes about 6s on
+this Windows machine.
+
+**RED output** (against `6213c3c`, the scanner list abridged to its first line):
+
+```
+  AC-1: missing_tokens finds a token early in a large text
+    FAIL a token on line 1 of 1.5 MiB is found on 3 of 3 calls
+         expected: 3 [stylua] [stylua] [stylua]
+         actual:   0 [stylua] [stylua] [stylua]
+    FAIL a token that appears nowhere is still reported missing
+         expected: zq-nowhere-token
+         actual:   stylua
+         zq-nowhere-token
+
+  AC-2: gates.sh reads a large log's first line
+    FAIL evidence on line 1 of 2 MB is PASS
+         ...
+         FAIL         unit (0s, ran but produced no evidence of work: expected /Tests +[1-9][0-9]* passed/) -> .claude/state/gate-logs/unit.log
+    FAIL and not 'no evidence of work'
+    FAIL a launch failure on line 1 of 2 MB is BLOCKED, not FAIL
+         ...
+         FAIL         unit (0s, exit 127) -> .claude/state/gate-logs/unit.log
+
+  AC-3: no shell code pipes into a quiet grep
+    FAIL scripts/, .claude/tests/ and .claude/hooks/ pipe into no quiet grep
+         expected:
+         actual:   scripts/check-boundaries.sh:144:   head -1 "$f" | grep -q '^---' || { problem "$f: missing YAML frontmatter"; continue; }
+         ... 20 more lines
+
+pipe-readers: 5 passed, 6 failed
+```
+
+**Why it is the right failure.** AC-1 fails 0 of 3, not intermittently: the
+text is 24 times the 64 KiB pipe buffer, so `printf` cannot finish before grep
+exits. This is the CI failure made deterministic. AC-2's gate logs show the
+evidence line and the launch failure printed, and gates.sh reporting them
+absent. That is the defect, not a fixture problem.
+
+**The 21 sites AC-3 names**, which are the files GREEN changes:
+
+- `scripts/check-boundaries.sh`: 144, 234, 323, 382
+- `scripts/classify.sh`: 86
+- `scripts/gates.sh`: 428, 432
+- `.claude/tests/ci-local.test.sh`: 44
+- `.claude/tests/harness-gate.test.sh`: 156, 290, 329
+- `.claude/tests/lib.test.sh`: 99, 126, 167
+- `.claude/tests/plan.test.sh`: 270
+- `.claude/tests/profile-counters.test.sh`: 319
+- `.claude/tests/project-counters.test.sh`: 285
+- `.claude/hooks/lib.sh`: 55, 357, 414
+
+The test files in that list are other stories' tests. The change to each is
+mechanical: the same needle and the same pattern, with only the plumbing that
+delivers the input changed. No assertion is weakened, and GREEN must keep it
+that way. `doctor.test.sh` is not in the list, because its matches are
+heredoc bodies (project.conf fixtures).
+
+**Passed on arrival**, and what earns each one:
+- `2 MB with no evidence line is still no evidence of work` passes because
+  today's defect fails closed. DV-1 earns it in GATES.
+- The three scanner controls and `the text really is large` pass because they
+  test the instrument, not the fix. The scanner's positive control flags all 4
+  offending probe lines. Its negative controls flag none of the 8 benign ones.
+
+**What the tests pin, and what they leave free.** Pinned: the function name
+`missing_tokens` and its output format (one missing token per line), and
+gates.sh's summary words `PASS`, `BLOCKED` and `no evidence of work`. Free:
+which idiom replaces each pipe (a here-string, `< <(…)` or `case`), as long as
+the scanner stops matching and `pipefail` stays on.
 
 ## Regressions
 
