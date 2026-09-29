@@ -4,8 +4,8 @@ title: no pipe feeds an early-exiting grep under pipefail
 slug: no-pipe-feeds-an-early-exiting-grep-unde
 epic: 
 type: fix
-status: in-progress
-phase: GATES
+status: in-review
+phase: REVIEW
 branch: story/HARNESS-018-no-pipe-feeds-an-early-exiting-grep-unde
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
