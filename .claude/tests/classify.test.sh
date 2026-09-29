@@ -127,6 +127,36 @@ assert_eq "a module merely named 'probe' is source" "source	src/heat_probe.ts" \
   "$(cls src/heat_probe.ts)"
 
 # ---------------------------------------------------------------------------
+describe "the harness's own code is tooling, not harness (HARNESS-020, AC-1)"
+
+# scripts/** and .claude/hooks/** are the harness's production code: split out
+# of `harness` into `tooling` so the lock can freeze them where it freezes
+# `source`. This fixture carries the REAL scripts and hooks (make_project_fixture
+# copies them), so --list answers about the files a real tree has.
+assert_eq "scripts/check-boundaries.sh classifies as tooling" \
+  "tooling	scripts/check-boundaries.sh" "$(cls scripts/check-boundaries.sh)"
+assert_eq ".claude/hooks/phase-guard.sh classifies as tooling" \
+  "tooling	.claude/hooks/phase-guard.sh" "$(cls .claude/hooks/phase-guard.sh)"
+assert_eq "a new file under scripts/ classifies as tooling" \
+  "tooling	scripts/new-tool.sh" "$(cls scripts/new-tool.sh)"
+
+# --list tooling scripts returns exactly the scripts git sees under scripts/ -
+# compared as a whole list, not with a floating contains, so a partial match
+# (one script classified, the rest left harness) is a failure that names them.
+expected_scripts="$(git -C "$FIX" ls-files --cached --others --exclude-standard -- scripts | sort)"
+got="$(cls --list tooling scripts)"; rc=$?
+assert_eq "--list tooling is accepted" 0 "$rc"
+assert_eq "--list tooling scripts lists every script" "$expected_scripts" "$(printf '%s\n' "$got" | sort)"
+# The instrument: the expected list is not empty, or the comparison above would
+# pass on a tree with no scripts at all.
+assert_eq "and there are scripts to list (the fixture copied them)" 1 \
+  "$(awk '$0 == "scripts/check-boundaries.sh" { n++ } END { print n + 0 }' <<< "$expected_scripts")"
+assert_eq "--list harness scripts lists none of them" "" "$(cls --list harness scripts)"
+
+expected_hooks="$(git -C "$FIX" ls-files --cached --others --exclude-standard -- .claude/hooks | sort)"
+assert_eq "--list tooling .claude/hooks lists every hook" "$expected_hooks" \
+  "$(cls --list tooling .claude/hooks | sort)"
+assert_eq "--list harness .claude/hooks lists none of them" "" "$(cls --list harness .claude/hooks)"
 
 # ---------------------------------------------------------------------------
 describe "the category list cannot drift from paths.conf"

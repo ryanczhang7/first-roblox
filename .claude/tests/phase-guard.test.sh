@@ -145,6 +145,174 @@ assert_blocked "$FIX" 'echo x >> Cargo.toml'   Cargo.toml 'REVIEW may not write 
 set_phase "$FIX" RED
 
 # ---------------------------------------------------------------------------
+describe "the harness's own code is tooling, and frozen wherever source is"
+
+# HARNESS-020. `scripts/**` and `.claude/hooks/**` classified as `harness`, and
+# `harness` is in every row of phases.conf - so during RED an agent could write
+# the harness production code that makes its own new test pass, and the lock
+# said nothing. For `src/**` the same write is refused. Every harness story in
+# this repository has had its production code under exactly those two trees.
+#
+# The fix is the manifest move in the other direction: a category, `tooling`,
+# split out of `harness`, carrying `source`'s lock verdict and none of its
+# other meanings. So every assertion here is about the VERDICT and the
+# CATEGORY the denial names - a denial naming `category: source` would mean the
+# paths were reclassified as source (option A, rejected in the story), and a
+# denial naming `harness` cannot happen while harness is writable everywhere.
+#
+# One command per path per phase, deliberately unrolled: a loop reports "some
+# path in some phase", and the point of a mechanical criterion is to say which.
+
+# assert_tooling_denied <label> <reason> <path>
+#   The denial names the exact path AND `category: tooling`, in that order, as
+#   the hook lays them out (`path:     <p>` then `category: <cat>` on the next
+#   line, newlines unescaped to spaces by `guard`). The trailing space after
+#   the category anchors it: `category: tooling-x` or `category: toolingfoo`
+#   would not match. An empty reason means the write was allowed.
+assert_tooling_denied() {
+  if [ -z "$2" ]; then
+    _bad "$1" "not blocked at all"
+    return
+  fi
+  case "$2" in
+    *"path:     $3 "*"category: tooling "*) _ok "$1" ;;
+    *) _bad "$1" "blocked, but not on path '$3' with category: tooling: $2" ;;
+  esac
+}
+
+# Two of the paths exist in the fixture, the way they exist in a real tree; the
+# third is new. A classifier that only knew today's files would pass the first
+# two and fail the third.
+mkdir -p "$FIX/scripts" "$FIX/.claude/hooks"
+printf '#!/usr/bin/env bash\n' > "$FIX/scripts/check-boundaries.sh"
+printf 'x() { :; }\n'          > "$FIX/.claude/hooks/lib.sh"
+git -C "$FIX" add scripts/check-boundaries.sh .claude/hooks/lib.sh >/dev/null 2>&1
+
+# AC-2: RED, by the Write tool and by a shell redirect, existing and new.
+set_phase "$FIX" RED
+assert_tooling_denied "AC-2: RED denies Write to scripts/check-boundaries.sh, as tooling" \
+  "$(guard "$FIX" Write file_path scripts/check-boundaries.sh)" scripts/check-boundaries.sh
+assert_tooling_denied "AC-2: RED denies Write to .claude/hooks/lib.sh, as tooling" \
+  "$(guard "$FIX" Write file_path .claude/hooks/lib.sh)" .claude/hooks/lib.sh
+assert_tooling_denied "AC-2: RED denies Write to a NEW scripts/new-tool.sh, as tooling" \
+  "$(guard "$FIX" Write file_path scripts/new-tool.sh)" scripts/new-tool.sh
+assert_tooling_denied "AC-2: RED denies a redirect onto scripts/check-boundaries.sh, as tooling" \
+  "$(guard_bash "$FIX" 'echo x >> scripts/check-boundaries.sh')" scripts/check-boundaries.sh
+assert_tooling_denied "AC-2: RED denies a redirect onto .claude/hooks/lib.sh, as tooling" \
+  "$(guard_bash "$FIX" 'echo x >> .claude/hooks/lib.sh')" .claude/hooks/lib.sh
+assert_tooling_denied "AC-2: RED denies a redirect creating scripts/new-tool.sh, as tooling" \
+  "$(guard_bash "$FIX" 'echo x > scripts/new-tool.sh')" scripts/new-tool.sh
+
+# AC-3, the denying half: every phase in which `source` is frozen.
+set_phase "$FIX" PLANNED
+assert_tooling_denied "AC-3: PLANNED denies scripts/check-boundaries.sh" \
+  "$(guard_bash "$FIX" 'echo x >> scripts/check-boundaries.sh')" scripts/check-boundaries.sh
+assert_tooling_denied "AC-3: PLANNED denies .claude/hooks/lib.sh" \
+  "$(guard_bash "$FIX" 'echo x >> .claude/hooks/lib.sh')" .claude/hooks/lib.sh
+assert_tooling_denied "AC-3: PLANNED denies scripts/new-tool.sh" \
+  "$(guard_bash "$FIX" 'echo x > scripts/new-tool.sh')" scripts/new-tool.sh
+set_phase "$FIX" REVIEW
+assert_tooling_denied "AC-3: REVIEW denies scripts/check-boundaries.sh" \
+  "$(guard_bash "$FIX" 'echo x >> scripts/check-boundaries.sh')" scripts/check-boundaries.sh
+assert_tooling_denied "AC-3: REVIEW denies .claude/hooks/lib.sh" \
+  "$(guard_bash "$FIX" 'echo x >> .claude/hooks/lib.sh')" .claude/hooks/lib.sh
+assert_tooling_denied "AC-3: REVIEW denies scripts/new-tool.sh" \
+  "$(guard_bash "$FIX" 'echo x > scripts/new-tool.sh')" scripts/new-tool.sh
+set_phase "$FIX" DONE
+assert_tooling_denied "AC-3: DONE denies scripts/check-boundaries.sh" \
+  "$(guard_bash "$FIX" 'echo x >> scripts/check-boundaries.sh')" scripts/check-boundaries.sh
+assert_tooling_denied "AC-3: DONE denies .claude/hooks/lib.sh" \
+  "$(guard_bash "$FIX" 'echo x >> .claude/hooks/lib.sh')" .claude/hooks/lib.sh
+assert_tooling_denied "AC-3: DONE denies scripts/new-tool.sh" \
+  "$(guard_bash "$FIX" 'echo x > scripts/new-tool.sh')" scripts/new-tool.sh
+
+# AC-3, the allowing half: every phase in which `source` is writable. These
+# pass today, when the paths are harness and writable everywhere; what makes
+# them mean something is the denials above, in the same run.
+set_phase "$FIX" GREEN
+assert_allowed "$FIX" 'echo x >> scripts/check-boundaries.sh' 'AC-3: GREEN allows scripts/check-boundaries.sh'
+assert_allowed "$FIX" 'echo x >> .claude/hooks/lib.sh'        'AC-3: GREEN allows .claude/hooks/lib.sh'
+assert_allowed "$FIX" 'echo x > scripts/new-tool.sh'          'AC-3: GREEN allows scripts/new-tool.sh'
+set_phase "$FIX" GATES
+assert_allowed "$FIX" 'echo x >> scripts/check-boundaries.sh' 'AC-3: GATES allows scripts/check-boundaries.sh'
+assert_allowed "$FIX" 'echo x >> .claude/hooks/lib.sh'        'AC-3: GATES allows .claude/hooks/lib.sh'
+assert_allowed "$FIX" 'echo x > scripts/new-tool.sh'          'AC-3: GATES allows scripts/new-tool.sh'
+set_phase "$FIX" SCAFFOLD
+assert_allowed "$FIX" 'echo x >> scripts/check-boundaries.sh' 'AC-3: SCAFFOLD allows scripts/check-boundaries.sh'
+assert_allowed "$FIX" 'echo x >> .claude/hooks/lib.sh'        'AC-3: SCAFFOLD allows .claude/hooks/lib.sh'
+assert_allowed "$FIX" 'echo x > scripts/new-tool.sh'          'AC-3: SCAFFOLD allows scripts/new-tool.sh'
+
+# AC-4: what stays `harness` keeps its every-phase permission. rules.md gives it
+# on purpose - .gitignore for a runner's scratch dir, project.conf for a missing
+# command, a test helper for RED itself - and a split that swallowed any of
+# these would be a regression wearing the story's name. Their classification
+# as `harness` is pinned in lib.test.sh.
+set_phase "$FIX" RED
+assert_allowed "$FIX" 'echo x >> .claude/tests/x.test.sh'            'AC-4: RED still allows .claude/tests/x.test.sh'
+assert_allowed "$FIX" 'echo x >> .claude/tests/_lib.sh'              'AC-4: RED still allows .claude/tests/_lib.sh'
+assert_allowed "$FIX" 'echo x >> .gitignore'                         'AC-4: RED still allows .gitignore'
+assert_allowed "$FIX" 'echo x >> CLAUDE.md'                          'AC-4: RED still allows CLAUDE.md'
+assert_allowed "$FIX" 'echo x >> .gitattributes'                     'AC-4: RED still allows .gitattributes'
+assert_allowed "$FIX" 'echo x >> .github/workflows/gates.yml'        'AC-4: RED still allows .github/workflows/gates.yml'
+assert_allowed "$FIX" 'echo x >> .claude/commands/advance-story.md'  'AC-4: RED still allows .claude/commands/advance-story.md'
+assert_allowed "$FIX" 'echo x >> .claude/harness/project.conf'       'AC-4: RED still allows .claude/harness/project.conf'
+assert_allowed "$FIX" 'echo x >> .claude/harness/paths.conf'         'AC-4: RED still allows .claude/harness/paths.conf'
+assert_allowed "$FIX" 'echo x >> .claude/settings.json'              'AC-4: RED still allows .claude/settings.json'
+# The redirect onto paths.conf above is judged, not executed; the fixture's
+# copy is untouched, which AC-7 below depends on.
+
+# AC-5: mutate.sh keeps working on harness code in RED. The exemption is keyed
+# on mutate.sh's FILE argument, not on a category, so this should need no
+# change to the hook - and the plain redirect to the SAME file, in the SAME
+# phase, is what shows the exemption is mutate.sh's alone.
+assert_allowed "$FIX" "bash scripts/mutate.sh scripts/check-boundaries.sh 's/a/b/' -- true" \
+  'AC-5: RED allows mutate.sh on scripts/check-boundaries.sh'
+assert_allowed "$FIX" "bash scripts/mutate.sh .claude/hooks/lib.sh 's/a/b/' -- true" \
+  'AC-5: RED allows mutate.sh on .claude/hooks/lib.sh'
+assert_tooling_denied "AC-5: while a plain redirect onto that same scripts/check-boundaries.sh is denied" \
+  "$(guard_bash "$FIX" 'echo x >> scripts/check-boundaries.sh')" scripts/check-boundaries.sh
+assert_tooling_denied "AC-5: and onto that same .claude/hooks/lib.sh" \
+  "$(guard_bash "$FIX" 'echo x >> .claude/hooks/lib.sh')" .claude/hooks/lib.sh
+# The exemption is the FILE argument and nothing else: a payload writing tooling
+# is judged like any other command.
+assert_tooling_denied "AC-5: a mutate.sh payload that writes tooling in RED is still denied" \
+  "$(guard_bash "$FIX" "bash scripts/mutate.sh src/main.ts 's/a/b/' -- cp docs/notes.md scripts/new-tool.sh")" \
+  scripts/new-tool.sh
+
+# AC-7: the verdict comes from phases.conf, through phase_allows, and from
+# nothing else. THE CONTROL IS THE WHOLE CRITERION: an implementation that
+# special-cases `scripts/*` inside the hook passes AC-2 and fails the first
+# assertion below, because giving RED's row `tooling` would change nothing.
+#
+# Edited on the FIXTURE's copy of phases.conf, never the real one. Restored by
+# `cp` from the real one rather than `git checkout`: HARNESS-009 measured a
+# checkout rewriting line endings under autocrlf, which would make "restored"
+# a different file from the one the rest of this suite ran against.
+awk '/^RED[[:space:]]*\|/ { sub(/,harness/, ",harness,tooling") } { print }' \
+  "$FIX/.claude/harness/phases.conf" > "$FIX/.claude/harness/phases.conf.new" \
+  && mv "$FIX/.claude/harness/phases.conf.new" "$FIX/.claude/harness/phases.conf"
+# The instrument first: the edit landed on RED's row, and only there. Without
+# this, an awk that matched nothing would leave the verdict unmoved and the
+# first assertion below would fail for a reason that has nothing to do with
+# the hook.
+assert_eq "AC-7: the fixture's RED row now lists tooling (the edit landed)" 1 \
+  "$(awk -F'|' '/^RED[[:space:]]*\|/ && $2 ~ /(^|,)[[:space:]]*tooling[[:space:]]*(,|$)/ { n++ } END { print n + 0 }' \
+     "$FIX/.claude/harness/phases.conf")"
+set_phase "$FIX" RED
+assert_allowed "$FIX" 'echo x >> scripts/check-boundaries.sh' \
+  'AC-7: with tooling in RED'"'"'s row of phases.conf, RED allows scripts/check-boundaries.sh'
+assert_allowed "$FIX" 'echo x > scripts/new-tool.sh' \
+  'AC-7: and scripts/new-tool.sh'
+cp "$REPO_ROOT/.claude/harness/phases.conf" "$FIX/.claude/harness/phases.conf"
+assert_eq "AC-7: restored byte for byte from the real phases.conf" 0 \
+  "$(cmp -s "$REPO_ROOT/.claude/harness/phases.conf" "$FIX/.claude/harness/phases.conf"; printf '%s' "$?")"
+assert_tooling_denied "AC-7: restored, RED denies scripts/check-boundaries.sh again" \
+  "$(guard_bash "$FIX" 'echo x >> scripts/check-boundaries.sh')" scripts/check-boundaries.sh
+assert_tooling_denied "AC-7: and scripts/new-tool.sh again" \
+  "$(guard_bash "$FIX" 'echo x > scripts/new-tool.sh')" scripts/new-tool.sh
+set_phase "$FIX" RED
+
+# ---------------------------------------------------------------------------
 describe "a redirect belongs to the redirect rule and to no other"
 set_phase "$FIX" RED
 

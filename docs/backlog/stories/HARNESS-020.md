@@ -4,8 +4,8 @@ title: Harness source is frozen during RED
 slug: harness-source-is-frozen-during-red
 epic: 
 type: chore
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/HARNESS-020-harness-source-is-frozen-during-red
 depends_on: [HARNESS-009]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -447,6 +447,8 @@ Lock coverage: APPLIES — all 9 path(s) declared in the Contract's ### Files ta
      actually ran, and — if a phase was planned for one model and ran on
      another — what that changed. A choice with no verdict is folklore. -->
 
+- RED - test-developer - claude-opus-5-5 (Opus 5.5; planned `opus`, no override)
+
 ## Out of scope
 
 - **A per-commit CI check (option C) is not built here.** `## Context` §2 says
@@ -481,6 +483,22 @@ Lock coverage: APPLIES — all 9 path(s) declared in the Contract's ### Files ta
 <!-- Filled by the Test Developer during RED: which tests, at which level,
      and which AC each one covers. -->
 
+All bash, all in the four existing suites; no new suite, no dependency.
+
+| AC | Suite | Level | Tests |
+|---|---|---|---|
+| AC-1 | `classify.test.sh`, describe "the harness's own code is tooling, not harness" | CLI (`scripts/classify.sh` on a fixture carrying the real scripts/hooks) | `scripts/check-boundaries.sh`, `.claude/hooks/phase-guard.sh`, new `scripts/new-tool.sh` print `tooling`; `--list tooling` accepted (rc 0); `--list tooling scripts` equals git's list of `scripts/` exactly; `--list harness scripts` empty; same pair for `.claude/hooks`; instrument: expected list contains `scripts/check-boundaries.sh` |
+| AC-1, AC-4 | `lib.test.sh`, describe "classify: paths.conf rules" | unit (`classify`) | `.claude/hooks/lib.sh`, `.claude/hooks/phase-guard.sh`, `scripts/gates.sh`, `scripts/check-boundaries.sh`, `scripts/new-tool.sh` = `tooling` (the first and third are the two flipped cases); the ten AC-4 paths = `harness` (six added, four already there) |
+| AC-2 | `phase-guard.test.sh`, describe "the harness's own code is tooling, and frozen wherever source is" | hook end to end | RED: Write tool and redirect, each onto `scripts/check-boundaries.sh`, `.claude/hooks/lib.sh` (both exist in the fixture) and `scripts/new-tool.sh` (new) - denied, reason names `path:     <p>` then `category: tooling ` |
+| AC-3 | same describe | hook | one `set_phase` each: PLANNED, REVIEW, DONE deny the three paths (tooling); GREEN, GATES, SCAFFOLD allow them |
+| AC-4 | same describe | hook | RED allows a redirect onto each of the ten paths, one line each |
+| AC-5 | same describe | hook | RED allows `mutate.sh scripts/check-boundaries.sh ... -- true` and `mutate.sh .claude/hooks/lib.sh ... -- true`; plain redirects onto the same two files denied (tooling); a mutate.sh payload `cp ... scripts/new-tool.sh` denied (tooling) |
+| AC-6 | `lib.test.sh`, describe "gate_tree_hash" | unit | existing "a hook moves the hash", plus "adding a script moves the hash" and "a script moves the hash" |
+| AC-7 | `phase-guard.test.sh`, same describe | hook | awk adds `tooling` to the FIXTURE's RED row; instrument asserts it landed; RED then allows `scripts/check-boundaries.sh` and `scripts/new-tool.sh`; `cp` restore from `$REPO_ROOT`, `cmp` asserts byte-identical; both denied again (tooling) |
+| AC-8 | `plan.test.sh`, describe "the harness's own code is enforced now" | CLI (`plan.sh`, stdout via `models_stdout`, anchored `red_row`/`lines_matching`) | T-80 declares `scripts/new-tool.sh`: SUPPRESSED by it `(tooling)` from the table, not APPLIES, RED `fable`, not the unenforced row. T-81 the same for `.claude/hooks/phase-guard.sh`. Control T-82 (`.claude/tests/x.test.sh` + `.claude/commands/x.md`): APPLIES for 2 declared paths, not SUPPRESSED, RED `opus` with the unenforced reason |
+| (re-premise) | `plan.test.sh` | CLI | the 19 listed in `## Contract`: 16 re-premised onto still-`harness` paths, 3 (HARNESS-018 AC-5) replaced by the corrected verdict (SUPPRESSED by its two tooling paths, no source/test/config offender, not APPLIES, RED `fable`). T-5 and T-8 also re-premised (not in the 19; see Handoff) |
+| AC-9 | none | - | prose, checked at REVIEW (story says so) |
+
 ## Handoff: RED -> GREEN
 
 <!-- Filled by the Test Developer at the end of RED. This is the ONLY channel
@@ -493,6 +511,255 @@ Lock coverage: APPLIES — all 9 path(s) declared in the Contract's ### Files ta
          that earns it
        * the EXPECTED VALUE of every negative control, as a table
        * anything discovered that changes the approach -->
+
+### Commands (one at a time, never concurrently)
+
+    bash .claude/tests/phase-guard.test.sh
+    bash .claude/tests/lib.test.sh
+    bash .claude/tests/classify.test.sh
+    bash .claude/tests/plan.test.sh        # ~3.5 min here; give it a 600 s timeout
+    bash .claude/tests/pipe-readers.test.sh   # must stay 11 passed, 0 failed
+
+### Failure output in RED (tree at `1b8db48` + these test edits)
+
+    phase-guard: 222 passed, 20 failed
+      FAIL AC-2: RED denies Write to scripts/check-boundaries.sh, as tooling        not blocked at all
+      FAIL AC-2: RED denies Write to .claude/hooks/lib.sh, as tooling               not blocked at all
+      FAIL AC-2: RED denies Write to a NEW scripts/new-tool.sh, as tooling          not blocked at all
+      FAIL AC-2: RED denies a redirect onto scripts/check-boundaries.sh, as tooling not blocked at all
+      FAIL AC-2: RED denies a redirect onto .claude/hooks/lib.sh, as tooling        not blocked at all
+      FAIL AC-2: RED denies a redirect creating scripts/new-tool.sh, as tooling     not blocked at all
+      FAIL AC-3: {PLANNED,REVIEW,DONE} denies {scripts/check-boundaries.sh,.claude/hooks/lib.sh,scripts/new-tool.sh}  (9 lines, each "not blocked at all")
+      FAIL AC-5: while a plain redirect onto that same scripts/check-boundaries.sh is denied   not blocked at all
+      FAIL AC-5: and onto that same .claude/hooks/lib.sh                                        not blocked at all
+      FAIL AC-5: a mutate.sh payload that writes tooling in RED is still denied                 not blocked at all
+      FAIL AC-7: restored, RED denies scripts/check-boundaries.sh again                         not blocked at all
+      FAIL AC-7: and scripts/new-tool.sh again                                                  not blocked at all
+
+    lib: 153 passed, 5 failed
+      FAIL classify .claude/hooks/lib.sh           expected: tooling  actual: harness
+      FAIL classify .claude/hooks/phase-guard.sh   expected: tooling  actual: harness
+      FAIL classify scripts/gates.sh               expected: tooling  actual: harness
+      FAIL classify scripts/check-boundaries.sh    expected: tooling  actual: harness
+      FAIL classify scripts/new-tool.sh            expected: tooling  actual: harness
+
+    classify: 28 passed, 8 failed
+      FAIL scripts/check-boundaries.sh classifies as tooling   expected: tooling<TAB>scripts/check-boundaries.sh  actual: harness<TAB>...
+      FAIL .claude/hooks/phase-guard.sh classifies as tooling  (same shape)
+      FAIL a new file under scripts/ classifies as tooling     (same shape)
+      FAIL --list tooling is accepted                          expected: 0  actual: 2   (unknown category)
+      FAIL --list tooling scripts lists every script           expected: <every scripts/ file>  actual: <usage error>
+      FAIL --list harness scripts lists none of them           expected: ''  actual: scripts/check-boundaries.sh ...
+      FAIL --list tooling .claude/hooks lists every hook       (same shape)
+      FAIL --list harness .claude/hooks lists none of them     (same shape)
+
+    plan: 118 passed, 12 failed
+      FAIL AC-5: HARNESS-018, unmodified, reads Lock coverage: SUPPRESSED from its Contract text   expected 1 actual 0
+      FAIL AC-5: suppressed by its real tooling path .claude/hooks/lib.sh                           expected 1 actual 0
+      FAIL AC-5: and by its real tooling path scripts/refresh-harness.sh                            expected 1 actual 0
+      FAIL AC-5: and is not APPLIES                                                                 expected 0 actual 1
+      FAIL AC-5: so HARNESS-018's RED follows the plain plan, because the lock now freezes its paths expected 1 actual 0
+      FAIL AC-8: a declared scripts/ path SUPPRESSES the exception, as tooling, from the table       expected 1 actual 0
+      FAIL AC-8: and the scripts/ story does not read APPLIES                                       expected 0 actual 1
+      FAIL AC-8: so a scripts/ story's RED follows the plain plan                                   expected 1 actual 0
+      FAIL AC-8: and not the unenforced row                                                         expected 0 actual 1
+      FAIL AC-8: a declared .claude/hooks/ path SUPPRESSES the exception, as tooling, from the table expected 1 actual 0
+      FAIL AC-8: and the hooks story does not read APPLIES                                          expected 0 actual 1
+      FAIL AC-8: so a hooks story's RED follows the plain plan                                      expected 1 actual 0
+
+    pipe-readers: 11 passed, 0 failed
+
+**Why these are the right failures.** Every one of them is the lock, the
+classifier or plan.sh giving today's answer (`harness`, which is writable in
+every phase and which plan.sh treats as unenforced). None is a syntax error, a
+missing helper, or a timeout. `--list tooling` failing with rc 2 is the
+classifier saying the category does not exist yet. `gates.sh --fast` ran: all 6
+required gates PASS. That is expected, because no gate reads these suites (see
+`## Context`). CI runs them through `selftest.sh`.
+
+**The tests are checked against the intended implementation, not only against
+its absence.** The three `## Contract` config edits were applied through nested
+`scripts/mutate.sh`, and each file was restored and verified with `cmp`. The
+edits: paths.conf gets `tooling | .claude/hooks/**` before `harness | .claude/**`,
+and `harness | scripts/**` becomes `tooling | scripts/**`. phases.conf gets
+`,source,` → `,source,tooling,`. `gated_stdin` gets `|| $1 == "tooling"`. With
+those edits:
+
+    phase-guard: 242 passed, 0 failed
+    lib: 158 passed, 0 failed
+    classify: 36 passed, 0 failed      (paths.conf edit only)
+    plan: 130 passed, 0 failed         (paths.conf edit only)
+
+So nothing else is needed. Specifically, **plan.sh, phase-guard.sh and
+check-boundaries.sh need no edit.**
+
+### Files touched
+
+| File | AC |
+|---|---|
+| `.claude/tests/phase-guard.test.sh` | AC-2, AC-3, AC-4, AC-5, AC-7: new describe after the manifest block, with local helper `assert_tooling_denied` |
+| `.claude/tests/lib.test.sh` | AC-1 and AC-4 classify cases (`:26`/`:28` flipped to `tooling`, 3 tooling and 6 harness cases added), AC-6 (two hash cases) |
+| `.claude/tests/classify.test.sh` | AC-1 |
+| `.claude/tests/plan.test.sh` | AC-8 (new describe, T-80/81/82), AC-5-of-HARNESS-019 corrected, 16+2 fixtures re-premised |
+| this story | `## Test plan`, this handoff, a Resolved line |
+
+Nothing else changed. `git diff --stat -- scripts .claude/hooks .claude/harness CLAUDE.md`
+is empty, `.claude/state/mutations/` holds no `.bak`, and:
+
+    frozen: OK — 21 path(s) unchanged since the snapshot for HARNESS-020
+
+### Export shape the tests pin
+
+This is not a module, so there are no exported names. What the tests pin:
+
+- `bash scripts/classify.sh <p>` prints `tooling<TAB><p>` for any path under
+  `scripts/` or `.claude/hooks/`, including one that does not exist yet.
+  `--only tooling` and `--list tooling` are accepted, which follows from the
+  category appearing in `paths.conf`.
+- `classify <p>` in `lib.sh` returns `tooling` for the same paths. It returns
+  `harness` for `.claude/tests/**`, `.claude/commands/**`, `.claude/harness/*.conf`,
+  `.claude/settings.json`, `.github/**`, `CLAUDE.md`, `.gitignore` and `.gitattributes`.
+- The denial layout is unchanged: `path:     <p>` on one line and
+  `category: tooling` on the next. The test anchors on `path:     <p> ` followed
+  later by `category: tooling `, with the trailing spaces.
+- `plan.sh`'s lock-coverage line names a tooling offender as `` `<p>` (tooling) ``.
+  It already does this generically.
+- **Not constrained:** where exactly in `paths.conf` the rules sit, as long as
+  the `.claude/hooks/**` rule comes before `harness | .claude/**`. Also not
+  constrained: the comment wording, and the column position of `tooling` inside
+  a phases.conf row. `phase_allows` strips whitespace and matches the category
+  as a comma-delimited item.
+
+### Passed on arrival, and what earns each
+
+**Vacuous in RED, and not claimed.** These go to DV-1, owner GREEN:
+
+- AC-3's allowing half (9)
+- AC-4 (10 hook assertions, plus the six new `harness` classify cases in lib.test.sh)
+- AC-5's two `mutate.sh`-allowed assertions
+- AC-6's hook and script hash cases
+- AC-7's instrument, its two "allowed with tooling in RED's row" assertions, and its `cmp` restore check
+- classify's "there are scripts to list" instrument
+- plan's "AC-5: and by no prose or bare filename" guard
+- the AC-8 control (T-82)
+
+**Earned by probes.** Each probe was run through `scripts/mutate.sh`, and every
+restore was verified by `cmp`:
+
+1. **AC-7's control fires, and it fires hard.** The config edits were applied,
+   plus a hook special-case: `phase-guard.sh:32`
+   `if ! phase_allows "$cat" || { [ "$cat" = tooling ] && [ "$PHASE" = RED ]; }; then`.
+
+       FAIL allows: AC-7: with tooling in RED's row of phases.conf, RED allows scripts/check-boundaries.sh
+            blocked with: ... path:     scripts/check-boundaries.sh   category: tooling ...
+       FAIL allows: AC-7: and scripts/new-tool.sh
+       phase-guard: 240 passed, 2 failed
+       === mutate: command exited 1; restored (verified byte-for-byte ...phase-guard.sh...bak) ===
+
+2. **AC-6's control fires.** paths.conf and phases.conf were split, and
+   `gated_stdin` was NOT taught `tooling`:
+
+       FAIL a hook moves the hash            unchanged: abe95fa564484de8ffcbda9c4002a91362d75928
+       FAIL adding a script moves the hash   unchanged: abe95fa5...
+       FAIL a script moves the hash          unchanged: abe95fa5...
+       lib: 155 passed, 3 failed
+
+3. **The re-premised plan.test.sh fixtures.** This is the contract's probe, run
+   against TODAY's config (the code they were corrected against):
+   `bash scripts/mutate.sh scripts/plan.sh 's/^      harness|docs|ignored) ;;$/      docs|ignored) ;;/' -- bash .claude/tests/plan.test.sh`
+
+       219 -       harness|docs|ignored) ;;
+       219 +       docs|ignored) ;;
+       FAIL a story the lock cannot police keeps RED on the stronger model
+       FAIL and says the lock is what is missing
+       FAIL a story that DECLARES only harness paths keeps RED on the stronger model, whatever its prose mentions
+       FAIL and it says the exception APPLIES
+       FAIL to all 2 paths declared in the ### Files table, not scanned from the text
+       FAIL not SUPPRESSED
+       FAIL AC-1: a Contract naming two harness paths, plus prose and their bare names, APPLIES for exactly those 2 paths
+       FAIL AC-1: and is not SUPPRESSED by the prose or a bare filename
+       FAIL AC-1: so RED stays on the stronger model because the lock freezes none of the paths
+       FAIL AC-2: the same bare filename ABSENT from the root is not a path, so it APPLIES for 1 path
+       FAIL AC-2: with rokit.toml absent the verdict is not SUPPRESSED
+       FAIL AC-3: version-like tokens are never counted, even with a file named 5.3.15 at the root, so it APPLIES for 1 path
+       FAIL AC-3: and a version number does not SUPPRESS the exception
+       FAIL AC-4: a missing partial path that trails another scanned path is not counted twice, so it APPLIES for 1 path
+       FAIL AC-4: and the partial path does not SUPPRESS the exception as source
+       FAIL AC-5: suppressed by its real tooling path .claude/hooks/lib.sh
+       FAIL AC-5: and by its real tooling path scripts/refresh-harness.sh
+       FAIL AC-8: a declared scripts/ path SUPPRESSES the exception, as tooling, from the table
+       FAIL AC-8: a declared .claude/hooks/ path SUPPRESSES the exception, as tooling, from the table
+       FAIL AC-8 control: a contract declaring only harness paths still APPLIES, for both of them
+       FAIL AC-8 control: and is not SUPPRESSED
+       FAIL AC-8 control: so its RED stays on the stronger model, for the lock's reason
+       FAIL and it is the same verdict the human plan gave
+       plan: 107 passed, 23 failed
+       === mutate: command exited 1; restored (verified byte-for-byte ...scripts_plan.sh...bak) ===
+
+   All 16 re-premised assertions went red, as did the AC-8 control. **None of the
+   19 escaped this probe except the three HARNESS-018 `AC-5` assertions.** Those
+   were not re-premised: their expected value changed. They are ordinary RED and
+   fail above, today. Their replacement "no source/test/config offender" guard is
+   earned by probe 4.
+
+4. **Scan filter removed, under the paths.conf edit.** The command:
+   `plan.sh:211 paths="$(scanned_paths_filter "$paths")"` → `: no filter`. Result:
+
+       FAIL AC-1 x3, AC-2 x2, AC-3 x2, AC-4 x2   (the re-premised T-70..T-73, incl. T-73's `tests/_lib.sh` partial path)
+       FAIL a Contract whose every token is filtered is NOT CONSIDERED, like one naming no paths
+       FAIL and neither APPLIES nor SUPPRESSED
+       FAIL AC-5: and by its real tooling path scripts/refresh-harness.sh
+       FAIL AC-5: and by no prose or bare filename (no source, test or config offender on the line)
+       plan: 117 passed, 13 failed
+
+5. **T-5 and T-8.** These are not in the 19, and they pass either way. I
+   re-premised them anyway: they are the "one source path is enough" controls,
+   and their companion `scripts/task.sh` would otherwise be tooling after GREEN.
+   That would leave each with two enforced paths instead of source beside a
+   harness path. The probe: `harness|docs|ignored)` → `harness|docs|ignored|source)`.
+
+       FAIL but one source path is enough for the lock to bite
+       FAIL but one DECLARED source path is enough for the lock to bite
+       FAIL ... and it says the exception was SUPPRESSED / by the source path ... / SUPPRESSED by the declared source path ...
+       plan: 103 passed, 27 failed   (the rest are other source-dependent cases and the 12 ordinary-RED AC-5/AC-8)
+
+**plan.test.sh was re-premising and nothing more.** No fixture needed a new
+mechanism.
+
+### DV-1: expected values (GREEN confirms in one session)
+
+| Control | Threshold / expected once `tooling` exists | Measured here against the mutate.sh prototype | Today (RED) |
+|---|---|---|---|
+| AC-2: `echo x >> scripts/check-boundaries.sh` in RED | denied, `path:     scripts/check-boundaries.sh`, `category: tooling` | denied, `category: tooling` | allowed |
+| AC-4: each of the ten `harness` paths in RED | allowed, and each classifies `harness` | allowed / `harness` | allowed / `harness` (vacuous) |
+| AC-5: `mutate.sh` on `scripts/check-boundaries.sh` and on `.claude/hooks/lib.sh` in RED | allowed | allowed | allowed (vacuous) |
+| AC-3: the three paths in GREEN, GATES, SCAFFOLD | allowed | allowed | allowed (vacuous) |
+| AC-6: `gate_tree_hash_of 01e502b` | `e852f851933cb64800209a1cce52af276f8304a1`, unchanged | `e852f851933cb64800209a1cce52af276f8304a1` | `e852f851...` |
+| AC-6 control: split, with `gated_stdin` NOT taught `tooling` | anything but `e852f851...` | **`cd93a70e2b1c3b305ab5cd3fd47759b15b75c137`**. The story records `81917885...`; see below | n/a |
+| AC-6 in-suite control (fixture hash) | the 3 hash cases go red | 3 red, `unchanged: abe95fa5...` | n/a |
+| AC-7 control: hook special-case | exactly the 2 AC-7 "allowed" assertions go red | 2 red (probe 1) | n/a |
+| AC-7 instrument: fixture RED row lists tooling after the awk | 1 | 1 | 1 |
+
+These are measurements of a **prototype applied by mutate.sh**, not of the
+shipped files. Confirming them against what GREEN ships is GREEN's job.
+
+### Discovered: things that affect the approach
+
+- **AC-6's measured negative-control value does not reproduce.** I computed
+  `gate_tree_hash_of 01e502b` with this tree's lib.sh. With the full split it is
+  `e852f851...`, which matches. With only the paths.conf split, it is
+  **`cd93a70e2b1c3b305ab5cd3fd47759b15b75c137`**, not the `81917885...` in
+  `## Context` §4 and AC-6. Two other variants: splitting scripts alone gives
+  `3b3e5695...`, and splitting hooks alone gives `0e1310c3...`. The *claim* holds,
+  because the broken predicate gives a different hash. The *number* does not.
+  No test depends on it, so I did not change anything and did not touch the AC.
+  This is flagged for the orchestrator.
+- **GREEN must land paths.conf and phases.conf together.** The contract already
+  says so. If paths.conf lands alone, `scripts/**` is unwritable in GREEN too.
+  `phase_allows` fails closed, so every AC-3 "allowed" assertion would go red.
+  That failure would be loud, but it would also block GREEN's own next edit.
+- DV-2 (GATES) is not mine to run. Probes 1 and 2 above are the same
+  mechanisms, run against a mutate.sh prototype, not against shipped config.
 
 ## Regressions
 
@@ -621,6 +888,35 @@ The user accepted every recommendation ("accept your recommendations and advance
    signatures"). The orchestrator checked that the `mutate.sh` exemption in
    `phase-guard.sh:215-229` / `lib.sh:270` is keyed on the command's FILE argument,
    not on a category, so AC-5 needs no change to the hook.
+
+### Orchestrator verification of RED (2026-09-29)
+
+- Freeze: `frozen: OK — 21 path(s) unchanged since the snapshot for HARNESS-020`.
+  Only the four suites and this story changed, and `.claude/state/mutations/`
+  holds only `log`.
+- Independent runs, one at a time. `phase-guard: 222 passed, 20 failed`,
+  `lib: 153 passed, 5 failed` and `classify: 28 passed, 8 failed` match the
+  handoff. `pipe-readers: 11 passed, 0 failed`.
+
+### AC-6's recorded negative-control hash is wrong (pending user approval of an Amendment)
+
+The RED subagent reported that `gate_tree_hash_of 01e502b` with the split, but
+without `tooling` in `gated_stdin`, is `cd93a70e…`, not the `81917885…` that
+`## Context` §4 and AC-6 record. **Orchestrator reproduction, by a different
+method and without the subagent's code or any change to a frozen file.** I
+sourced `lib.sh`, took `git ls-tree -r 01e502b`, ran it through today's
+`classify_stdin | gated_stdin`, removed the `scripts/` and `.claude/hooks/`
+paths (which is exactly what a `tooling` that `gated_stdin` drops removes), and
+hashed it the way `_hash_blob_listing` does:
+
+    calibration (all gated):   e852f851933cb64800209a1cce52af276f8304a1   <- matches HARNESS-009's record
+    without scripts+hooks:     cd93a70e2b1c3b305ab5cd3fd47759b15b75c137   <- the negative control
+    without scripts only:      3b3e5695ebfc6d1ea9ff5a9847b4d243750a29df
+
+So the correct value is `cd93a70e…`. The criterion's claim, that the broken
+predicate gives a different hash, still holds, and no test reads the number. Only
+the recorded literal in AC-6's text is wrong. Changing AC text after PLANNED needs
+an `## Amendments` entry, and that needs the user.
 
 ### Sizing: one cycle, not split
 

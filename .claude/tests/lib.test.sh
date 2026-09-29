@@ -16,6 +16,11 @@ export CLAUDE_PROJECT_DIR="$FIX"
 # ---------------------------------------------------------------------------
 describe "classify: paths.conf rules"
 
+# HARNESS-020: scripts/** and .claude/hooks/** are `tooling` - the harness's
+# own production code, frozen wherever `source` is - and everything else under
+# .claude/ and the harness's root files stays `harness`, writable in every
+# phase (AC-1, AC-4). A new file under scripts/ is tooling too: the rule is the
+# tree, not today's inventory.
 for case in \
   "src/main.ts=source" \
   "src/deep/nested/thing.ts=source" \
@@ -23,9 +28,18 @@ for case in \
   "src/main.test.ts=test" \
   "docs/backlog/stories/T-1.md=docs" \
   "README.md=docs" \
-  ".claude/hooks/lib.sh=harness" \
+  ".claude/hooks/lib.sh=tooling" \
+  ".claude/hooks/phase-guard.sh=tooling" \
   ".claude/tests/lib.test.sh=harness" \
-  "scripts/gates.sh=harness" \
+  "scripts/gates.sh=tooling" \
+  "scripts/check-boundaries.sh=tooling" \
+  "scripts/new-tool.sh=tooling" \
+  ".claude/tests/x.test.sh=harness" \
+  ".claude/tests/_lib.sh=harness" \
+  ".claude/commands/advance-story.md=harness" \
+  ".claude/harness/project.conf=harness" \
+  ".claude/harness/paths.conf=harness" \
+  ".claude/settings.json=harness" \
   ".github/workflows/gates.yml=harness" \
   "CLAUDE.md=harness" \
   ".gitignore=harness" \
@@ -344,6 +358,23 @@ assert_eq "a docs file does not move the hash"      "$h0" "$(gate_tree_hash)"
 printf 'y() { :; }\n' > "$FIX/.claude/hooks/lib.sh"
 h1="$(gate_tree_hash)"
 if [ "$h1" = "$h0" ]; then _bad "a hook moves the hash" "unchanged: $h0"; else _ok "a hook moves the hash"; fi
+# HARNESS-020 (AC-6). scripts/** and .claude/hooks/** are `tooling` now, and
+# gated_stdin keeps an explicit list of categories: a split that forgot to add
+# `tooling` to it drops both trees out of "the code the gates ran against",
+# and a gate record then survives any edit to the harness's own code. Measured
+# on the real tree at PLANNED: gate_tree_hash_of 01e502b is e852f851... with
+# the split and 81917885... with the split but without `tooling` in
+# gated_stdin. The hook case above and this one are the two that tell those
+# apart - on a tree without the split they pass either way, which is why the
+# story's DV-2 breaks gated_stdin against the shipped config and watches both.
+mkdir -p "$FIX/scripts"
+printf '#!/usr/bin/env bash\necho a\n' > "$FIX/scripts/gates.sh"
+h1b="$(gate_tree_hash)"
+if [ "$h1b" = "$h1" ]; then _bad "adding a script moves the hash" "unchanged: $h1"; else _ok "adding a script moves the hash"; fi
+printf '#!/usr/bin/env bash\necho b\n' > "$FIX/scripts/gates.sh"
+h1c="$(gate_tree_hash)"
+if [ "$h1c" = "$h1b" ]; then _bad "a script moves the hash" "unchanged: $h1b"; else _ok "a script moves the hash"; fi
+h1="$h1c"
 printf 'export const x = 2\n' > "$FIX/src/main.ts"
 h2="$(gate_tree_hash)"
 if [ "$h2" = "$h1" ]; then _bad "source moves the hash" "unchanged: $h1"; else _ok "source moves the hash"; fi

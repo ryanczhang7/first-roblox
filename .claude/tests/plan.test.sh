@@ -114,8 +114,14 @@ assert_contains "and says it is the brief that is missing" "contract" "$out"
 # enforcement, the only one there is. A weaker model is a different proposition
 # against a safety net than against nothing, so RED stays on the stronger model
 # when every path the contract names is one the lock will not freeze.
+#
+# HARNESS-020 took `scripts/**` and `.claude/hooks/**` OUT of that set: they
+# are `tooling` now, frozen wherever source is. So the fixtures in this file
+# that used a script or a hook to mean "a path the lock does not freeze" were
+# re-premised onto paths that are still `harness` - a command prompt, a harness
+# conf, a suite - which keeps each case's intent. AC-8 below pins the flip side.
 story_with T-4 feature PLANNED 2 <<'EOF'
-CONTRACT:`scripts/plan.sh` gains a `write` subcommand; `.claude/tests/plan.test.sh` pins it.
+CONTRACT:`.claude/commands/plan-story.md` gains a `write` step; `.claude/tests/plan.test.sh` pins it.
 EOF
 out="$(plan models T-4)"
 assert_contains "a story the lock cannot police keeps RED on the stronger model" \
@@ -126,7 +132,7 @@ assert_contains "and says the lock is what is missing" "lock" "$out"
 # path is enough for the lock to bite, and without this assertion the rule
 # above would push every story that touches a helper onto the stronger model.
 story_with T-5 feature PLANNED 2 <<'EOF'
-CONTRACT:`src/core/world.ts` exports `buildWorld`; `scripts/task.sh` gains a `seed` target.
+CONTRACT:`src/core/world.ts` exports `buildWorld`; `.claude/harness/project.conf` gains a `seed` target.
 EOF
 out="$(plan models T-5)"
 assert_contains "but one source path is enough for the lock to bite" \
@@ -169,7 +175,7 @@ CONTRACT:### Files
 CONTRACT:
 CONTRACT:| Path | `classify.sh` says | Who writes it |
 CONTRACT:|---|---|---|
-CONTRACT:| `scripts/mutate.sh` | `harness` | GREEN |
+CONTRACT:| `.claude/harness/models.conf` | `harness` | GREEN |
 CONTRACT:| `.claude/tests/mutate.test.sh` | `harness` | RED |
 CONTRACT:
 CONTRACT:### Measurement
@@ -189,7 +195,7 @@ CONTRACT:
 CONTRACT:| Path | `classify.sh` says | Who writes it |
 CONTRACT:|---|---|---|
 CONTRACT:| `src/core/world.ts` | `source` | GREEN |
-CONTRACT:| `scripts/task.sh` | `harness` | GREEN |
+CONTRACT:| `.claude/harness/project.conf` | `harness` | GREEN |
 CONTRACT:
 CONTRACT:The world builder gains a seed argument and the task runner a target for it.
 EOF
@@ -610,8 +616,8 @@ describe "the fallback scan counts only path-shaped tokens"
 
 # AC-1: the two harness paths are counted, the prose and bare names are not.
 story_with T-70 fix PLANNED 2 <<'EOF'
-CONTRACT:`scripts/check-boundaries.sh` refuses the commit and `.claude/tests/boundaries.test.sh` pins it.
-CONTRACT:Measured on a 1.5 MiB story: check-boundaries.sh reads all of it, and boundaries.test.sh proves that.
+CONTRACT:`.claude/harness/project.conf` names the gate and `.claude/tests/boundaries.test.sh` pins it.
+CONTRACT:Measured on a 1.5 MiB story: project.conf names all of it, and boundaries.test.sh proves that.
 EOF
 both="$(plan T-70)"
 assert_eq "AC-1: a Contract naming two harness paths, plus prose and their bare names, APPLIES for exactly those 2 paths" 1 \
@@ -624,7 +630,7 @@ assert_eq "AC-1: so RED stays on the stronger model because the lock freezes non
 # AC-2: a bare name counts only if it exists at the root. The same story twice:
 # rokit.toml present (config, so the lock bites), then absent (not a path).
 story_with T-71 fix PLANNED 2 <<'EOF'
-CONTRACT:`scripts/plan.sh` learns to read the toolchain pins in rokit.toml before it plans.
+CONTRACT:`.claude/commands/plan-story.md` learns to read the toolchain pins in rokit.toml before it plans.
 EOF
 printf '[tools]\n' > "$FIX/rokit.toml"
 both="$(plan T-71)"
@@ -642,7 +648,7 @@ assert_eq "AC-2: with rokit.toml absent the verdict is not SUPPRESSED" 0 \
 # AC-3: version-like tokens are never paths, even when a file of that name
 # exists - `5.3.15` is created so that only clause 1, not clause 2, can drop it.
 story_with T-72 fix PLANNED 2 <<'EOF'
-CONTRACT:`scripts/plan.sh` is measured under bash 5.3.15 on a 1.5 MiB story, as it was at v2.0 of the harness.
+CONTRACT:`.claude/commands/plan-story.md` is measured under bash 5.3.15 on a 1.5 MiB story, as it was at v2.0 of the harness.
 EOF
 : > "$FIX/5.3.15"
 both="$(plan T-72)"
@@ -654,7 +660,7 @@ assert_eq "AC-3: and a version number does not SUPPRESS the exception" 0 \
 
 # AC-4: a partial path that does not exist is the same path as the full one.
 story_with T-73 fix PLANNED 2 <<'EOF'
-CONTRACT:`.claude/hooks/lib.sh` gains a helper, and every caller of hooks/lib.sh keeps its signature.
+CONTRACT:`.claude/tests/_lib.sh` gains a helper, and every caller of tests/_lib.sh keeps its signature.
 EOF
 both="$(plan T-73)"
 assert_eq "AC-4: a missing partial path that trails another scanned path is not counted twice, so it APPLIES for 1 path" 1 \
@@ -696,11 +702,85 @@ cp "$REPO_ROOT/docs/backlog/stories/HARNESS-018.md" "$FIX/docs/backlog/stories/H
 both="$(plan HARNESS-018)"
 h18="$(models_stdout HARNESS-018)"
 rm -f "$FIX/docs/backlog/stories/HARNESS-018.md"
-assert_eq "AC-5: HARNESS-018, unmodified, reads Lock coverage: APPLIES from its Contract text" 1 \
-  "$(lines_matching "$APPLIES.*$SCANNED" "$both")"
-assert_eq "AC-5: and is not SUPPRESSED" 0 "$(lines_matching "$SUPPRESSED" "$both")"
-assert_eq "AC-5: so HARNESS-018's RED is on the stronger model because the lock freezes none of its paths" 1 \
-  "$(red_row "opus	the lock freezes none of the paths" "$h18")"
+#
+# HARNESS-020 changed the expected VERDICT here, not the input: HARNESS-018's
+# production code is `scripts/refresh-harness.sh` and `.claude/hooks/lib.sh`,
+# which are `tooling` now, so the lock does freeze them and the exception is
+# rightly SUPPRESSED. What HARNESS-019's case is about survives the change and
+# is what is pinned: the suppression is by those real tooling paths, and by no
+# prose or bare filename - the defect was `1.5` (source), `boundaries.test.sh`
+# (test) and `check-boundaries.sh` (source), so no source/test/config offender
+# may appear on the line at all.
+assert_eq "AC-5: HARNESS-018, unmodified, reads Lock coverage: SUPPRESSED from its Contract text" 1 \
+  "$(lines_matching "$SUPPRESSED.*$SCANNED" "$both")"
+assert_eq "AC-5: suppressed by its real tooling path .claude/hooks/lib.sh" 1 \
+  "$(lines_matching "$SUPPRESSED"'.*`\.claude/hooks/lib\.sh` [(]tooling[)]' "$both")"
+assert_eq "AC-5: and by its real tooling path scripts/refresh-harness.sh" 1 \
+  "$(lines_matching "$SUPPRESSED"'.*`scripts/refresh-harness\.sh` [(]tooling[)]' "$both")"
+assert_eq "AC-5: and by no prose or bare filename (no source, test or config offender on the line)" 0 \
+  "$(lines_matching "$SUPPRESSED"'.*[(](source|test|config)[)]' "$both")"
+assert_eq "AC-5: and is not APPLIES" 0 "$(lines_matching "$APPLIES" "$both")"
+assert_eq "AC-5: so HARNESS-018's RED follows the plain plan, because the lock now freezes its paths" 1 \
+  "$(red_row "fable	" "$h18")"
+
+# ---------------------------------------------------------------------------
+describe "the harness's own code is enforced now (HARNESS-020, AC-8)"
+
+# scripts/** and .claude/hooks/** classify as `tooling`, which the phase lock
+# freezes in RED. A story whose Contract declares one of them is therefore NOT
+# a story the lock cannot police, and the `unenforced` exception must not fire
+# for it: plan.sh's `harness|docs|ignored` list is the set of categories the
+# lock leaves open, and `tooling` is not in it. Declared through a ### Files
+# table, so the verdict is read from the declaration and not from a scan.
+story_with T-80 fix PLANNED 2 <<'EOF'
+CONTRACT:### Files
+CONTRACT:
+CONTRACT:| Path | `classify.sh` says | Who writes it |
+CONTRACT:|---|---|---|
+CONTRACT:| `scripts/new-tool.sh` | `tooling` | GREEN |
+CONTRACT:| `.claude/tests/new-tool.test.sh` | `harness` | RED |
+EOF
+both="$(plan T-80)"
+assert_eq "AC-8: a declared scripts/ path SUPPRESSES the exception, as tooling, from the table" 1 \
+  "$(lines_matching "$SUPPRESSED"'.*`scripts/new-tool\.sh` [(]tooling[)].*'"$DECLARED" "$both")"
+assert_eq "AC-8: and the scripts/ story does not read APPLIES" 0 "$(lines_matching "$APPLIES" "$both")"
+assert_eq "AC-8: so a scripts/ story's RED follows the plain plan" 1 \
+  "$(red_row "fable	" "$(models_stdout T-80)")"
+assert_eq "AC-8: and not the unenforced row" 0 \
+  "$(red_row "opus	the lock freezes none of the paths" "$(models_stdout T-80)")"
+
+story_with T-81 fix PLANNED 2 <<'EOF'
+CONTRACT:### Files
+CONTRACT:
+CONTRACT:| Path | `classify.sh` says | Who writes it |
+CONTRACT:|---|---|---|
+CONTRACT:| `.claude/hooks/phase-guard.sh` | `tooling` | GREEN |
+CONTRACT:| `.claude/tests/phase-guard.test.sh` | `harness` | RED |
+EOF
+both="$(plan T-81)"
+assert_eq "AC-8: a declared .claude/hooks/ path SUPPRESSES the exception, as tooling, from the table" 1 \
+  "$(lines_matching "$SUPPRESSED"'.*`\.claude/hooks/phase-guard\.sh` [(]tooling[)].*'"$DECLARED" "$both")"
+assert_eq "AC-8: and the hooks story does not read APPLIES" 0 "$(lines_matching "$APPLIES" "$both")"
+assert_eq "AC-8: so a hooks story's RED follows the plain plan" 1 \
+  "$(red_row "fable	" "$(models_stdout T-81)")"
+
+# THE CONTROL, and the reason AC-8 is not "never fire for harness stories": a
+# contract that declares only paths still `harness` - a suite and a command
+# prompt - is still one the lock does not police, and still gets the exception.
+story_with T-82 fix PLANNED 2 <<'EOF'
+CONTRACT:### Files
+CONTRACT:
+CONTRACT:| Path | `classify.sh` says | Who writes it |
+CONTRACT:|---|---|---|
+CONTRACT:| `.claude/tests/x.test.sh` | `harness` | RED |
+CONTRACT:| `.claude/commands/x.md` | `harness` | GREEN |
+EOF
+both="$(plan T-82)"
+assert_eq "AC-8 control: a contract declaring only harness paths still APPLIES, for both of them" 1 \
+  "$(lines_matching "$APPLIES.*all 2 path[(]s[)] $DECLARED" "$both")"
+assert_eq "AC-8 control: and is not SUPPRESSED" 0 "$(lines_matching "$SUPPRESSED" "$both")"
+assert_eq "AC-8 control: so its RED stays on the stronger model, for the lock's reason" 1 \
+  "$(red_row "opus	the lock freezes none of the paths" "$(models_stdout T-82)")"
 
 # ---------------------------------------------------------------------------
 describe "and written into the story with the plan"
