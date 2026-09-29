@@ -504,10 +504,12 @@ describe "the lock-coverage decision is said out loud"
 # plan.sh's output said whether the exception was considered, applied or
 # suppressed, or by what - so a wrong verdict had to be found by reading the
 # source, and HARNESS-012's departure was written into `## Model guidance` by
-# hand. The fallback scan is still allowed to be wrong (narrowing its regex is
-# out of scope), and what makes that safe is that it now SAYS what it decided:
-# a story whose prose mentions `i.e.` reads "SUPPRESSED by `i.e` (source)",
-# which is the cheapest possible signal that the heuristic misfired.
+# hand. The fallback scan was left allowed to be wrong here, and what made that
+# safe was that it now SAYS what it decided: a story whose prose mentions `i.e.`
+# read "SUPPRESSED by `i.e` (source)", the cheapest possible signal that the
+# heuristic misfired. HARNESS-018 then misfired in exactly that way and nobody
+# acted on the signal, so HARNESS-019 narrows what the scan counts - see the
+# `describe` after this one. The line itself is unchanged.
 #
 # One line, three verdicts, and the keywords are mutually non-matching
 # substrings on purpose. rules.md carries four real cases of a needle that
@@ -584,6 +586,121 @@ assert_eq "F-DECL-SOURCE: exactly one lock-coverage line" 1 \
 assert_eq "SUPPRESSED by the declared source path, and the paths came from the table" 1 \
   "$(lines_matching "$SUPPRESSED"'.*`src/core/world.ts` [(]source[)].*'"$DECLARED" "$both")"
 assert_eq "not APPLIES" 0 "$(lines_matching "$APPLIES" "$both")"
+
+# ---------------------------------------------------------------------------
+describe "the fallback scan counts only path-shaped tokens"
+
+# HARNESS-019. With no `### Files` table the Contract text is grepped for
+# anything shaped like `name.ext`, and every hit was classified at the root. On
+# HARNESS-018 - every file of which is `harness` - that read:
+#   SUPPRESSED by `1.5` (source), `boundaries.test.sh` (test),
+#   `check-boundaries.sh` (source) (+8 more), scanned from the Contract text
+# `1.5` is prose ("1.5 MiB"); the other two are bare names whose real homes are
+# harness paths the same Contract also names. The error fails toward the WEAK
+# model, silently. So the candidates are now filtered before classification:
+#   1. version-like (`^v?[0-9]+(\.[0-9]+)+$`) - dropped, even if it exists;
+#   2. no `/`  - kept only if it exists at the repository root;
+#   3. has `/`, does not exist, and is a trailing `/`-segment of another
+#      candidate - dropped as the same path.
+# Every verdict below is pinned three ways where it can be: the keyword and the
+# COUNT of paths on the anchored line, the opposite keyword at 0, and for the
+# model the `unenforced` row's own reason - `opus` alone is also what the
+# no-contract exception renders. Files a case creates in $FIX are removed
+# straight after it, so later cases see the fixture as it was.
+
+# AC-1: the two harness paths are counted, the prose and bare names are not.
+story_with T-70 fix PLANNED 2 <<'EOF'
+CONTRACT:`scripts/check-boundaries.sh` refuses the commit and `.claude/tests/boundaries.test.sh` pins it.
+CONTRACT:Measured on a 1.5 MiB story: check-boundaries.sh reads all of it, and boundaries.test.sh proves that.
+EOF
+both="$(plan T-70)"
+assert_eq "AC-1: a Contract naming two harness paths, plus prose and their bare names, APPLIES for exactly those 2 paths" 1 \
+  "$(lines_matching "$APPLIES.*all 2 path[(]s[)] $SCANNED" "$both")"
+assert_eq "AC-1: and is not SUPPRESSED by the prose or a bare filename" 0 \
+  "$(lines_matching "$SUPPRESSED" "$both")"
+assert_eq "AC-1: so RED stays on the stronger model because the lock freezes none of the paths" 1 \
+  "$(red_row "opus	the lock freezes none of the paths" "$(models_stdout T-70)")"
+
+# AC-2: a bare name counts only if it exists at the root. The same story twice:
+# rokit.toml present (config, so the lock bites), then absent (not a path).
+story_with T-71 fix PLANNED 2 <<'EOF'
+CONTRACT:`scripts/plan.sh` learns to read the toolchain pins in rokit.toml before it plans.
+EOF
+printf '[tools]\n' > "$FIX/rokit.toml"
+both="$(plan T-71)"
+rm -f "$FIX/rokit.toml"
+assert_eq "AC-2: a bare filename that EXISTS at the root is counted, and a config file suppresses the exception" 1 \
+  "$(lines_matching "$SUPPRESSED"'.*`rokit.toml` [(]config[)].*'"$SCANNED" "$both")"
+assert_eq "AC-2: with rokit.toml present the verdict is not APPLIES" 0 \
+  "$(lines_matching "$APPLIES" "$both")"
+both="$(plan T-71)"
+assert_eq "AC-2: the same bare filename ABSENT from the root is not a path, so it APPLIES for 1 path" 1 \
+  "$(lines_matching "$APPLIES.*all 1 path[(]s[)] $SCANNED" "$both")"
+assert_eq "AC-2: with rokit.toml absent the verdict is not SUPPRESSED" 0 \
+  "$(lines_matching "$SUPPRESSED" "$both")"
+
+# AC-3: version-like tokens are never paths, even when a file of that name
+# exists - `5.3.15` is created so that only clause 1, not clause 2, can drop it.
+story_with T-72 fix PLANNED 2 <<'EOF'
+CONTRACT:`scripts/plan.sh` is measured under bash 5.3.15 on a 1.5 MiB story, as it was at v2.0 of the harness.
+EOF
+: > "$FIX/5.3.15"
+both="$(plan T-72)"
+rm -f "$FIX/5.3.15"
+assert_eq "AC-3: version-like tokens are never counted, even with a file named 5.3.15 at the root, so it APPLIES for 1 path" 1 \
+  "$(lines_matching "$APPLIES.*all 1 path[(]s[)] $SCANNED" "$both")"
+assert_eq "AC-3: and a version number does not SUPPRESS the exception" 0 \
+  "$(lines_matching "$SUPPRESSED" "$both")"
+
+# AC-4: a partial path that does not exist is the same path as the full one.
+story_with T-73 fix PLANNED 2 <<'EOF'
+CONTRACT:`.claude/hooks/lib.sh` gains a helper, and every caller of hooks/lib.sh keeps its signature.
+EOF
+both="$(plan T-73)"
+assert_eq "AC-4: a missing partial path that trails another scanned path is not counted twice, so it APPLIES for 1 path" 1 \
+  "$(lines_matching "$APPLIES.*all 1 path[(]s[)] $SCANNED" "$both")"
+assert_eq "AC-4: and the partial path does not SUPPRESS the exception as source" 0 \
+  "$(lines_matching "$SUPPRESSED" "$both")"
+
+# AC-4's control, the EXISTING half (T-5 / F-NODECL-SOURCE above is the missing
+# half: `src/core/world.ts` is not in the fixture and still suppresses). Here
+# `src/main.ts` exists AND is a trailing segment of another candidate, so only
+# clause 3's "does not exist" condition keeps it. Green on arrival - it is a
+# guard against the filter over-dropping, not a demand for new behaviour.
+story_with T-75 fix PLANNED 2 <<'EOF'
+CONTRACT:`.claude/tests/src/main.ts` is a fixture copy of `src/main.ts`, which this story edits.
+EOF
+both="$(plan T-75)"
+assert_eq "AC-4 control: a / path that EXISTS is kept even when another candidate ends in it, and its source suppresses" 1 \
+  "$(lines_matching "$SUPPRESSED"'.*`src/main.ts` [(]source[)].*'"$SCANNED" "$both")"
+assert_eq "AC-4 control: so the verdict is not APPLIES" 0 \
+  "$(lines_matching "$APPLIES" "$both")"
+
+# The Contract's own consequence: when EVERY candidate is filtered, nothing is
+# left to classify, and that is a contract naming no paths - NOT CONSIDERED and
+# the plain plan, exactly as T-9 - not APPLIES for 0 paths.
+story_with T-76 fix PLANNED 2 <<'EOF'
+CONTRACT:Measured under bash 5.3.15, i.e. the runner's shell; check-boundaries.sh reads a 1.5 MiB story.
+EOF
+both="$(plan T-76)"
+assert_eq "a Contract whose every token is filtered is NOT CONSIDERED, like one naming no paths" 1 \
+  "$(lines_matching "$NOT_CONSIDERED" "$both")"
+assert_eq "and neither APPLIES nor SUPPRESSED" 0 \
+  "$(lines_matching "$APPLIES|$SUPPRESSED" "$both")"
+assert_eq "and RED follows the plain plan" 1 \
+  "$(red_row "fable	" "$(models_stdout T-76)")"
+
+# AC-5: the reproduction, unmodified. HARNESS-018's Contract has no Files table
+# and its prose carries `1.5`, bare filenames and `hooks/lib.sh`.
+cp "$REPO_ROOT/docs/backlog/stories/HARNESS-018.md" "$FIX/docs/backlog/stories/HARNESS-018.md"
+both="$(plan HARNESS-018)"
+h18="$(models_stdout HARNESS-018)"
+rm -f "$FIX/docs/backlog/stories/HARNESS-018.md"
+assert_eq "AC-5: HARNESS-018, unmodified, reads Lock coverage: APPLIES from its Contract text" 1 \
+  "$(lines_matching "$APPLIES.*$SCANNED" "$both")"
+assert_eq "AC-5: and is not SUPPRESSED" 0 "$(lines_matching "$SUPPRESSED" "$both")"
+assert_eq "AC-5: so HARNESS-018's RED is on the stronger model because the lock freezes none of its paths" 1 \
+  "$(red_row "opus	the lock freezes none of the paths" "$h18")"
 
 # ---------------------------------------------------------------------------
 describe "and written into the story with the plan"

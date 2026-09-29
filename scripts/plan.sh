@@ -106,10 +106,21 @@ field() { printf '%s' "$1" | awk -F'|' -v n="$2" '{ gsub(/^[[:space:]]+|[[:space
 # So when the Contract carries a `### Files` table, the path list is that
 # table's FIRST COLUMN and nothing else in the section - the repository's own
 # header row has `classify.sh` in its second column, so a reader of the whole
-# table reproduces the bug. With no table the fallback scan stands, byte for
-# byte, because it is what every story written before this one relies on.
-# Narrowing its regex is a separate question; what makes it safe to leave alone
-# is that the verdict is now SAID OUT LOUD - see lock_coverage_line.
+# table reproduces the bug. With no table the fallback scan's regex is kept as
+# it was, and the verdict is SAID OUT LOUD - see lock_coverage_line.
+#
+# Saying it out loud was not enough (HARNESS-019). HARNESS-018 - every file
+# `harness` - printed SUPPRESSED by `1.5` ("1.5 MiB"), the bare names
+# `check-boundaries.sh` and `boundaries.test.sh` resolved at the root instead of
+# under scripts/ and .claude/tests/, and `hooks/lib.sh`, a partial quote of
+# `.claude/hooks/lib.sh`, and RED went to the weaker model. So the scan's
+# candidates now pass scanned_paths_filter before they are classified: version
+# numbers are dropped, a bare name counts only if it exists at the root, and a
+# missing `/` path that trails another candidate is dropped as the same path.
+# Every drop errs toward the stronger model, the safe side; a token wrongly
+# COUNTED errs toward the weak side, silently. What still gets through - a `/`
+# path the story mentions but does not write, like HARNESS-014's `src/main.ts`
+# fixture - is what the `### Files` table is for.
 
 # classify_many   One repo-relative path per line on stdin, "<category><TAB><path>"
 # per line out. classify() from lib.sh, in one awk for the whole list rather than
@@ -146,6 +157,35 @@ declared_paths() {
     }'
 }
 
+# scanned_paths_filter <candidates>   The fallback scan's candidates, one per
+# line, less the three shapes that are not a path this story names (HARNESS-019):
+#   1. version-like (`1.5`, `5.3.15`, `v2.0`) - dropped even if such a file exists;
+#   2. no `/` - kept only if it exists at the repository root, so a bare
+#      `gates.sh` or `i.e` goes and a real `rokit.toml` stays;
+#   3. a `/` token that does not exist and trails another candidate
+#      (`hooks/lib.sh` beside `.claude/hooks/lib.sh`) - the same path, partly
+#      quoted. One that exists, or trails nothing, is kept: a new file's path.
+# Builtins only per token - `[[ =~ ]]`, `[ -e ]`, `case` - because a fork costs
+# ~50ms here. Not applied to declared_paths: a declared path is taken at its word.
+scanned_paths_filter() {
+  local t u keep all=() NL=$'\n' out=""
+  while IFS= read -r t; do [ -n "$t" ] && all+=("$t"); done <<< "$1"
+  for t in ${all[@]+"${all[@]}"}; do
+    [[ $t =~ ^v?[0-9]+(\.[0-9]+)+$ ]] && continue
+    if [ -e "$ROOT/$t" ]; then
+      out="$out$t$NL"; continue
+    fi
+    case "$t" in */*) ;; *) continue ;; esac
+    keep=1
+    for u in "${all[@]}"; do
+      [ "$u" = "$t" ] && continue
+      case "$u" in */"$t") keep=0; break ;; esac
+    done
+    [ "$keep" = 1 ] && out="$out$t$NL"
+  done
+  printf '%s' "$out"
+}
+
 # The decision, computed once per story file and cached: cmd_both and cmd_write
 # each need both the verdict (through cmd_models) and the line, and the scan
 # costs a classify pass.
@@ -168,6 +208,7 @@ lock_scan() { # <file>
   else
     paths="$(printf '%s\n' "$body" \
       | grep -oE '\.claude/[A-Za-z0-9_./-]+|[A-Za-z0-9_][A-Za-z0-9_./-]*\.[A-Za-z0-9]+' | sort -u)"
+    paths="$(scanned_paths_filter "$paths")"
     LC_ORIGIN=scanned
   fi
 
