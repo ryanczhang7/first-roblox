@@ -4,8 +4,8 @@ title: Lock coverage counts only path-shaped contract tokens
 slug: lock-coverage-counts-only-path-shaped-co
 epic: 
 type: fix
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-019-lock-coverage-counts-only-path-shaped-co
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -723,3 +723,22 @@ scanned branch of `lock_scan`.
 (`.claude/tests/plan.test.sh`). A new snapshot was taken at GREEN → GATES.
 
 **Freeze, GREEN → GATES:** `frozen: OK — 1 path(s) unchanged since the snapshot for HARNESS-019`.
+
+`phase.sh set HARNESS-019 DONE` was run with `--force`, because the story's
+branch had already been merged. This DONE commit is made on top of `main`, as
+HARNESS-017's and HARNESS-018's were, so the checkout is not on the story's
+branch.
+
+## Close-out (REVIEW → DONE)
+
+Merged as PR #36 (`66fa0d2`) on 2026-09-29 by ryanczhang7.
+
+| Job / gate | CI | Notes |
+|---|---|---|
+| `boundaries` job | 6s | green on the first attempt |
+| `gates` job | 2m45s | green on the first attempt; `21 harness suite(s) passed.` including `plan: 117 passed, 0 failed` |
+| `unit` | 4s, 452 observed (floor 443) | |
+| `harness` | 14s, 40 observed | |
+| `typecheck` / `format` / `lint` / `build` | 2s / 0s / 0s / 0s | |
+
+No timing is near a limit, and the suite has no per-test timeout.
