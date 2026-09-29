@@ -4,8 +4,8 @@ title: The harness's own test suites obey the test freeze
 slug: the-harness-s-own-test-suites-obey-the-t
 epic: 
 type: chore
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/HARNESS-009-the-harness-s-own-test-suites-obey-the-t
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -984,10 +984,22 @@ Unmutated runs after the correction, one at a time:
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-29T17:31:14Z
+    commit: db0fd46
+    tree:   e852f851933cb64800209a1cce52af276f8304a1
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 90)
+    PASS         lint (0s, observed 90, floor 1)
+    PASS         typecheck (2s, observed 17)
+    PASS         unit (26s, observed 452, floor 443)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 57746)
+    PASS         harness (13s, observed 40)
+    UNCONFIGURED mutation
 
 ## Notes
 
