@@ -4,8 +4,8 @@ title: plan.sh write adds a missing Model guidance section
 slug: plan-sh-write-adds-a-missing-model-guida
 epic: 
 type: fix
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/HARNESS-017-plan-sh-write-adds-a-missing-model-guida
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -146,6 +146,15 @@ no test dependencies.
      suite that catches an omission can be blind to a corruption, and a codec
      that is uniformly wrong round-trips through itself perfectly. -->
 
+**DV-1: AC-3's "nothing else moved" assertions, earned by a mutation.** Three
+AC-3 assertions pass in RED: `and nothing else in the file moved`,
+`still touching nothing else` and `and the story above it intact`. They pass
+only because nothing is inserted, so cutting a section that does not exist
+returns the original file. After GREEN, they **must** fail against an insertion
+that replaces the heading it goes in front of (it prints the plan *instead of*
+`## Out of scope` rather than before it). RED cannot run this: there is no
+insertion to mutate. **Owner: GATES.**
+
 ## Amendments
 
 <!-- Acceptance criteria are frozen once the story leaves PLANNED. If one turns
@@ -219,6 +228,11 @@ Lock coverage: APPLIES — all 4 path(s) scanned from the Contract text are harn
      actually ran, and — if a phase was planned for one model and ran on
      another — what that changed. A choice with no verdict is folklore. -->
 
+- PLANNED: `lead-po` role, run inline by the orchestrating session on
+  `claude-opus-5-5`. No subagent was dispatched.
+- RED: run inline by the orchestrating session on `claude-opus-5-5`, which
+  matches the plan's `opus`. No subagent was dispatched.
+
 ## Out of scope
 
 <!-- Explicit non-goals. Prevents the Feature Developer from over-building. -->
@@ -239,6 +253,23 @@ Lock coverage: APPLIES — all 4 path(s) scanned from the Contract text are harn
 <!-- Filled by the Test Developer during RED: which tests, at which level,
      and which AC each one covers. -->
 
+All the tests are in `.claude/tests/plan.test.sh`, under
+`describe "a story with no Model guidance heading gets one"`, at the end of the
+file. Fixtures are built by `bare_story <id> <heading>...`, a story with
+Context, criteria and a contract but no `## Model guidance`.
+
+| Fixture | Later headings | Assertions | AC |
+|---|---|---|---|
+| T-60 | Out of scope, Notes | exit 0; exactly one `## Model guidance` (`grep -cx`); body has `GEN_BEGIN` and `\| RED \|`; one stdout line matching `added.*Model guidance` | AC-1 |
+| T-60 | ″ | heading list is `… Contract, Model guidance, Out of scope, Notes` | AC-2 |
+| T-60 | ″ | cutting the section out again returns the original file byte for byte | AC-3 |
+| T-61 | Test plan, Out of scope, Handoff: RED -> GREEN | goes before `Test plan`, the first later section, not before `Out of scope`; original intact | AC-2, AC-3 |
+| T-62 | none | goes last; carries the plan; original intact | AC-2, AC-3 |
+| T-60 again | — | a second write leaves one heading and one `\| RED \|` row | AC-1 |
+
+AC-3's second clause says the existing write cases still pass. That is every
+earlier `plan write` case in the file, and none of them was edited.
+
 ## Handoff: RED -> GREEN
 
 <!-- Filled by the Test Developer at the end of RED. This is the ONLY channel
@@ -258,6 +289,55 @@ Lock coverage: APPLIES — all 4 path(s) scanned from the Contract text are harn
          suite fails at import, so no assertion in it has run - the controls
          are claims until GREEN confirms them against the shipped module
        * anything discovered that changes the approach -->
+
+**Command.** `bash .claude/tests/plan.test.sh`. It takes about 2m40s on this
+Windows machine.
+
+**RED output** (the `FAIL` lines and the verdict, against `scripts/plan.sh` at
+`e82464b`):
+
+```
+    FAIL and afterwards has exactly one Model guidance heading
+    FAIL whose body is the generated region
+    FAIL with the plan in it
+    FAIL and the command says it added the section
+    FAIL it goes immediately before Out of scope
+    FAIL before whichever later section comes first
+    FAIL at the end when no later section exists
+    FAIL with the plan in it there too
+    FAIL a second write does not add a second section
+    FAIL nor a second table
+plan: 88 passed, 10 failed
+```
+
+**Why it is the right failure.** Each failing heading list comes back as the
+original list with no `## Model guidance` in it (for example
+`actual: ## Context / ## Acceptance criteria / ## Contract / ## Out of scope / ## Notes`).
+That is the reported defect: the splice awk passes the file through unchanged.
+None of the earlier 84 assertions fails.
+
+**Passed on arrival**, and what earns each one:
+- `a story without the heading is written, not refused` (exit 0) passes because
+  today's bug also exits 0. It is earned by the contract's choice to insert
+  rather than refuse. A `die` on a missing heading would turn it red.
+- The three AC-3 "original intact" assertions pass vacuously while nothing is
+  inserted. They are earned by DV-1 in GATES.
+
+**What the tests pin, and what they leave free.**
+- *Pinned:* the heading order; exactly one `## Model guidance` line
+  (`grep -cx`, so the heading is exactly that text with nothing after it); the
+  generated region inside the section; byte-identity of everything outside the
+  section; and a stdout line containing `added` followed by `Model guidance`.
+- *Left free:* the exact wording of that line; the blank lines inside the new
+  section; and how the "later sections" list is expressed in `scripts/plan.sh`,
+  as long as it follows the template order in `## Contract`.
+
+**One constraint on the implementation.** `without_guidance` cuts from the
+heading to the line before the next `## `. So the inserted block must end
+exactly where the original next heading begins, and at EOF the original file
+must end exactly where the block begins. `cmd_write`'s block already ends with
+one blank line. The original file's own blank line before `## Out of scope`
+comes before the inserted heading, so the insertion adds no stray lines.
 
 ## Regressions
 
