@@ -986,19 +986,19 @@ Unmutated runs after the correction, one at a time:
 
 <!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
 
-    run:    2026-09-29T17:31:14Z
-    commit: db0fd46
+    run:    2026-09-29T17:54:42Z
+    commit: 01e502b
     tree:   e852f851933cb64800209a1cce52af276f8304a1
     result: pass (6 ran, 3 unconfigured, 0 known)
 
-    PASS         format (0s, observed 90)
+    PASS         format (1s, observed 90)
     PASS         lint (0s, observed 90, floor 1)
     PASS         typecheck (2s, observed 17)
     PASS         unit (26s, observed 452, floor 443)
     UNCONFIGURED coverage
     UNCONFIGURED integration
     PASS         build (0s, observed 57746)
-    PASS         harness (13s, observed 40)
+    PASS         harness (12s, observed 40)
     UNCONFIGURED mutation
 
 ## Notes
