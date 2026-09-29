@@ -4,8 +4,8 @@ title: plan.sh write adds a missing Model guidance section
 slug: plan-sh-write-adds-a-missing-model-guida
 epic: 
 type: fix
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-017-plan-sh-write-adds-a-missing-model-guida
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -439,3 +439,28 @@ comes before the inserted heading, so the insertion adds no stray lines.
 
 ## Notes
 
+
+`phase.sh set HARNESS-017 DONE` was run with `--force`, because the story's
+branch had already been merged. This DONE commit is made on top of `main`, as
+HARNESS-016's was, so the checkout is not on the story's branch.
+
+## Close-out (REVIEW → DONE)
+
+Merged as PR #34 (`6c76479`) on 2026-09-29.
+
+| Job / gate | CI | Notes |
+|---|---|---|
+| `boundaries` job | 4s | green on the first attempt |
+| `gates` job, attempt 1 | failed | `profile-counters.test.sh` line 319 hit `printf: write error: Broken pipe`, and `FAIL the Verified banner still names all seven pinned tools…` followed |
+| `gates` job, attempt 2 | 2m14s, green | no code changed between the attempts; `20 harness suite(s) passed.` |
+| `unit` | 4s, 452 observed (floor 443) | |
+| `harness` | 12s, 40 observed | |
+| `typecheck` / `format` / `lint` / `build` | 2s / 1s / 0s / 0s | |
+
+**The first `gates` failure is not this story's.** `missing_tokens()` in
+`.claude/tests/profile-counters.test.sh` pipes `printf` into `grep -q`. The
+reader exits at the first match, the writer can then die of SIGPIPE, and
+`pipefail` reports the token as missing. It is the same defect family that
+`scripts/plan.sh` documents beside `has_content`. It was filed as a separate
+task instead of being fixed here, because editing another story's test inside
+this PR would have carried an out-of-scope test change.
