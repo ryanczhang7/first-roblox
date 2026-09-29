@@ -4,8 +4,8 @@ title: Harness source is frozen during RED
 slug: harness-source-is-frozen-during-red
 epic: 
 type: chore
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/HARNESS-020-harness-source-is-frozen-during-red
 depends_on: [HARNESS-009]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -473,6 +473,77 @@ the shipped config, and each must turn its named assertion red:
 
 Paste each run's red and its `mutate.sh` restore line.
 
+**DV-2 result (GATES, orchestrator, 2026-09-29, against `2f1b524`).** All three
+mutations were made through `mutate.sh`, and each turned exactly its predicted assertions red and was restored
+byte-for-byte. Mutation 2 is the wrong-value kind: every `scripts/` case went red, and
+no `.claude/hooks/` case did. Mutation 3 also turns AC-7's "restored, denied again"
+red, because the fixture copies the mutated real `phases.conf`. Verbatim:
+
+    ### DV-2 mutation 1
+    === mutate: .claude/hooks/lib.sh (1 line(s) changed by 632s/|| [$]1 == "tooling") /) /) ===
+      632 -       || $1 == "tooling") \
+      632 +       ) \
+    
+    === mutate: running bash -c bash .claude/tests/lib.test.sh 2>&1 | grep -E "^ *FAIL|passed, [0-9]+ failed" ===
+        FAIL a hook moves the hash
+        FAIL adding a script moves the hash
+        FAIL a script moves the hash
+    lib: 155 passed, 3 failed
+    
+    === mutate: command exited 0; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/.claude_hooks_lib.sh.20260929T215622Z.56613.bak) ===
+      632:       || $1 == "tooling") \
+    ### DV-2 mutation 2
+    === mutate: .claude/harness/paths.conf (1 line(s) changed by 97s#^tooling | scripts/\*\*$#tooling | script/**#) ===
+      97 - tooling | scripts/**
+      97 + tooling | script/**
+    
+    === mutate: running bash -c bash .claude/tests/lib.test.sh 2>&1 | grep -E "^ *FAIL|passed, [0-9]+ failed"; bash .claude/tests/phase-guard.test.sh 2>&1 | grep -E "^ *FAIL|passed, [0-9]+ failed" ===
+        FAIL classify scripts/gates.sh
+        FAIL classify scripts/check-boundaries.sh
+        FAIL classify scripts/new-tool.sh
+    lib: 155 passed, 3 failed
+        FAIL AC-2: RED denies Write to scripts/check-boundaries.sh, as tooling
+        FAIL AC-2: RED denies Write to a NEW scripts/new-tool.sh, as tooling
+        FAIL AC-2: RED denies a redirect onto scripts/check-boundaries.sh, as tooling
+        FAIL AC-2: RED denies a redirect creating scripts/new-tool.sh, as tooling
+        FAIL AC-3: PLANNED denies scripts/check-boundaries.sh
+        FAIL AC-3: PLANNED denies scripts/new-tool.sh
+        FAIL AC-3: REVIEW denies scripts/check-boundaries.sh
+        FAIL AC-3: REVIEW denies scripts/new-tool.sh
+        FAIL AC-3: DONE denies scripts/check-boundaries.sh
+        FAIL AC-3: DONE denies scripts/new-tool.sh
+        FAIL AC-5: while a plain redirect onto that same scripts/check-boundaries.sh is denied
+        FAIL AC-5: a mutate.sh payload that writes tooling in RED is still denied
+        FAIL allows: AC-7: with tooling in RED's row of phases.conf, RED allows scripts/check-boundaries.sh
+        FAIL allows: AC-7: and scripts/new-tool.sh
+        FAIL AC-7: restored, RED denies scripts/check-boundaries.sh again
+        FAIL AC-7: and scripts/new-tool.sh again
+    phase-guard: 226 passed, 16 failed
+    
+    === mutate: command exited 0; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/.claude_harness_paths.conf.20260929T215641Z.57848.bak) ===
+      97: tooling | scripts/**
+    ### DV-2 mutation 3
+    === mutate: .claude/harness/phases.conf (1 line(s) changed by 15s/| vendor,ignored,test,manifest,docs,harness |/| vendor,ignored,test,tooling,manifest,docs,harness |/) ===
+      15 - RED      | vendor,ignored,test,manifest,docs,harness | Story is in RED. Production code is frozen: write the failing test first, and let it fail for the right reason. Move to GREEN with: bash scripts/phase.sh set <id> GREEN
+      15 + RED      | vendor,ignored,test,tooling,manifest,docs,harness | Story is in RED. Production code is frozen: write the failing test first, and let it fail for the right reason. Move to GREEN with: bash scripts/phase.sh set <id> GREEN
+    
+    === mutate: running bash -c bash .claude/tests/phase-guard.test.sh 2>&1 | grep -E "^ *FAIL|passed, [0-9]+ failed" ===
+        FAIL AC-2: RED denies Write to scripts/check-boundaries.sh, as tooling
+        FAIL AC-2: RED denies Write to .claude/hooks/lib.sh, as tooling
+        FAIL AC-2: RED denies Write to a NEW scripts/new-tool.sh, as tooling
+        FAIL AC-2: RED denies a redirect onto scripts/check-boundaries.sh, as tooling
+        FAIL AC-2: RED denies a redirect onto .claude/hooks/lib.sh, as tooling
+        FAIL AC-2: RED denies a redirect creating scripts/new-tool.sh, as tooling
+        FAIL AC-5: while a plain redirect onto that same scripts/check-boundaries.sh is denied
+        FAIL AC-5: and onto that same .claude/hooks/lib.sh
+        FAIL AC-5: a mutate.sh payload that writes tooling in RED is still denied
+        FAIL AC-7: restored, RED denies scripts/check-boundaries.sh again
+        FAIL AC-7: and scripts/new-tool.sh again
+    phase-guard: 231 passed, 11 failed
+    
+    === mutate: command exited 0; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/.claude_harness_phases.conf.20260929T220743Z.86688.bak) ===
+      15: RED      | vendor,ignored,test,manifest,docs,harness | Story is in RED. Production code is frozen: write the failing test first, and let it fail for the right reason. Move to GREEN with: bash scripts/phase.sh set <id> GREEN
+
 ## Amendments
 
 <!-- Acceptance criteria are frozen once the story leaves PLANNED. If one turns
@@ -835,10 +906,22 @@ shipped files. Confirming them against what GREEN ships is GREEN's job.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-29T22:18:43Z
+    commit: 2f1b524
+    tree:   b4a9cb21f834bf4a1f1b6111def4985c5cb6090b
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 90)
+    PASS         lint (1s, observed 90, floor 1)
+    PASS         typecheck (3s, observed 17)
+    PASS         unit (33s, observed 452, floor 443)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (1s, observed 57746)
+    PASS         harness (14s, observed 40)
+    UNCONFIGURED mutation
 
 ## Notes
 
