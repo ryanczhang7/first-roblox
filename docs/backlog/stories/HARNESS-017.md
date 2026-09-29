@@ -266,6 +266,8 @@ Lock coverage: APPLIES — all 4 path(s) scanned from the Contract text are harn
   `claude-opus-5-5`. No subagent was dispatched.
 - RED: run inline by the orchestrating session on `claude-opus-5-5`, which
   matches the plan's `opus`. No subagent was dispatched.
+- GREEN, GATES: run inline by the orchestrating session on `claude-opus-5-5`,
+  which matches the plan's `opus`. No subagent was dispatched.
 
 ## Out of scope
 
@@ -396,10 +398,22 @@ comes before the inserted heading, so the insertion adds no stray lines.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-29T00:16:21Z
+    commit: 9691cdd
+    tree:   1c06ac8e6fbc9b5256782ecdca20a65b37d3f05c
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 90)
+    PASS         lint (1s, observed 90, floor 1)
+    PASS         typecheck (3s, observed 17)
+    PASS         unit (31s, observed 452, floor 443)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 57746)
+    PASS         harness (15s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
