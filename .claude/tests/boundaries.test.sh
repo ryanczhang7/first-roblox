@@ -1121,9 +1121,12 @@ refused "restored, the same commit is refused again - the row was the cause" \
 suite_story RED .claude/tests/x.test.sh
 phases_edit '$1 == "RED" { sub(/test,/, "") } { print }'
 # Field 2 only: RED's denial message says "write the failing test first", so a
-# grep over the whole row finds `test` whether the edit landed or not.
-awk -F'|' '$1 ~ /^RED[[:space:]]*$/ { print $2 }' "$FIX/.claude/harness/phases.conf" | grep -q 'test' \
-  && _bad "fixture edit: RED loses test" "$(grep '^RED' "$FIX/.claude/harness/phases.conf")"
+# match over the whole row finds `test` whether the edit landed or not. No
+# `| grep -q` (HARNESS-018): the field is captured and matched in the shell.
+red_field2="$(awk -F'|' '$1 ~ /^RED[[:space:]]*$/ { print $2 }' "$FIX/.claude/harness/phases.conf")"
+case "$red_field2" in
+  *test*) _bad "fixture edit: RED loses test" "$(grep '^RED' "$FIX/.claude/harness/phases.conf")" ;;
+esac
 run_boundaries
 refused "when RED's row loses test, a RED commit is refused, naming RED" \
   "$(suite_refusal "$c7" .claude/tests/x.test.sh RED)"

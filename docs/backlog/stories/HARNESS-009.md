@@ -356,6 +356,7 @@ name, below the table.
 - RED - test-developer - Fable 5.1 (`claude-fable-5-1`), as planned; no override reported to me at dispatch.
 - GREEN - feature-developer - Opus 5.5 (`claude-opus-5-5`), as planned; no override. Stopped at 124/1: test #15 ("a commit with no story file to read is skipped") has a false premise - the fixture's `main` already carries `T-1.md` at `phase: PLANNED` (suite line ~216-218), so the "before the story" commit has a story file and PLANNED forbids `test`. Returned for RED.
 - RED (return) - test-developer - Fable 5.1 (`claude-fable-5-1`), as planned; no override reported to me at dispatch. Remit: the one defective test; source untouched.
+- RED (return 2) - test-developer - Fable 5.1 (`claude-fable-5-1`), as planned; no override reported to me at dispatch. Remit: one fixture guard's `| grep -q` (HARNESS-018 rule); source untouched.
 
 ## Out of scope
 
@@ -869,6 +870,71 @@ Unmutated run after the correction:
 
     $ git diff --stat scripts/check-boundaries.sh | tail -1
      1 file changed, 35 insertions(+)        # GREEN's 3j, unchanged by this return
+    $ bash .claude/tests/boundaries.test.sh
+    boundaries: 125 passed, 0 failed
+
+### Return 2: GREEN -> RED, 2026-09-29 - a fixture guard piped into `grep -q`
+
+**Which test.** `.claude/tests/boundaries.test.sh`, the fixture sanity guard
+`fixture edit: RED loses test` (suite line ~1125), which checks that
+`phases_edit '$1 == "RED" { sub(/test,/, "") } { print }'` really removed
+`test` from field 2 of RED's row before the story assertion
+`when RED's row loses test, a RED commit is refused, naming RED` runs.
+
+**What it asserted, and what was wrong.** The check itself was right - field 2
+only, `_bad` if `test` survives - but it was spelled as
+`awk ... | grep -q 'test' && _bad ...`: a producer piped into a quiet grep
+under `pipefail`, which is exactly the shape HARNESS-018's
+`.claude/tests/pipe-readers.test.sh` (AC-3) forbids across `scripts/`,
+`.claude/tests/` and `.claude/hooks/`. A story assertion was not affected; the
+suite was inadmissible to the `harness` gate.
+
+**How found.** In GREEN the orchestrator ran
+`bash .claude/tests/pipe-readers.test.sh` and got `pipe-readers: 10 passed, 1
+failed` - `FAIL scripts/, .claude/tests/ and .claude/hooks/ pipe into no quiet
+grep`, naming `.claude/tests/boundaries.test.sh:1125`. The line was in the
+committed RED tree, so CI's selftest would have refused the PR.
+
+**What it asserts now.** Identical meaning, no pipe: RED's field 2 is captured
+into `red_field2` by the same awk, and a shell `case "$red_field2" in *test*)`
+calls `_bad` with the full RED row. Nothing else in the suite changed.
+
+**What earns it - probe (local run, Windows Git Bash).** The guard passes on
+its first run, so the fixture edit it guards was neutralised through
+`mutate.sh` on the *test* file: line 1122's `sub(/test,/, "")` became a sub
+that matches nothing, leaving `test` in RED's field 2.
+
+    $ bash scripts/mutate.sh .claude/tests/boundaries.test.sh '1122s/sub(\/test,\/, "")/sub(\/never-matches,\/, "")/' -- bash .claude/tests/boundaries.test.sh
+    === mutate: .claude/tests/boundaries.test.sh (1 line(s) changed by 1122s/sub(\/test,\/, "")/sub(\/never-matches,\/, "")/) ===
+      1122 - phases_edit '$1 == "RED" { sub(/test,/, "") } { print }'
+      1122 + phases_edit '$1 == "RED" { sub(/never-matches,/, "") } { print }'
+    === mutate: running bash .claude/tests/boundaries.test.sh ===
+    ...
+      the harness's own suites obey the test freeze
+        FAIL fixture edit: RED loses test
+             RED      | vendor,ignored,test,manifest,docs,harness | Story is in RED. Production code is frozen: write the failing test first, and let it fail for the right reason. Move to GREEN with: bash scripts/phase.sh set <id> GREEN
+        FAIL when RED's row loses test, a RED commit is refused, naming RED
+             expected a refusal saying: story T-1: commit 5822499 changed '.claude/tests/x.test.sh' while the story was in RED, which may not write tests
+             actual:                    ok    story files validated
+    ...
+    boundaries: 124 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/.claude_tests_boundaries.test.sh.20260929T171726Z.1263834.bak) ===
+      1122: phases_edit '$1 == "RED" { sub(/test,/, "") } { print }'
+
+The guard fired, printing the RED row with `test` still in field 2. The second
+failure is the story assertion the guard protects, red for the reason the
+guard exists: with `test` still permitted, 3j accepts the RED commit. Both are
+the expected consequence of the one mutation; no other test moved.
+
+**GREEN is a no-op.** This return touched only the suite and the story;
+`scripts/check-boundaries.sh` still holds GREEN's uncommitted 3j, byte-for-byte
+(restore verified by `cmp`; `.claude/state/mutations/` holds only `log`).
+Unmutated runs after the correction, one at a time:
+
+    $ git diff --stat scripts/check-boundaries.sh | tail -1
+     1 file changed, 35 insertions(+)        # GREEN's 3j, unchanged by this return
+    $ bash .claude/tests/pipe-readers.test.sh
+    pipe-readers: 11 passed, 0 failed
     $ bash .claude/tests/boundaries.test.sh
     boundaries: 125 passed, 0 failed
 
