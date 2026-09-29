@@ -4,8 +4,8 @@ title: no pipe feeds an early-exiting grep under pipefail
 slug: no-pipe-feeds-an-early-exiting-grep-unde
 epic: 
 type: fix
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-018-no-pipe-feeds-an-early-exiting-grep-unde
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -536,3 +536,24 @@ it was not touched after RED.
 (`1.5`, and a bare `check-boundaries.sh`). That is a separate defect, and it is
 not fixed here.
 
+
+`phase.sh set HARNESS-018 DONE` was run with `--force`, because the story's
+branch had already been merged. This DONE commit is made on top of `main`, as
+HARNESS-017's was, so the checkout is not on the story's branch.
+
+## Close-out (REVIEW → DONE)
+
+Merged as PR #35 (`677c36e`) on 2026-09-29 by ryanczhang7.
+
+| Job / gate | CI | Notes |
+|---|---|---|
+| `boundaries` job | 6s | green on the first attempt |
+| `gates` job | 2m21s | green on the first attempt; `21 harness suite(s) passed.` including `pipe-readers: 11 passed, 0 failed` |
+| `unit` | 4s, 452 observed (floor 443) | |
+| `harness` | 11s, 40 observed | |
+| `typecheck` / `format` / `lint` / `build` | 2s / 0s / 1s / 0s | |
+
+The suite count is 21, up from HARNESS-017's 20, because `pipe-readers.test.sh`
+was added. A single green CI run cannot prove that the race is gone; that
+proof comes from AC-1's deterministic reproduction, which failed 0 of 3 before
+the fix and passes 3 of 3 after it.
