@@ -472,13 +472,26 @@ cmd_write() {
     printf '\n'
   } > "$tmp"
 
-  awk -v planfile="$tmp" '
-    /^## Model guidance/ { while ((getline line < planfile) > 0) print line; skip = 1; next }
+  # A story filed by hand may have no `## Model guidance` heading, and the splice
+  # below fires only on that heading - so it used to pass the file through
+  # untouched while the line after it reported success (HARNESS-016). Then the
+  # section goes where scripts/new-story.sh's template puts it: in front of the
+  # first section the template places AFTER it, or at the end. A section added
+  # to the template after `## Model guidance` belongs in this list too.
+  local added=0
+  grep -q '^## Model guidance' "$file" || added=1
+
+  awk -v planfile="$tmp" -v added="$added" '
+    function plan() { while ((getline line < planfile) > 0) print line; done = 1 }
+    added && !done && /^## (Out of scope|Design notes|Test plan|Handoff|Regressions|Gate results|Gate probes|Scaffold inventory|Notes)/ { plan() }
+    /^## Model guidance/ { plan(); skip = 1; next }
     skip && /^## / { skip = 0 }
-    !skip { print }
+    !skip { print; last = $0 }
+    END { if (added && !done) { if (last !~ /^[[:space:]]*$/) print ""; plan() } }
   ' "$file" > "$file.new" && mv "$file.new" "$file"
   rm -f "$tmp"
 
+  [ "$added" = 1 ] && printf 'added a ## Model guidance section to %s\n' "docs/backlog/stories/$id.md"
   printf 'wrote the model plan into %s\n' "docs/backlog/stories/$id.md"
   if [ -n "$keep" ]; then
     printf '  kept %s line(s) of existing guidance from outside the generated region\n' \

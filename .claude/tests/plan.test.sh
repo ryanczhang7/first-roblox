@@ -628,4 +628,82 @@ assert_eq "still inside the generated region" 1 \
 assert_eq "and the brief outside the markers is untouched" 1 \
   "$(grep -c 'the contract is the only enforcement there is' "$FIX/docs/backlog/stories/T-7.md")"
 
+# ---------------------------------------------------------------------------
+describe "a story with no Model guidance heading gets one"
+
+# HARNESS-017. The splice fired only on `/^## Model guidance/`, so a story filed
+# by hand without that heading passed through the awk untouched - and the
+# command still printed `wrote the model plan` and exited 0. Observed with
+# HARNESS-016 on 2026-09-28. The plan belongs in every story, so the fix puts the
+# section in, where the template would have put it, and says it did.
+
+# bare_story <id> <heading>...   Context, criteria and contract, then one empty
+# section per heading given, and no `## Model guidance` anywhere.
+bare_story() {
+  local id="$1" h; shift
+  mkdir -p "$FIX/docs/backlog/stories"
+  {
+    printf -- '---\nid: %s\ntitle: Fixture story\nslug: fixture\ntype: fix\nstatus: todo\nphase: PLANNED\nbranch: story/%s-fixture\n---\n\n' "$id" "$id"
+    printf -- '## Context\n\nFiled by hand.\n\n## Acceptance criteria\n\n- **AC-1** - it works.\n\n'
+    printf -- '## Contract\n\n`src/core/world.ts` exports `buildWorld(seed: number): World`.\n'
+    for h in "$@"; do printf -- '\n## %s\n\nbody of %s\n' "$h" "$h"; done
+  } > "$FIX/docs/backlog/stories/$id.md"
+  cp "$FIX/docs/backlog/stories/$id.md" "$FIX/$id.orig"
+}
+
+# headings <id>   Every `## ` heading in the story, in order, one per line.
+headings() { grep '^## ' "$FIX/docs/backlog/stories/$1.md"; }
+
+# without_guidance <id>   The story with its `## Model guidance` section cut out
+# again - heading through the line before the next heading. If the insertion
+# touched nothing else, this is the original file byte for byte.
+without_guidance() {
+  awk '/^## Model guidance$/ { cut = 1; next } cut && /^## / { cut = 0 } !cut { print }' \
+    "$FIX/docs/backlog/stories/$1.md"
+}
+
+bare_story T-60 "Out of scope" "Notes"
+out="$(plan write T-60)"; rc=$?
+assert_eq "a story without the heading is written, not refused" 0 "$rc"
+assert_eq "and afterwards has exactly one Model guidance heading" 1 \
+  "$(grep -cx '## Model guidance' "$FIX/docs/backlog/stories/T-60.md")"
+body="$(guidance T-60)"
+assert_contains "whose body is the generated region" "$GEN_BEGIN" "$body"
+assert_contains "with the plan in it" "| RED |" "$body"
+assert_eq "and the command says it added the section" 1 \
+  "$(printf '%s\n' "$out" | grep -c 'added.*Model guidance')"
+
+# Where the template puts it: after the contract, in front of the first section
+# the template places after it. The control is an append at EOF, which lands
+# after `## Notes` and fails this.
+assert_eq "it goes immediately before Out of scope" \
+  "$(printf '## Context\n## Acceptance criteria\n## Contract\n## Model guidance\n## Out of scope\n## Notes')" \
+  "$(headings T-60)"
+assert_eq "and nothing else in the file moved" "$(cat "$FIX/T-60.orig")" "$(without_guidance T-60)"
+
+# In front of the FIRST such section in the file, not in front of `Out of scope`
+# specifically: HARNESS-016 itself carries `## Test plan` before its
+# `## Out of scope`, and the plan belongs before both.
+bare_story T-61 "Test plan" "Out of scope" "Handoff: RED -> GREEN"
+plan write T-61 >/dev/null
+assert_eq "before whichever later section comes first" \
+  "$(printf '## Context\n## Acceptance criteria\n## Contract\n## Model guidance\n## Test plan\n## Out of scope\n## Handoff: RED -> GREEN')" \
+  "$(headings T-61)"
+assert_eq "still touching nothing else" "$(cat "$FIX/T-61.orig")" "$(without_guidance T-61)"
+
+# No later section at all: the end of the file.
+bare_story T-62
+plan write T-62 >/dev/null
+assert_eq "at the end when no later section exists" \
+  "$(printf '## Context\n## Acceptance criteria\n## Contract\n## Model guidance')" \
+  "$(headings T-62)"
+assert_contains "with the plan in it there too" "| RED |" "$(guidance T-62)"
+assert_eq "and the story above it intact" "$(cat "$FIX/T-62.orig")" "$(without_guidance T-62)"
+
+# Once inserted, a second write is an ordinary write: one section, one table.
+plan write T-60 >/dev/null
+assert_eq "a second write does not add a second section" 1 \
+  "$(grep -cx '## Model guidance' "$FIX/docs/backlog/stories/T-60.md")"
+assert_eq "nor a second table" 1 "$(grep -c '^| RED ' "$FIX/docs/backlog/stories/T-60.md")"
+
 summary "plan"
