@@ -5,7 +5,7 @@ slug: no-pipe-feeds-an-early-exiting-grep-unde
 epic: 
 type: fix
 status: in-progress
-phase: GREEN
+phase: GATES
 branch: story/HARNESS-018-no-pipe-feeds-an-early-exiting-grep-unde
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -209,6 +209,35 @@ each one **must** fail against a fix that over-corrects:
 `missing_tokens` that never reports anything, and an evidence check that never
 reports no-evidence. RED cannot run this, because there is no fix to mutate
 yet. **Owner: GATES.**
+
+**Result (GATES, 2026-09-29).** Three mutations were run through
+`bash scripts/mutate.sh <file> '<expr>' -- bash .claude/tests/pipe-readers.test.sh`.
+Every restore was verified byte for byte.
+
+1. `missing_tokens` never reports anything. In `profile-counters.test.sh`,
+   `grep -qiF -- "$t" <<< "$text" ||` became `true ||`.
+   ```
+       FAIL a token that appears nowhere is still reported missing
+   pipe-readers: 10 passed, 1 failed
+   === mutate: command exited 1; restored (verified byte-for-byte against .../.claude_tests_profile-counters.test.sh.20260929T012545Z.334051.bak) ===
+   ```
+2. gates.sh never reports "no evidence". The `! grep -Eq -- "$exp" < <(clean_log "$log")`
+   test became `false`.
+   ```
+       FAIL 2 MB with no evidence line is still no evidence of work
+   pipe-readers: 10 passed, 1 failed
+   === mutate: command exited 1; restored (verified byte-for-byte against .../scripts_gates.sh.20260929T012550Z.335000.bak) ===
+   ```
+3. A wrong **value** rather than a missing check: the BLOCKED test goes back
+   to the original pipe, `clean_log "$log" | grep -Eq -- "$blockpat"`. The
+   behavioural test and the scanner both catch it independently.
+   ```
+       FAIL a launch failure on line 1 of 2 MB is BLOCKED, not FAIL
+            FAIL         unit (0s, exit 127) -> .claude/state/gate-logs/unit.log
+       FAIL scripts/, .claude/tests/ and .claude/hooks/ pipe into no quiet grep
+   pipe-readers: 9 passed, 2 failed
+   === mutate: command exited 1; restored (verified byte-for-byte against .../scripts_gates.sh.20260929T012556Z.335948.bak) ===
+   ```
 
 ## Amendments
 
