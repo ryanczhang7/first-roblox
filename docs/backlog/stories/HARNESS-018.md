@@ -478,10 +478,22 @@ the scanner stops matching and `pipefail` stays on.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-29T01:27:51Z
+    commit: e868f59
+    tree:   61ac6a78085e15fd4ffa0dc1ef7355c8368397ca
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 90)
+    PASS         lint (1s, observed 90, floor 1)
+    PASS         typecheck (2s, observed 17)
+    PASS         unit (24s, observed 452, floor 443)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 57746)
+    PASS         harness (12s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
