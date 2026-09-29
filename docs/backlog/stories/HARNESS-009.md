@@ -4,8 +4,8 @@ title: The harness's own test suites obey the test freeze
 slug: the-harness-s-own-test-suites-obey-the-t
 epic: 
 type: chore
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-009-the-harness-s-own-test-suites-obey-the-t
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -1127,3 +1127,10 @@ through a `make_fixture` carrying the real `paths.conf` and `phases.conf`, the
 lines by `scripts/classify.sh` and by sourcing `gated_stdin` from
 `.claude/hooks/lib.sh`. The mutation restored byte-for-byte and
 `.claude/state/mutations/` holds only its `log`.
+
+### REVIEW → DONE (2026-09-29)
+
+PR #37 merged as `eea95a0`. CI on `01e502b`: `boundaries` success (11s), `gates` success.
+In the gates job, the harness self-test ran 2m09s (`boundaries: 125 passed, 0 failed`,
+`pipe-readers: 11 passed, 0 failed`), the gate run took 26s, and the whole job took 3m against
+`timeout-minutes: 45`. No limit is within 10 %, and no gate reached REVIEW pending CI.
