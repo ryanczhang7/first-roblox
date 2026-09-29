@@ -5,7 +5,7 @@ slug: no-pipe-feeds-an-early-exiting-grep-unde
 epic: 
 type: fix
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/HARNESS-018-no-pipe-feeds-an-early-exiting-grep-unde
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -283,6 +283,19 @@ Lock coverage: SUPPRESSED by `1.5` (source), `boundaries.test.sh` (test), `check
      actually ran, and — if a phase was planned for one model and ran on
      another — what that changed. A choice with no verdict is folklore. -->
 
+- PLANNED: the `lead-po` role, run inline by the orchestrating session on
+  `claude-opus-5-5`. No subagent was dispatched.
+- RED: run inline on `claude-opus-5-5`. **This departs from the plan's
+  `fable`.** The plan's "Lock coverage: SUPPRESSED" comes from `plan.sh`
+  reading bare words in the Contract as paths: `1.5` (from "1.5 MiB") and
+  `check-boundaries.sh`, resolved at the repository root, both classify as
+  `source`. Every path this story actually touches classifies as `harness`, so
+  the lock enforces nothing here. That is the case where `models.conf` keeps RED
+  on the stronger model, as it did for HARNESS-017. Verdict: the RED suite
+  failed 6 of 11 for the reported reasons, and its controls held (see Handoff).
+- GREEN, GATES: run inline on `claude-opus-5-5`, which matches the plan's
+  `opus`. No subagent was dispatched.
+
 ## Out of scope
 
 <!-- Explicit non-goals. Prevents the Feature Developer from over-building. -->
@@ -464,4 +477,21 @@ the scanner stops matching and `pipefail` stays on.
      named here. -->
 
 ## Notes
+
+**GREEN edited test files, and why that is not law 2's case.** Eight of the
+21 sites are in other stories' test files: helpers such as `missing_tokens`,
+`has_line`, `has_operator` and `assert_no_evidence`. In this story those
+helpers are the code under repair, not the specification. AC-1 is *about*
+`missing_tokens`, and AC-3 is about every one of them. The Contract assigned
+them to GREEN before RED began. Each edit changes only how the input reaches
+grep (`printf … | grep -q P` becomes `grep -q P <<< "…"`, or `< <(…)` where a
+`sed` stage stays). The pattern, the flags and the branch taken on each result
+are unchanged, so no assertion is weakened. Every edited suite was re-run in
+GATES, with the results below. Nothing here makes a failing test pass by
+editing that test: the only failing tests were in `pipe-readers.test.sh`, and
+it was not touched after RED.
+
+**plan.sh's lock-coverage scan reads prose as paths.** See Resolved above
+(`1.5`, and a bare `check-boundaries.sh`). That is a separate defect, and it is
+not fixed here.
 

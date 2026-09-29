@@ -313,10 +313,14 @@ $(printf '%s\n' "$4" | tr ';' '\n' | sed '/^$/d' | sed 's/^/  group: /')"
   fi
 }
 
+# A here-string, not `printf | grep -q`: grep -q exits at its first match, a
+# writer with more than a pipe buffer left dies of SIGPIPE, and pipefail reports
+# a token found early in a long text as MISSING. CI run 36503368294 failed that
+# way and passed on re-run; .claude/tests/pipe-readers.test.sh pins it.
 missing_tokens() { # <text> <token>...
   local text="$1" t out=""; shift
   for t in "$@"; do
-    printf '%s\n' "$text" | grep -qiF -- "$t" || out="$out$t
+    grep -qiF -- "$t" <<< "$text" || out="$out$t
 "
   done
   printf '%s' "$out"

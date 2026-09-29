@@ -153,7 +153,7 @@ work_count() {
 }
 
 # has_line <output> <anchored ERE>   0 if some whole line matches.
-has_line() { printf '%s\n' "$1" | sed -e 's/\r$//' | grep -qE -- "$2"; }
+has_line() { grep -qE -- "$2" < <(printf '%s\n' "$1" | sed -e 's/\r$//'); }
 
 _tail() { printf '%s\n' "$1" | tail -8; }
 
@@ -287,7 +287,7 @@ fi
 # Never grep with an empty pattern: '' matches everything, and an assertion
 # that cannot fail is not one.
 if [ -n "$GATE_EV" ] && [ "$GATE_EV" != "-" ] && [ -n "$CLEAN_OUT" ]; then
-  if printf '%s\n' "$CLEAN_OUT" | sed -e 's/\r$//' | grep -qE -- "$GATE_EV"; then
+  if grep -qE -- "$GATE_EV" < <(printf '%s\n' "$CLEAN_OUT" | sed -e 's/\r$//'); then
     _ok "the evidence regex matches the clean run's output"
   else
     _bad "the evidence regex matches the clean run's output" "evidence regex: $GATE_EV
@@ -326,7 +326,7 @@ if [ -n "$GATE_EV" ] && [ "$GATE_EV" != "-" ]; then
              'bash could not find the suite|bash: .claude/tests/nope.test.sh: No such file or directory' \
              'a suite with zero assertions|project-counters: 0 passed, 0 failed'; do
     label="${ctl%%|*}"; text="${ctl#*|}"
-    if printf '%s\n' "$text" | grep -qE -- "$GATE_EV"; then
+    if grep -qE -- "$GATE_EV" <<< "$text"; then
       _bad "does not match: $label" "the evidence regex /$GATE_EV/ matched: '$text'
 gates.sh would report PASS with evidence for a gate that ran nothing"
     else

@@ -83,7 +83,7 @@ done
 # without a rule: `ignored` from git, `source` as the fallback, `outside` for a
 # path that is not in this repository, and `vendor` in case no rule names it.
 if [ -n "$WANT" ]; then
-  if ! categories | grep -qx -- "$WANT"; then
+  if ! grep -qx -- "$WANT" <<< "$(categories)"; then
     printf 'classify: unknown category "%s"\n\n' "$WANT" >&2; usage
   fi
 fi

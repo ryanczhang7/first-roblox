@@ -425,11 +425,15 @@ while IFS= read -r line; do
     blockpat="$BLOCKED_DEFAULT"
     extra=$(table_lookup "$BLOCKEDWHEN" "$id") || extra=""
     [ -n "$extra" ] && blockpat="$blockpat|$extra"
-    if clean_log "$log" | grep -Eq -- "$blockpat"; then
+    # `< <(clean_log)`, never `clean_log | grep -q`, here and below: grep -q
+    # exits at its first match, sed dies of SIGPIPE with a large log still
+    # unread, and pipefail turns a match on line 1 into no match at all - a
+    # BLOCKED gate reported as FAIL, a live one as "no evidence of work".
+    if grep -Eq -- "$blockpat" < <(clean_log "$log"); then
       outcome=blocked
       why="could not launch: $(clean_log "$log" | grep -Eom1 -- "$blockpat" | head -1)"
     fi
-  elif [ "$exp" != "<none>" ] && [ "$exp" != "-" ] && ! clean_log "$log" | grep -Eq -- "$exp"; then
+  elif [ "$exp" != "<none>" ] && [ "$exp" != "-" ] && ! grep -Eq -- "$exp" < <(clean_log "$log"); then
     outcome=noevidence
     why="ran but produced no evidence of work: expected /$exp/"
   elif [ "$exp" != "<none>" ] && [ "$exp" != "-" ]; then

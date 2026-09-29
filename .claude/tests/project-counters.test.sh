@@ -282,7 +282,7 @@ $(_tail "$3")"; fi
 }
 
 assert_no_evidence() { # <what> <output> <evidence regex>
-  if printf '%s\n' "$2" | grep -qE -- "$3"; then
+  if grep -qE -- "$3" <<< "$2"; then
     _bad "$1" "expected the evidence regex NOT to match, so that gates.sh
 reports 'ran but produced no evidence of work'
 evidence regex: $3
