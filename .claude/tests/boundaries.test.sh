@@ -888,6 +888,239 @@ manifest_story RED package.json '{
 run_boundaries; accepts_manifest "and the blank line somebody put between them"
 
 # ---------------------------------------------------------------------------
+describe "the harness's own suites obey the test freeze"
+
+# HARNESS-009. `.claude/tests/**` classifies as `harness` - rule ordering in
+# paths.conf, not a decision - so the phase lock lets a suite be edited in every
+# phase, and a weakened harness assertion is invisible to its own suite: the
+# story measured `83 passed, 0 failed` with one needle widened. Check 3j reads
+# each commit on the branch, as 3i does: a change under `.claude/tests/` is
+# refused unless the story file AT THAT COMMIT carries a phase whose phases.conf
+# row includes `test`.
+#
+# Two strings are pinned here verbatim, so that GREEN builds exactly them:
+#
+#   refusal  story T-1: commit <7-char sha> changed '<path>' while the story was in <PHASE>, which may not write tests
+#   ok line  ok    harness suites changed only where the phase may write tests (<N> commit(s))
+#
+# The refusal is matched as one string carrying all three facts AC-1 names, so
+# a refusal naming the wrong commit, the wrong path or the working tree's phase
+# fails it. The ok line is matched as a WHOLE LINE, so `(1 commit(s))` cannot
+# be satisfied by `(11 commit(s))`.
+
+SUITE_OK='harness suites changed only where the phase may write tests'
+suite_refusal() { # <sha7> <path> <phase>
+  printf "story T-1: commit %s changed '%s' while the story was in %s, which may not write tests" "$1" "$2" "$3"
+}
+# ok_line_count <N>   How many lines of $out are EXACTLY 3j's ok line for N.
+ok_line_count() { printf '%s\n' "$out" | grep -Fxc -- "ok    $SUITE_OK ($1 commit(s))"; }
+
+# accepts_suite <what>   Absence of 3j's refusal - the same honest shape as
+# accepts_manifest, and for the same reason: these fixture stories carry no
+# ## Gate results, so the run exits non-zero on a rule that has nothing to do
+# with suites. Vacuous while 3j does not exist; the story's ## Deferred
+# verifications says so and GREEN confirms each expected value.
+accepts_suite() {
+  case "$out" in
+    *"which may not write tests"*) _bad "$1" "refused: $out" ;;
+    *) _ok "$1" ;;
+  esac
+}
+# no_suite_ok_line <what>   AC-3: the ok line is evidence that something was
+# inspected, not furniture. "accepted" is also what a 3j that never fires
+# prints, so the ABSENCE of the ok line here, beside its PRESENCE on the AC-2
+# fixture, is what tells a silent check from a broken one.
+no_suite_ok_line() {
+  case "$out" in
+    *"$SUITE_OK"*) _bad "$1" "3j reported an inspection where nothing under .claude/tests/ changed: $out" ;;
+    *) _ok "$1" ;;
+  esac
+}
+
+# suite_story <phase> <path>...   A branch whose FIRST commit appends a line to
+# each <path> with the story in <phase>, and whose second moves the story to
+# REVIEW - manifest_story's shape, for manifest_story's reason: by the time CI
+# sees a PR the tip says REVIEW, so a check that reads the tip's phase (or the
+# working tree's) never sees the offending phase at all. Sets $c7 to the
+# abbreviated sha of the offending commit, which the refusal must name.
+suite_story() {
+  local phase="$1" p; shift
+  git -C "$FIX" checkout -q main 2>/dev/null
+  git -C "$FIX" branch -D story/T-1-fixture >/dev/null 2>&1
+  git -C "$FIX" checkout -q -b story/T-1-fixture 2>/dev/null
+  _story_file "$phase"
+  for p in "$@"; do
+    mkdir -p "$FIX/$(dirname "$p")"
+    printf '# touched under %s\n' "$phase" >> "$FIX/$p"
+  done
+  commit_all "T-1 $phase touches $*"
+  c7="$(git -C "$FIX" rev-parse HEAD | cut -c1-7)"
+  _story_file REVIEW
+  commit_all "T-1 to review"
+}
+
+# --- AC-1: a suite changed under a phase whose row lacks `test` is refused ---
+suite_story GREEN .claude/tests/x.test.sh
+run_boundaries
+refused "a suite edited in GREEN is refused, naming the commit, the path and the phase" \
+  "$(suite_refusal "$c7" .claude/tests/x.test.sh GREEN)"
+
+suite_story GATES .claude/tests/x.test.sh
+run_boundaries
+refused "and in GATES" "$(suite_refusal "$c7" .claude/tests/x.test.sh GATES)"
+
+# The contract's "single most likely way to build a check that passes its own
+# tests and inspects nothing": phase_allows reads the global $PHASE, so a 3j
+# that forgets to set it from the commit asks about whatever phase is lying
+# around. Two places one could be lying around - the tip of the branch, and the
+# environment - and both are set to RED here, a phase that MAY write tests. The
+# offending commit still says GREEN, and that is the phase the verdict follows.
+suite_story GREEN .claude/tests/x.test.sh
+_story_file RED
+commit_all "T-1 back to RED at the tip"
+run_boundaries
+refused "the verdict follows the phase AT THE COMMIT, not the phase at the tip" \
+  "$(suite_refusal "$c7" .claude/tests/x.test.sh GREEN)"
+PHASE=RED run_boundaries
+refused "nor the phase in the environment" \
+  "$(suite_refusal "$c7" .claude/tests/x.test.sh GREEN)"
+
+# A phase no row lists fails CLOSED, as phase_allows does (lib.sh records the
+# `GREEN.` production defect). No escape hatch: a garbled frontmatter is
+# refused, not waved through.
+suite_story 'GREEN.' .claude/tests/x.test.sh
+run_boundaries
+refused "a garbled phase in the commit's frontmatter fails closed" \
+  "$(suite_refusal "$c7" .claude/tests/x.test.sh 'GREEN.')"
+
+# --- AC-2: a phase whose row has `test` is fine, and says how many it read ---
+suite_story RED .claude/tests/x.test.sh
+run_boundaries
+accepts_suite "a suite edited in RED is not refused"
+assert_eq "and the ok line reports the one commit inspected" 1 "$(ok_line_count 1)"
+
+suite_story SCAFFOLD .claude/tests/x.test.sh
+run_boundaries
+accepts_suite "SCAFFOLD may write a suite too"
+assert_eq "and is counted the same way" 1 "$(ok_line_count 1)"
+
+# The count is COMMITS, not files - AC-2 says "how many such commits were
+# checked". Two files in one commit are one; one file in each of two commits are
+# two. The pair is what pins the unit.
+suite_story RED .claude/tests/x.test.sh .claude/tests/y.test.sh
+run_boundaries
+assert_eq "two suites in one commit count as one commit" 1 "$(ok_line_count 1)"
+
+suite_story RED .claude/tests/x.test.sh
+_story_file RED
+printf '# touched again\n' >> "$FIX/.claude/tests/y.test.sh"
+commit_all "T-1 RED touches y too"
+_story_file REVIEW
+commit_all "T-1 to review"
+run_boundaries
+accepts_suite "two RED commits are both fine"
+assert_eq "and both are counted" 1 "$(ok_line_count 2)"
+
+# --- AC-3: nothing under .claude/tests/ means 3j says nothing at all --------
+suite_story GREEN src/main.ts
+run_boundaries
+accepts_suite "a branch that touches no suite is not refused"
+no_suite_ok_line "and 3j prints no ok line for it - nothing was inspected"
+
+# A commit made before the story file exists on the branch has no phase to read
+# and is skipped, as 3i skips it. Not counted either: an ok line for a commit
+# whose phase nobody read would be the furniture AC-3 forbids.
+git -C "$FIX" checkout -q main 2>/dev/null
+git -C "$FIX" branch -D story/T-1-fixture >/dev/null 2>&1
+git -C "$FIX" checkout -q -b story/T-1-fixture 2>/dev/null
+mkdir -p "$FIX/.claude/tests"
+printf '# before the story\n' >> "$FIX/.claude/tests/x.test.sh"
+commit_all "a suite change before the story file exists"
+_story_file REVIEW
+commit_all "T-1 story"
+run_boundaries
+accepts_suite "a commit with no story file to read is skipped, as 3i skips it"
+no_suite_ok_line "and not counted"
+
+# --- AC-5: the narrowing. Every OTHER harness path keeps its permission ------
+# rules.md argues for .gitignore and project.conf by name; a prompt under
+# .claude/commands/ and a script are the rest of what `harness` covers. The last
+# path is the unanchored-prefix trap: `docs/.claude/tests/x.md` contains the
+# string but is not under it. One commit per path, all under GREEN.
+ac5_paths='.claude/harness/project.conf .gitignore CLAUDE.md .claude/commands/advance-story.md scripts/new-tool.sh docs/.claude/tests/x.md'
+git -C "$FIX" checkout -q main 2>/dev/null
+git -C "$FIX" branch -D story/T-1-fixture >/dev/null 2>&1
+git -C "$FIX" checkout -q -b story/T-1-fixture 2>/dev/null
+_story_file GREEN
+for p in $ac5_paths; do
+  mkdir -p "$FIX/$(dirname "$p")"
+  printf '# touched under GREEN\n' >> "$FIX/$p"
+  commit_all "T-1 GREEN touches $p"
+done
+_story_file REVIEW
+commit_all "T-1 to review"
+run_boundaries
+for p in $ac5_paths; do
+  case "$out" in
+    *"changed '$p' while the story was in"*) _bad "GREEN may still write $p" "refused: $out" ;;
+    *) _ok "GREEN may still write $p" ;;
+  esac
+done
+no_suite_ok_line "and none of them counts as a suite inspection"
+
+# --- AC-4: the permitted set is READ from phases.conf, never written out -----
+# The negative control is the whole criterion. A check carrying `RED|SCAFFOLD`
+# as a literal passes every assertion above and keeps passing after
+# phases.conf changes underneath it. So the FIXTURE's phases.conf is edited -
+# the copy check-boundaries.sh reads through lib.sh's $HARNESS_DIR - and the
+# verdict has to move both ways: GREEN gains `test` and the AC-1 commit is
+# accepted; RED loses it and the AC-2 commit is refused. Then the file is
+# restored and checked byte-for-byte against the real one, so a failed restore
+# cannot leak into the describes below.
+phases_edit() { # <awk program>   rewrites the fixture's phases.conf in place
+  awk "$1" "$FIX/.claude/harness/phases.conf" > "$FIX/.claude/harness/phases.conf.new" \
+    && mv "$FIX/.claude/harness/phases.conf.new" "$FIX/.claude/harness/phases.conf"
+}
+phases_restore() {
+  # cp, the way make_fixture put it there - NOT `git checkout --`. The fixture
+  # has no .gitattributes, so on a machine with core.autocrlf=true a checkout
+  # writes CRLF where the real file (pinned to LF by this repo's .gitattributes)
+  # has LF, and the byte-for-byte check below fails on a file whose content is
+  # right. Measured on the first run of this block.
+  cp "$REPO_ROOT/.claude/harness/phases.conf" "$FIX/.claude/harness/phases.conf"
+  if cmp -s "$FIX/.claude/harness/phases.conf" "$REPO_ROOT/.claude/harness/phases.conf"; then
+    _ok "phases.conf restored byte-for-byte"
+  else
+    _bad "phases.conf restored byte-for-byte" "$(diff "$REPO_ROOT/.claude/harness/phases.conf" "$FIX/.claude/harness/phases.conf" 2>&1)"
+  fi
+}
+
+suite_story GREEN .claude/tests/x.test.sh
+phases_edit '$1 == "GREEN" { sub(/\| *vendor,/, "| test,vendor,") } { print }'
+grep -qE '^GREEN[[:space:]]*\|[[:space:]]*test,' "$FIX/.claude/harness/phases.conf" \
+  || _bad "fixture edit: GREEN gains test" "$(grep '^GREEN' "$FIX/.claude/harness/phases.conf")"
+run_boundaries
+accepts_suite "when GREEN's row gains test, the same GREEN commit is accepted"
+assert_eq "and counted as inspected" 1 "$(ok_line_count 1)"
+phases_restore
+run_boundaries
+refused "restored, the same commit is refused again - the row was the cause" \
+  "$(suite_refusal "$c7" .claude/tests/x.test.sh GREEN)"
+
+suite_story RED .claude/tests/x.test.sh
+phases_edit '$1 == "RED" { sub(/test,/, "") } { print }'
+# Field 2 only: RED's denial message says "write the failing test first", so a
+# grep over the whole row finds `test` whether the edit landed or not.
+awk -F'|' '$1 ~ /^RED[[:space:]]*$/ { print $2 }' "$FIX/.claude/harness/phases.conf" | grep -q 'test' \
+  && _bad "fixture edit: RED loses test" "$(grep '^RED' "$FIX/.claude/harness/phases.conf")"
+run_boundaries
+refused "when RED's row loses test, a RED commit is refused, naming RED" \
+  "$(suite_refusal "$c7" .claude/tests/x.test.sh RED)"
+phases_restore
+run_boundaries
+accepts_suite "restored, the RED commit is accepted again"
+
+# ---------------------------------------------------------------------------
 describe "the story is found by what claims the branch, not by the branch's name"
 
 # Every check from 3b onward is gated behind knowing WHICH story this is, and

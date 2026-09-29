@@ -4,8 +4,8 @@ title: The harness's own test suites obey the test freeze
 slug: the-harness-s-own-test-suites-obey-the-t
 epic: 
 type: chore
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/HARNESS-009-the-harness-s-own-test-suites-obey-the-t
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -205,7 +205,7 @@ AC-3 pins.
 **The predicate for "this phase may write tests"** is read from `phases.conf`,
 not hardcoded (AC-4). The reader already exists and must be reused rather than
 re-implemented - `check-boundaries.sh` already sources `.claude/hooks/lib.sh`,
-which defines `phase_allows <category>` at `lib.sh:756`. Two properties of it
+which defines `phase_allows <category>` at `lib.sh:772` (re-measured at `c464266`; `:756` when planned). Two properties of it
 decide how 3j calls it, and both were checked rather than assumed:
 
 - **It reads the global `$PHASE`, not an argument.** So 3j sets `PHASE` to the
@@ -215,7 +215,7 @@ decide how 3j calls it, and both were checked rather than assumed:
   different question for every commit. This is the single most likely way to
   build a check that passes its own tests and inspects nothing.
 - **It fails closed.** A phase matching no row in `phases.conf` returns 1
-  (`lib.sh:769-782`, with the comment recording the `GREEN.` production defect).
+  (`lib.sh:785-798` at `c464266`, with the comment recording the `GREEN.` production defect).
   So a commit whose story frontmatter carries a garbled phase is refused rather
   than waved through, which is the behaviour this story wants. Do not add an
   escape hatch for it.
@@ -245,6 +245,21 @@ Measured on `main` at `cffcb4a`, on this branch:
 
 The third row is the one that can bite, and it is **not** a reason to weaken the
 check - see `## Notes`, "The four REVIEW commits".
+
+**Re-measured at PLANNED → RED, on `main` at `c464266` (PO decision 1 in
+`## Notes`).** The third row is stale: the same loop now finds **15** attributable
+commits (plus 5 unattributed harness refreshes/initial) touching `.claude/tests/`
+under a phase whose row lacks `test`:
+
+    5729736 HARNESS-018 GREEN    85f9954 HARNESS-011 GATES    fb963d9 TEL-003 GATES
+    5043ee3 TEL-002 GATES        6338f1c HARNESS-015 REVIEW   08483ab HARNESS-014 REVIEW
+    cdde349 NET-003 GREEN        8aecfa5 NET-001 GREEN        fcf9a91 TEL-001 GREEN
+    dabf267 SEAT-002 GREEN       50b4b68 HARNESS-010 DONE     1b6729a HARNESS-008 REVIEW
+    0bce924 SEAT-001 REVIEW      dc56a74 HARNESS-006 REVIEW   4b0033e BOOT-001 REVIEW
+
+All on `main`, so none is in any future PR's `$BASE..HEAD`; the check is
+prospective. The first row is the instructive one: HARNESS-018's GREEN commit
+rewrote pipe plumbing in six suites. Under 3j that work belongs in RED.
 
 ### Oracle partition of the criteria (see `story-authoring`)
 
@@ -337,6 +352,9 @@ name, below the table.
 <!-- One line per dispatch, as it happened: phase, agent, the model that
      actually ran, and — if a phase was planned for one model and ran on
      another — what that changed. A choice with no verdict is folklore. -->
+
+- RED - test-developer - Fable 5.1 (`claude-fable-5-1`), as planned; no override reported to me at dispatch.
+
 ## Out of scope
 
 **`paths.conf` and `phases.conf` are not touched.** A rule-ordering change there
@@ -372,6 +390,60 @@ assertion inside a suite CI already runs via `scripts/selftest.sh`.
 <!-- Filled by the Test Developer during RED: which tests, at which level,
      and which AC each one covers. -->
 
+One level only: the existing integration harness in
+`.claude/tests/boundaries.test.sh`, which runs the real `scripts/check-boundaries.sh`
+against a two-branch fixture repository. That is where `check-boundaries.sh`
+behaviour is asserted, and 3j is per-commit behaviour of that script - a unit
+test of a predicate would not see the commit loop, which is the thing most likely
+to be built wrong (contract: "the single most likely way to build a check that
+passes its own tests and inspects nothing").
+
+New `describe "the harness's own suites obey the test freeze"`, placed directly
+after the 3i block whose shape it copies. 30 assertions, run by
+`bash .claude/tests/boundaries.test.sh`. One fixture helper, `suite_story
+<phase> <path>...`: first commit appends to each path with the story in `<phase>`,
+second commit moves the story to REVIEW (manifest_story's shape, so the tip
+never carries the offending phase), and `$c7` is the offending commit's 7-char
+sha.
+
+| # | Assertion (as named in the suite) | AC | Kind |
+|---|---|---|---|
+| 1 | a suite edited in GREEN is refused, naming the commit, the path and the phase | AC-1 | red in RED |
+| 2 | and in GATES | AC-1 | red in RED |
+| 3 | the verdict follows the phase AT THE COMMIT, not the phase at the tip (tip moved to RED) | AC-1 / contract `$PHASE` trap | red in RED |
+| 4 | nor the phase in the environment (`PHASE=RED` exported into the run) | AC-1 / contract `$PHASE` trap | red in RED |
+| 5 | a garbled phase in the commit's frontmatter fails closed (`GREEN.`) | contract "fails closed" | red in RED |
+| 6 | a suite edited in RED is not refused | AC-2 | vacuous in RED |
+| 7 | and the ok line reports the one commit inspected (`(1 commit(s))`, whole-line) | AC-2 | red in RED |
+| 8 | SCAFFOLD may write a suite too | AC-2 | vacuous in RED |
+| 9 | and is counted the same way | AC-2 | red in RED |
+| 10 | two suites in one commit count as one commit | AC-2 (unit is commits, not files) | red in RED |
+| 11 | two RED commits are both fine | AC-2 | vacuous in RED |
+| 12 | and both are counted (`(2 commit(s))`) | AC-2 | red in RED |
+| 13 | a branch that touches no suite is not refused | AC-3 | vacuous in RED |
+| 14 | and 3j prints no ok line for it - nothing was inspected | AC-3 | vacuous in RED |
+| 15 | a commit with no story file to read is skipped, as 3i skips it | contract "no story file" | vacuous in RED |
+| 16 | and not counted | contract / AC-3 | vacuous in RED |
+| 17-22 | GREEN may still write `.claude/harness/project.conf`, `.gitignore`, `CLAUDE.md`, `.claude/commands/advance-story.md`, `scripts/new-tool.sh`, `docs/.claude/tests/x.md` (one commit per path, one run) | AC-5 (+ unanchored-prefix trap) | vacuous in RED |
+| 23 | and none of them counts as a suite inspection | AC-5 / AC-3 | vacuous in RED |
+| 24 | when GREEN's row gains test, the same GREEN commit is accepted | AC-4 | vacuous in RED |
+| 25 | and counted as inspected | AC-4 | red in RED |
+| 26 | phases.conf restored byte-for-byte | fixture hygiene | passes |
+| 27 | restored, the same commit is refused again - the row was the cause | AC-4 (control) | red in RED |
+| 28 | when RED's row loses test, a RED commit is refused, naming RED | AC-4 | red in RED |
+| 29 | phases.conf restored byte-for-byte | fixture hygiene | passes |
+| 30 | restored, the RED commit is accepted again | AC-4 (control) | vacuous in RED |
+
+Edges covered: zero / one / many commits (AC-3, AC-2, #12); one commit with
+many files (#10); every phase kind (`test` row, no `test` row, no row at all);
+the tip and the environment carrying a permitting phase while the commit does
+not (#3, #4); the prefix trap (`docs/.claude/tests/`); a commit before the story
+file exists (#15).
+
+Not covered, deliberately: the 15 historical commits on `main` (they are outside
+every future `$BASE..HEAD`, confirmed below); `paths.conf`/`phases.conf` changes
+in this repo (out of scope); harness *source* in RED (out of scope).
+
 ## Handoff: RED -> GREEN
 
 <!-- Filled by the Test Developer at the end of RED. This is the ONLY channel
@@ -391,6 +463,301 @@ assertion inside a suite CI already runs via `scripts/selftest.sh`.
          suite fails at import, so no assertion in it has run - the controls
          are claims until GREEN confirms them against the shipped module
        * anything discovered that changes the approach -->
+
+### Command
+
+    bash .claude/tests/boundaries.test.sh
+
+Not `gates.sh`: no gate runs this suite (CI runs it via `scripts/selftest.sh`).
+~4.5 minutes on this Windows machine; budget for it. `VERBOSE=1` prints the
+passing assertions too.
+
+### Failure output (verbatim, second run, this tree)
+
+Baseline before the block, **re-measured on this tree** by running the
+committed (`HEAD`) suite from the scratchpad against the real `_lib.sh`:
+`boundaries: 95 passed, 0 failed`. The contract's `83` was taken at `cffcb4a`
+and is stale at `c464266` (HARNESS-016/017/018 added assertions since); it is
+the "verify any number you depend on" case, and the exposure argument does not
+change with it. With the block:
+
+```
+  the harness's own suites obey the test freeze
+    FAIL a suite edited in GREEN is refused, naming the commit, the path and the phase
+         expected a refusal saying: story T-1: commit 74f1b77 changed '.claude/tests/x.test.sh' while the story was in GREEN, which may not write tests
+         actual:                    ok    story files validated
+         ok    harness state not tracked
+         ok    source changes accompanied by test changes (0 source, 0 test)
+         ok    story T-1 is in REVIEW
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+         FAIL  story T-1: ## Gate results was not written by scripts/gates.sh. Run 'bash scripts/gates.sh' - it records its own result; a pasted summary is not evidence.
+         ok    ## Handoff is filled in
+    FAIL and in GATES
+         expected a refusal saying: story T-1: commit d995dd8 changed '.claude/tests/x.test.sh' while the story was in GATES, which may not write tests
+         [same output]
+    FAIL the verdict follows the phase AT THE COMMIT, not the phase at the tip
+         expected a refusal saying: story T-1: commit 9cda1f8 changed '.claude/tests/x.test.sh' while the story was in GREEN, which may not write tests
+         actual:                    ok    story files validated
+         ok    harness state not tracked
+         ok    source changes accompanied by test changes (0 source, 0 test)
+         FAIL  story T-1 is in phase 'RED'; a PR should be opened from REVIEW or DONE
+         ok    branch matches the story's frontmatter
+         ok    acceptance criteria unchanged since main
+         ok    ## Handoff is filled in
+    FAIL nor the phase in the environment
+         expected a refusal saying: story T-1: commit 9cda1f8 changed '.claude/tests/x.test.sh' while the story was in GREEN, which may not write tests
+         [same output]
+    FAIL a garbled phase in the commit's frontmatter fails closed
+         expected a refusal saying: story T-1: commit 616ecca changed '.claude/tests/x.test.sh' while the story was in GREEN., which may not write tests
+         [same output as the first]
+    ok   a suite edited in RED is not refused
+    FAIL and the ok line reports the one commit inspected
+         expected: 1
+         actual:   0
+    ok   SCAFFOLD may write a suite too
+    FAIL and is counted the same way
+         expected: 1
+         actual:   0
+    FAIL two suites in one commit count as one commit
+         expected: 1
+         actual:   0
+    ok   two RED commits are both fine
+    FAIL and both are counted
+         expected: 1
+         actual:   0
+    ok   a branch that touches no suite is not refused
+    ok   and 3j prints no ok line for it - nothing was inspected
+    ok   a commit with no story file to read is skipped, as 3i skips it
+    ok   and not counted
+    ok   GREEN may still write .claude/harness/project.conf
+    ok   GREEN may still write .gitignore
+    ok   GREEN may still write CLAUDE.md
+    ok   GREEN may still write .claude/commands/advance-story.md
+    ok   GREEN may still write scripts/new-tool.sh
+    ok   GREEN may still write docs/.claude/tests/x.md
+    ok   and none of them counts as a suite inspection
+    ok   when GREEN's row gains test, the same GREEN commit is accepted
+    FAIL and counted as inspected
+         expected: 1
+         actual:   0
+    ok   phases.conf restored byte-for-byte
+    FAIL restored, the same commit is refused again - the row was the cause
+         expected a refusal saying: story T-1: commit f6adb78 changed '.claude/tests/x.test.sh' while the story was in GREEN, which may not write tests
+         [same output as the first]
+    FAIL when RED's row loses test, a RED commit is refused, naming RED
+         expected a refusal saying: story T-1: commit 91d815d changed '.claude/tests/x.test.sh' while the story was in RED, which may not write tests
+         [same output as the first]
+    ok   phases.conf restored byte-for-byte
+    ok   restored, the RED commit is accepted again
+
+boundaries: 113 passed, 12 failed
+```
+
+**Why this is the right failure.** Every one of the 12 is either "expected a
+refusal saying `… changed '.claude/tests/x.test.sh' while the story was in
+<PHASE> …`" with an `actual:` that contains no such line, or "expected: 1 /
+actual: 0" for the whole-line count of 3j's `ok` line. Nothing in
+`check-boundaries.sh` mentions `.claude/tests` (`grep -c '3j\|harness suites
+changed only' scripts/check-boundaries.sh` -> `0`), so no refusal and no `ok`
+line is exactly what a script without 3j prints. The only `FAIL` inside the
+`actual:` blocks is the pre-existing gate-record rule (fixture stories carry no
+`## Gate results`), which is why the "accepted" assertions read the absence of
+3j's text rather than a clean exit - `accepts_manifest`'s shape, for
+`accepts_manifest`'s reason. The 95 pre-existing assertions all still pass:
+113 passed = 95 baseline + 18 vacuous/hygiene passes in the new block, and the
+12 failures are all inside the new block (30 = 18 + 12).
+
+Note for GREEN on the `refused` helper: it checks the message AND a non-zero
+exit, but the fixture already exits non-zero on the gate-record rule, so the
+exit half is not load-bearing here. `problem` (not `note`) is what 3j must call;
+the message check is what pins it.
+
+### Files touched
+
+| File | What |
+|---|---|
+| `.claude/tests/boundaries.test.sh` | new `describe "the harness's own suites obey the test freeze"` (after the 3i block, ~line 891-1105); helpers `SUITE_OK`, `suite_refusal`, `ok_line_count`, `accepts_suite`, `no_suite_ok_line`, `suite_story`, `phases_edit`, `phases_restore`; 30 assertions. Nothing outside the block changed. |
+| `docs/backlog/stories/HARNESS-009.md` | `## Test plan`, this section, `## Model guidance` Resolved line |
+
+`scripts/check-boundaries.sh`, `.claude/hooks/lib.sh`, `paths.conf`,
+`phases.conf`: **untouched** (`git status` shows only the two files above). The
+lock would not have stopped a write there - that is this story's subject - so
+this is stated rather than assumed.
+
+### The strings the tests pin, verbatim
+
+GREEN builds exactly these; every other word of the message is the
+implementer's choice.
+
+**Refusal** (via `problem`, so it prints with the `FAIL  ` prefix and sets
+`fail=1`). Matched as ONE substring carrying commit, path and phase:
+
+    story $sid: commit ${c%${c#???????}} changed '$f' while the story was in $ph_at, which may not write tests
+
+i.e. for the fixture:
+
+    story T-1: commit 74f1b77 changed '.claude/tests/x.test.sh' while the story was in GREEN, which may not write tests
+
+The commit is the first 7 characters of the full sha (3i's
+`${c%${c#???????}}`); the test computes it as `git rev-parse HEAD | cut -c1-7`
+on the offending commit. `$ph_at` is the phase string as read from the
+committed frontmatter, so a garbled `GREEN.` is echoed as `GREEN.`. Anything
+may follow the pinned text (a remedy sentence is a good idea: `bash
+scripts/phase.sh set <id> RED`, and `## Regressions`).
+
+**ok line** (via `ok`, so `ok    ` prefix). Matched as a WHOLE LINE with
+`grep -Fxc`, so the count is exact and `(11 commit(s))` does not satisfy
+`(1 commit(s))`:
+
+    ok    harness suites changed only where the phase may write tests ($harness_test_checked commit(s))
+
+Printed only when `checked > 0 && problem == 0`; the count is **commits** that
+touched `.claude/tests/` under a permitting phase (not files - #10 pins that:
+two files in one commit -> `1`; #12: two commits -> `2`).
+
+**Absence needles** used by the "accepted" assertions: the substring
+`which may not write tests` (refusal) and `harness suites changed only where the
+phase may write tests` (ok line). Both are unique to 3j; nothing else in the
+script prints them today (`grep -c` above).
+
+### What the tests constrain, and what they do not
+
+Constrained:
+- Per-commit over `git rev-list "$BASE"..HEAD`, phase read from `$sfile` **at
+  that commit** (#3: tip says RED, commit says GREEN -> refused).
+- The phase predicate is `phase_allows test` from lib.sh with `PHASE` set to
+  the commit's phase (#4: `PHASE=RED` in the environment must not change the
+  verdict; #5: unknown phase refused; AC-4: the verdict moves when the fixture's
+  `phases.conf` rows change, both directions, with no edit to the script).
+- Path predicate: anchored prefix `.claude/tests/` (AC-5 includes
+  `docs/.claude/tests/x.md`, which must NOT be refused).
+- A commit with no readable story file is skipped and not counted (#15, #16).
+
+Not constrained (implementer's choice): variable names, where inside the 3i ->
+`exit $fail` gap the block sits, the remedy text after the pinned prefix,
+whether one refusal is printed per file or per commit (the fixture has one file
+per offending commit in every AC-1 case; #10's two-file commit is under RED so
+it is counted, not refused), and how `PHASE` is scoped (subshell or
+save/restore - **but see the `set -u` note below**).
+
+### Verified mechanisms (checked, not assumed)
+
+- `phase_allows` reads global `$PHASE`, not an argument, and fails closed.
+  Driven directly from a shell sourcing lib.sh:
+  `RED -> allows test; GREEN -> refuses; SCAFFOLD -> allows; REVIEW -> refuses;
+  'GREEN.' -> refuses; ZZZ -> refuses; '' -> refuses`.
+- **`check-boundaries.sh` runs `set -uo pipefail` and never sets `PHASE`.**
+  With `PHASE` unset, `phase_allows test` aborts: `lib.sh: line 779: PHASE:
+  unbound variable`. So 3j must assign `PHASE` (in a subshell or with
+  save/restore of `${PHASE:-}`) before every call - an implementation that
+  relies on the environment happening to carry one will either abort the whole
+  script or read the wrong phase (#4 covers the second; the first would show up
+  as every assertion in the suite failing at once).
+- `HARNESS_DIR` comes from `CLAUDE_PROJECT_DIR`, which check-boundaries.sh sets
+  to its own `$ROOT`, so in the fixture `phase_allows` reads the FIXTURE's
+  `phases.conf` - which is what makes the AC-4 edit reach the predicate.
+- Notes item 1 ("RED should confirm this rather than take it from here"): a PR's
+  `$BASE..HEAD` does contain the story's own commits in every phase. Checked on
+  the last three merges into `main`; e.g. PR #35 (HARNESS-018), range
+  `45a7aa0..df40a58`: `df40a58 REVIEW`, `ab88676 GATES`, `e868f59 GATES`,
+  `5729736 GREEN (6 files under .claude/tests/)`, `fa02e8f RED (1)`,
+  `6213c3c PLANNED`. 3j would have refused `5729736`, exactly as the contract's
+  re-measurement says. The RED commit is at RED and passes.
+- **Changed signatures: none, confirmed.** `grep -rn phase_allows scripts
+  .claude/hooks .claude/tests` finds one caller (`phase-guard.sh:32`) and
+  comments; 3j adds a caller and changes no signature. Nothing outside
+  `check-boundaries.sh` reads `red_manifest_*` or 3i's ok line, so nothing else
+  needs to change. Caller list to update: empty.
+
+### Tests that pass on arrival, and what earns them
+
+The 18 vacuous passes (#6, #8, #11, #13-#24 except #7/#9/#10/#12, #26, #29, #30
+in the Test plan table) are "does not refuse" / "no ok line" readings. In RED
+nothing refuses, so they cannot fail. They are NOT earned by a probe in this
+phase - there is nothing to mutate - and the story's `## Deferred verifications`
+already assigns them to GREEN. What earns them in GREEN is the positive
+controls in the same block: the AC-1 fixture's refusal (#1) and the AC-2
+fixture's ok line (#7) run in the same session, so a 3j that never fires cannot
+pass #1/#7 while vacuously passing #13/#14. GREEN should also run the
+`mutate.sh` probe below once 3j exists, to show the absence assertions bite.
+
+**Declined, in those words:** I cannot run the deferred verifications for AC-2,
+AC-3, AC-5. They require 3j to exist. Owner: GREEN.
+
+### Expected value of every control (claims until GREEN measures them)
+
+| Control (fixture) | Threshold / needle | Expected once 3j exists | Measured in RED |
+|---|---|---|---|
+| AC-1: GREEN commit touching `.claude/tests/x.test.sh`, tip REVIEW | refusal string with `74f1b77`-shaped sha, path, `GREEN` | refused, exit 1 | no refusal (0 matches) |
+| AC-1: same at GATES | `… in GATES, …` | refused | no refusal |
+| trap: tip at RED, commit at GREEN | `… in GREEN, …` | refused | no refusal |
+| trap: `PHASE=RED` exported, commit at GREEN | `… in GREEN, …` | refused | no refusal |
+| garbled `GREEN.` | `… in GREEN., …` | refused | no refusal |
+| AC-2: RED commit | no refusal; `ok … (1 commit(s))` exact line count | accepted, count line = 1 | accepted (vacuous), count = 0 |
+| AC-2: SCAFFOLD commit | same | accepted, 1 | accepted (vacuous), 0 |
+| AC-2: one RED commit, two files | `(1 commit(s))` | 1 | 0 |
+| AC-2: two RED commits | `(2 commit(s))` | accepted, 2 | accepted (vacuous), 0 |
+| AC-3: GREEN commit touching `src/main.ts` only | no refusal AND no ok line | accepted, no ok line | accepted, no ok line (vacuous) |
+| no-story-file commit touching `.claude/tests/` | no refusal, no ok line | skipped: accepted, no ok line | same (vacuous) |
+| AC-5: GREEN commits, one each: `project.conf`, `.gitignore`, `CLAUDE.md`, `.claude/commands/advance-story.md`, `scripts/new-tool.sh`, `docs/.claude/tests/x.md` | no `changed '<path>' while the story was in` per path; no ok line | accepted x6, no ok line | same (vacuous) |
+| AC-4a: fixture `phases.conf` GREEN row gains `test`; the AC-1 commit | no refusal; ok line = 1 | accepted, 1 | accepted (vacuous), 0 |
+| AC-4a control: file restored, same commit | refusal `… in GREEN, …` | refused | no refusal |
+| AC-4b: RED row loses `test`; RED commit | refusal `… in RED, …` | refused | no refusal |
+| AC-4b control: restored | no refusal | accepted | accepted (vacuous) |
+
+Suggested GREEN probe once 3j is in (allowed in every phase; restores and
+`cmp`s): make the phase read the tip instead of the commit, e.g.
+
+    bash scripts/mutate.sh scripts/check-boundaries.sh \
+      's/ph_at="$(git show "$c:$sfile"/ph_at="$(git show "HEAD:$sfile"/' \
+      -- bash .claude/tests/boundaries.test.sh
+
+Expected: #3 ("the verdict follows the phase AT THE COMMIT") goes red and the
+rest of the block stays green - note the 3i loop has the same line, so check the
+expression hits only the 3j copy (anchor on a 3j-only neighbour, or use a line
+number as the story's `## Context` did).
+
+### Things GREEN should know
+
+- The fixture has **no `.gitattributes`** and this machine has
+  `core.autocrlf=true`, so `git checkout -- <file>` inside the fixture writes
+  CRLF. The first run of this block failed its own "restored byte-for-byte"
+  check on content that was identical modulo line endings; `phases_restore` now
+  `cp`s from `$REPO_ROOT` as `make_fixture` does. Not a 3j concern, but it is
+  why `phase_allows` strips `\r` and 3j should read the phase with the same
+  `tr -d '[:space:]'` 3i uses.
+- Two commits on a PR can carry the same `.claude/tests/` path; the count is
+  per commit, not per path, and a commit is counted once however many suite
+  files it touches.
+- The lock did not and will not stop a write to `scripts/check-boundaries.sh`
+  in RED (out of scope, named in the story). I did not touch it; GREEN should
+  diff `scripts/` against `c464266` before starting and find nothing.
+
+### Gates
+
+`bash scripts/gates.sh --fast` at the end of RED, this tree:
+
+```
+PASS         format (1s, observed 90)
+PASS         lint (0s, observed 90, floor 1)
+PASS         typecheck (2s, observed 17)
+PASS         unit (28s, observed 452, floor 443)
+UNCONFIGURED coverage
+PASS         build (0s, observed 57746)
+PASS         harness (13s, observed 40)
+--fast skipped: integration mutation
+All required gates passed (6 ran, 1 unconfigured, 0 known).
+```
+
+All green, and that is the expected shape here rather than a problem: no gate
+runs `boundaries.test.sh` (`harness` runs `project-counters.test.sh` only; the
+story's `## Context` measured this), so the test gates cannot be red on account
+of this story. The red lives in `scripts/selftest.sh`, which CI's required
+`gates` job runs before `gates.sh`. What the run confirms is that the new block
+trips no lint/format gate (their targets are Luau under `src tests lune`; bash
+under `.claude/tests/` is outside every target set). Not recorded in the story,
+as a `--fast` run never is.
 
 ## Regressions
 
@@ -482,6 +849,42 @@ refused all four had it existed. Two things follow, and neither is "loosen it":
 If this turns out to be noisy in practice, the answer is a story recording why -
 not a widened predicate. Loosening a comparison to reach green is the move
 `rules.md` names as always a weakening.
+
+### PO decisions at PLANNED → RED (2026-09-29, `c464266`)
+
+1. **The baseline of violating commits on `main` is 15, not 4** (table in
+   `## Contract`). No AC changes: every one of them is on `main`, outside any
+   future `$BASE..HEAD`, and the growth is the exposure this story names, not
+   noise. Stories that edit suite *plumbing* (HARNESS-018-shaped) will now need
+   to do it in RED; that is law 2 applied, and it is the intended effect.
+2. **This story's own commits.** The practice on this repo is one commit per
+   phase, so this story's `boundaries.test.sh` change is committed with
+   `phase: RED` and 3j passes its own PR. A GREEN/GATES/REVIEW commit here that
+   touched `.claude/tests/` would be refused by the check it adds - correctly.
+3. **Gate.** Unchanged from `## Context`: no `gates.sh` gate reads
+   `boundaries.test.sh`; CI's required `gates` job runs it via
+   `scripts/selftest.sh`. `required_gates` stays empty.
+4. **Epic.** None; no done-when to check.
+5. **Deferred verifications are owned by GREEN**, not GATES, because the
+   controls are "does not refuse" readings that GREEN observes the moment 3j
+   exists; nothing needs source broken to run them. Accepted as planned.
+
+### Orchestrator verification of RED (2026-09-29)
+
+- Diff scope: only `.claude/tests/boundaries.test.sh` and this story changed;
+  `git diff --stat c464266 -- scripts .claude/hooks .claude/harness` is empty,
+  and `grep -c '3j\|harness suites changed only' scripts/check-boundaries.sh` is `0`.
+- Independent run of `bash .claude/tests/boundaries.test.sh`:
+  `boundaries: 113 passed, 12 failed` (exit 1). All 12 failures are in the new
+  describe and show no 3j refusal or ok line. The only refusals present come
+  from pre-existing checks (gate record, REVIEW phase). The failure is correct.
+- `bash scripts/gates.sh --fast`: `All required gates passed (6 ran, 1
+  unconfigured, 0 known)`. This is expected, because no gate reads
+  `boundaries.test.sh` (PO decision 3). The new block trips neither format nor lint.
+- Accepted for GREEN: the subagent found that `check-boundaries.sh` runs under
+  `set -u` and never sets `PHASE`, so 3j must assign it before calling
+  `phase_allows`. The suite baseline was re-measured at 95/0 on this tree,
+  replacing 83/0 at `cffcb4a`.
 
 ### Provenance
 
