@@ -5,7 +5,7 @@ slug: plan-sh-write-adds-a-missing-model-guida
 epic: 
 type: fix
 status: in-progress
-phase: GREEN
+phase: GATES
 branch: story/HARNESS-017-plan-sh-write-adds-a-missing-model-guida
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -154,6 +154,40 @@ returns the original file. After GREEN, they **must** fail against an insertion
 that replaces the heading it goes in front of (it prints the plan *instead of*
 `## Out of scope` rather than before it). RED cannot run this: there is no
 insertion to mutate. **Owner: GATES.**
+
+**Result (GATES, 2026-09-29).** Three mutations were run through
+`bash scripts/mutate.sh scripts/plan.sh '<expr>' -- bash .claude/tests/plan.test.sh`.
+Every restore was verified byte for byte. Each mutation covers a different
+code path, plus the one pass-on-arrival assertion AC-1 has:
+
+1. The insertion **replaces** the heading it should go in front of (DV-1 as
+   written): `{ plan() }` → `{ plan(); next }` on the later-sections rule.
+   ```
+       FAIL it goes immediately before Out of scope
+       FAIL and nothing else in the file moved
+       FAIL before whichever later section comes first
+       FAIL still touching nothing else
+   plan: 94 passed, 4 failed
+   === mutate: command exited 1; restored (verified byte-for-byte against .../scripts_plan.sh.20260929T000508Z.127175.bak) ===
+   ```
+2. The end-of-file path writes something that does not belong. This covers
+   T-62, which mutation 1 cannot reach:
+   `if (last !~ /^[[:space:]]*$/) print ""` → `print "stray line"`.
+   ```
+       FAIL and the story above it intact
+   plan: 97 passed, 1 failed
+   === mutate: command exited 1; restored (verified byte-for-byte against .../scripts_plan.sh.20260929T000809Z.137668.bak) ===
+   ```
+3. Refuse rather than insert: `|| added=1` → `|| die "no Model guidance heading"`.
+   This earns `a story without the heading is written, not refused`, which
+   passed in RED only because the bug also exits 0.
+   ```
+       FAIL a story without the heading is written, not refused
+       FAIL and afterwards has exactly one Model guidance heading
+       ... (9 more, every AC-1/AC-2 assertion)
+   plan: 87 passed, 11 failed
+   === mutate: command exited 1; restored (verified byte-for-byte against .../scripts_plan.sh.20260929T001057Z.148061.bak) ===
+   ```
 
 ## Amendments
 
