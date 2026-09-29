@@ -5,7 +5,7 @@ slug: plan-sh-write-adds-a-missing-model-guida
 epic: 
 type: fix
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/HARNESS-017-plan-sh-write-adds-a-missing-model-guida
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
