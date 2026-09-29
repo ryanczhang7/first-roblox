@@ -5,7 +5,7 @@ slug: harness-source-is-frozen-during-red
 epic: 
 type: chore
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/HARNESS-020-harness-source-is-frozen-during-red
 depends_on: [HARNESS-009]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -392,6 +392,72 @@ The AC-4 and AC-5 rows are the ones that matter, because "allowed" is also what
 a split that never took effect produces. The distinguishing observation is AC-2's
 denial in the **same run**.
 
+**DV-1 result (GREEN, 2026-09-29, against the shipped config; working tree on
+`81528ce` plus the GREEN edits).** Every expected value confirmed. One mismatch
+with the story's *text*, none with the handoff: see the AC-6 control below.
+
+Direct run of the real hook against a scratch fixture carrying the shipped
+`paths.conf`/`phases.conf`, one shell, one session:
+
+    [RED] echo x >> scripts/check-boundaries.sh -> permissionDecision":"deny path:     scripts/check-boundaries.sh category: tooling
+    [RED] echo x > .claude/hooks/lib.sh -> permissionDecision":"deny path:     .claude/hooks/lib.sh category: tooling
+    [RED] echo x >> .claude/tests/x.test.sh -> ALLOWED / harness
+    [RED] echo x >> .claude/tests/_lib.sh -> ALLOWED / harness
+    [RED] echo x >> .gitignore -> ALLOWED / harness
+    [RED] echo x >> CLAUDE.md -> ALLOWED / harness
+    [RED] echo x >> .gitattributes -> ALLOWED / harness
+    [RED] echo x >> .github/workflows/gates.yml -> ALLOWED / harness
+    [RED] echo x >> .claude/commands/advance-story.md -> ALLOWED / harness
+    [RED] echo x >> .claude/harness/project.conf -> ALLOWED / harness
+    [RED] echo x >> .claude/harness/paths.conf -> ALLOWED / harness
+    [RED] echo x >> .claude/settings.json -> ALLOWED / harness
+    [RED] mutate.sh scripts/check-boundaries.sh -> ALLOWED
+    [RED] mutate.sh .claude/hooks/lib.sh -> ALLOWED
+    [GREEN] echo x > scripts/new-tool.sh -> ALLOWED
+    [GATES] echo x > scripts/new-tool.sh -> ALLOWED
+    [SCAFFOLD] echo x > scripts/new-tool.sh -> ALLOWED
+    gate_tree_hash_of 01e502b = e852f851933cb64800209a1cce52af276f8304a1
+
+The same controls inside the suite, one run, `VERBOSE=1 bash
+.claude/tests/phase-guard.test.sh` (excerpt; the AC-2 denials and the AC-4/AC-5
+allows are the same run):
+
+    ok   AC-2: RED denies a redirect onto scripts/check-boundaries.sh, as tooling
+    ok   AC-2: RED denies a redirect creating scripts/new-tool.sh, as tooling
+    ok   allows: AC-3: GREEN allows scripts/new-tool.sh
+    ok   allows: AC-3: GATES allows scripts/new-tool.sh
+    ok   allows: AC-3: SCAFFOLD allows scripts/new-tool.sh
+    ok   allows: AC-4: RED still allows .claude/tests/x.test.sh      (and the other nine, each ok)
+    ok   allows: AC-5: RED allows mutate.sh on scripts/check-boundaries.sh
+    ok   allows: AC-5: RED allows mutate.sh on .claude/hooks/lib.sh
+    ok   AC-5: while a plain redirect onto that same scripts/check-boundaries.sh is denied
+    ok   AC-7: the fixture's RED row now lists tooling (the edit landed)
+    ok   allows: AC-7: with tooling in RED's row of phases.conf, RED allows scripts/check-boundaries.sh
+    ok   AC-7: restored byte for byte from the real phases.conf
+    ok   AC-7: restored, RED denies scripts/check-boundaries.sh again
+    phase-guard: 242 passed, 0 failed
+
+AC-6 negative control against the **shipped** `gated_stdin`, through
+`mutate.sh`:
+
+    632 -       || $1 == "tooling") \
+    632 +       ) \
+    control: gate_tree_hash_of 01e502b = cd93a70e2b1c3b305ab5cd3fd47759b15b75c137
+    === mutate: command exited 0; restored (verified byte-for-byte against .../.claude_hooks_lib.sh.20260929T213802Z.279.bak) ===
+
+This matches the handoff's `cd93a70e…` and the orchestrator's reproduction. It
+does **not** match the `81917885…` in AC-6's text and `## Context` §4, which is
+the amendment already pending in `## Notes`. The claim holds; the literal is
+wrong.
+
+Handoff table, row by row: AC-2 denied/tooling (match); AC-4 allowed/harness x10
+(match); AC-5 allowed x2 (match); AC-3 allowed in GREEN/GATES/SCAFFOLD (match);
+AC-6 `e852f851…` (match); AC-6 control `cd93a70e…` (match to handoff); AC-6
+in-suite control and AC-7 control are mutation probes of DV-2's kind and were
+not re-run here; AC-7 instrument 1 (match, `ok` line above). Suite totals equal
+RED's prototype numbers exactly: phase-guard 242/0, lib 158/0, classify 36/0,
+plan 130/0.
+
 **DV-2. Owner: GATES.** Three mutations through `scripts/mutate.sh`, each against
 the shipped config, and each must turn its named assertion red:
 
@@ -448,6 +514,7 @@ Lock coverage: APPLIES — all 9 path(s) declared in the Contract's ### Files ta
      another — what that changed. A choice with no verdict is folklore. -->
 
 - RED - test-developer - claude-opus-5-5 (Opus 5.5; planned `opus`, no override)
+- GREEN - feature-developer - claude-opus-5-5 (Opus 5.5; planned `opus`, no override)
 
 ## Out of scope
 
