@@ -1030,12 +1030,23 @@ no_suite_ok_line "and 3j prints no ok line for it - nothing was inspected"
 # A commit made before the story file exists on the branch has no phase to read
 # and is skipped, as 3i skips it. Not counted either: an ok line for a commit
 # whose phase nobody read would be the furniture AC-3 forbids.
+#
+# The shared fixture's main already carries T-1.md at PLANNED (the 3d anchor
+# above), so a branch cut from main INHERITS a story file - and PLANNED forbids
+# `test`, so 3j correctly refused the first draft of this case (GREEN, 124/1;
+# see ## Regressions). The commit under test has to genuinely lack the file:
+# remove it in that same commit, then re-add it at REVIEW in the next. `git rm`
+# also drops the emptied directory, and a story that silently fails to be
+# re-added leaves HEAD with no story, no sid, and a 3j that never runs - a
+# vacuous pass the first probe of this correction produced. Hence the mkdir.
 git -C "$FIX" checkout -q main 2>/dev/null
 git -C "$FIX" branch -D story/T-1-fixture >/dev/null 2>&1
 git -C "$FIX" checkout -q -b story/T-1-fixture 2>/dev/null
 mkdir -p "$FIX/.claude/tests"
+git -C "$FIX" rm -q docs/backlog/stories/T-1.md >/dev/null 2>&1
 printf '# before the story\n' >> "$FIX/.claude/tests/x.test.sh"
 commit_all "a suite change before the story file exists"
+mkdir -p "$FIX/docs/backlog/stories"
 _story_file REVIEW
 commit_all "T-1 story"
 run_boundaries

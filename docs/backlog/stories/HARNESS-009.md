@@ -354,6 +354,8 @@ name, below the table.
      another — what that changed. A choice with no verdict is folklore. -->
 
 - RED - test-developer - Fable 5.1 (`claude-fable-5-1`), as planned; no override reported to me at dispatch.
+- GREEN - feature-developer - Opus 5.5 (`claude-opus-5-5`), as planned; no override. Stopped at 124/1: test #15 ("a commit with no story file to read is skipped") has a false premise - the fixture's `main` already carries `T-1.md` at `phase: PLANNED` (suite line ~216-218), so the "before the story" commit has a story file and PLANNED forbids `test`. Returned for RED.
+- RED (return) - test-developer - Fable 5.1 (`claude-fable-5-1`), as planned; no override reported to me at dispatch. Remit: the one defective test; source untouched.
 
 ## Out of scope
 
@@ -780,6 +782,96 @@ as a `--fast` run never is.
        * whether GREEN was a no-op, and the command output proving the source
          was untouched and still passes -->
 
+### Return 1: GREEN -> RED, 2026-09-29 - the "no story file" case inherited one
+
+**Which test.** `.claude/tests/boundaries.test.sh`, the AC-3 pair
+`a commit with no story file to read is skipped, as 3i skips it` and
+`and not counted` (the block under `# A commit made before the story file
+exists on the branch`).
+
+**What it asserted, and what was wrong.** It claimed to build a branch whose
+first commit touches `.claude/tests/x.test.sh` *before* the story file exists,
+and asserted 3j neither refuses that commit nor counts it. The premise was
+false: the suite uses one shared `$FIX`, and its `main` already carries
+`docs/backlog/stories/T-1.md` at `phase: PLANNED` (the 3d anchor, suite lines
+214-218). A branch cut from `main` inherits that file, so `git show
+"$c:$sfile"` read `PLANNED` for the "pre-story" commit, `PLANNED` does not list
+`test`, and 3j refused it - correctly, per AC-1. The test was asserting the
+wrong world, not the wrong behaviour.
+
+**How found.** GREEN (Opus 5.5) ran the suite at `124 passed, 1 failed` with
+3j refusing `commit 5f443fa changed '.claude/tests/x.test.sh' while the story
+was in PLANNED`; the orchestrator reproduced it independently in a plain-git
+repo (see `## Notes`, "GREEN escalation").
+
+**What it asserts now.** The same two things - no refusal, no ok line - but
+against a commit that genuinely lacks the story: the pre-story commit now
+`git rm`s `docs/backlog/stories/T-1.md` alongside its append to `x.test.sh`,
+and the next commit re-adds the story at `REVIEW`. Neither `accepts_suite` nor
+`no_suite_ok_line` was touched. One `mkdir -p docs/backlog/stories` was added
+before `_story_file REVIEW`, because `git rm` drops the emptied directory -
+without it the re-add silently failed (`line 547: .../T-1.md: No such file or
+directory`), HEAD had no story, `sid` was empty, 3j never ran, and the
+assertion passed vacuously: the first probe of this correction came back
+`125 passed, 0 failed` *with the skip mutated away*, which is how the missing
+`mkdir` was found. Verified before the real probes, in a throwaway repo: the
+pre-story commit lists `.claude/tests/x.test.sh docs/backlog/stories/T-1.md`
+with `phase=[]`, the next lists only the story with `phase=[REVIEW]`; and
+`PHASE=""; phase_allows test` returns `1` (fails closed), so removing the skip
+must produce a refusal.
+
+**What earns it - probe 1, the skip (earns "is skipped").** Line 589 of
+`scripts/check-boundaries.sh` is 3j's `[ -n "$ph_at" ] || continue` (541 is
+3i's). Replaced with `:` so an empty phase reaches `phase_allows`:
+
+    $ bash scripts/mutate.sh scripts/check-boundaries.sh '589s/^  \[ -n "\$ph_at" \] || continue$/  :/' -- bash .claude/tests/boundaries.test.sh
+    === mutate: scripts/check-boundaries.sh (1 line(s) changed by 589s/^  \[ -n "\$ph_at" \] || continue$/  :/) ===
+      589 -   [ -n "$ph_at" ] || continue
+      589 +   :
+    === mutate: running bash .claude/tests/boundaries.test.sh ===
+    ...
+        FAIL a commit with no story file to read is skipped, as 3i skips it
+             refused: ok    story files validated
+             ...
+             FAIL  story T-1: commit 4bc80e3 changed '.claude/tests/x.test.sh' while the story was in , which may not write tests. A harness suite is a test, and law 2 freezes tests outside RED; the lock cannot see this because the path classifies as harness. Return to RED ('bash scripts/phase.sh set T-1 RED'), make the change there, and record why in ## Regressions.
+    ...
+    boundaries: 124 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/scripts_check-boundaries.sh.20260929T165707Z.1195090.bak) ===
+      589:   [ -n "$ph_at" ] || continue
+
+Exactly one failure, the corrected assertion, and the message names the empty
+phase (`while the story was in ,`) on the pre-story commit.
+
+**What earns it - probe 2, the count (earns "and not counted").** Probe 1
+cannot red the companion: a refused commit prints no ok line either way. So a
+second mutation makes the skip *count* what it skips:
+
+    $ bash scripts/mutate.sh scripts/check-boundaries.sh '589s/^  \[ -n "\$ph_at" \] || continue$/  [ -n "$ph_at" ] || { harness_test_checked=$((harness_test_checked+1)); continue; }/' -- bash .claude/tests/boundaries.test.sh
+    === mutate: scripts/check-boundaries.sh (1 line(s) changed by ...) ===
+      589 -   [ -n "$ph_at" ] || continue
+      589 +   [ -n "$ph_at" ] || { harness_test_checked=$((harness_test_checked+1)); continue; }
+    === mutate: running bash .claude/tests/boundaries.test.sh ===
+    ...
+        FAIL and not counted
+             3j reported an inspection where nothing under .claude/tests/ changed: ok    story files validated
+    ...
+    boundaries: 124 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/scripts_check-boundaries.sh.20260929T170108Z.1212077.bak) ===
+      589:   [ -n "$ph_at" ] || continue
+
+Again exactly one failure, the companion. Both probes were local runs
+(Windows, Git Bash); each suite run is ~4.5 min here, run one at a time.
+
+**GREEN is a no-op.** This return touched only the suite and the story;
+`scripts/check-boundaries.sh` still holds GREEN's uncommitted 3j, byte-for-byte
+(both restores verified by `cmp`, `.claude/state/mutations/` holds only `log`).
+Unmutated run after the correction:
+
+    $ git diff --stat scripts/check-boundaries.sh | tail -1
+     1 file changed, 35 insertions(+)        # GREEN's 3j, unchanged by this return
+    $ bash .claude/tests/boundaries.test.sh
+    boundaries: 125 passed, 0 failed
+
 ## Gate results
 
 <!-- Written by scripts/gates.sh itself on every full run, stamped with the
@@ -885,6 +977,23 @@ not a widened predicate. Loosening a comparison to reach green is the move
   `set -u` and never sets `PHASE`, so 3j must assign it before calling
   `phase_allows`. The suite baseline was re-measured at 95/0 on this tree,
   replacing 83/0 at `cffcb4a`.
+
+### GREEN escalation: one frozen test is wrong (2026-09-29, pending user decision)
+
+GREEN (Opus 5.5) added 3j and stopped at `boundaries: 124 passed, 1 failed`. The failing test is
+`a commit with no story file to read is skipped, as 3i skips it`. 3j refused
+`commit 5f443fa changed '.claude/tests/x.test.sh' while the story was in PLANNED`.
+The claim is that the test's premise is false, because the fixture's `main` already carries `T-1.md` at
+`phase: PLANNED` (boundaries.test.sh:214-218, one shared `$FIX`). The
+"pre-story" commit therefore inherits a story file, and AC-1 requires the refusal.
+
+**Orchestrator reproduction, independent of the subagent's code and on different inputs.** I used a fresh
+plain-git repo, not the fixture: `main` carries `Z-9.md` at `phase: DONE`, and a branch
+commit touches `.claude/tests/q.test.sh`. `git show "$c:…/Z-9.md" | sed …` gave
+`[DONE]`, not empty. After `git rm` of the story it gave `[]`. So only a commit that
+genuinely lacks the file skips, and the test must create one, for example with `git rm` in the
+pre-story commit. I also read `:214-218` to confirm the inherited `PLANNED` file. Freeze held:
+`frozen: OK — 22 path(s) unchanged since the snapshot for HARNESS-009`.
 
 ### Provenance
 
