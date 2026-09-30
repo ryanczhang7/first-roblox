@@ -184,6 +184,86 @@ implementing agent will actually be reading.
 
 ---
 
+## 0d. Operator decisions for M3, and the T8 finding (2026-09-30)
+
+Decided by the operator (ryanczhang7) in chat on 2026-09-30, from the open
+questions in §0c. **Same authority as §0b. Where they conflict, it overrides §0c and
+Part A.** These decisions are recorded here. Carrying them into `docs/wiki/game/`
+(owned by the Game Designer) and into `src/shared/Tuning.luau` (which needs a story)
+has **not** been done yet. See "Consequences" below.
+
+| # | Decision | Closes | Status |
+|---|---|---|---|
+| 14 | **Audience: everyone, children included.** Nothing too complex for a child to play, but it still rewards good play and good thinking. This replaces A2's missing audience constraint. | §0c "A2's replacement audience constraint" | Decided |
+| 15 | **T5 = (a): design for the voiceless floor.** Tune so a group with no voice can win. A voice group finding it easier is accepted, and a harder band for them is optional, not required. `difficulty_band`'s provisional (c) is withdrawn. | T5 | Decided. `playtest.md: P-V` still informs the tuning, but no longer the posture |
+| 16 | **T6 = no.** A signal does not reveal the sender's room (`signal_reveals_sender_room` = false, as specified). | T6 | Decided, **contingent on #19** |
+| 17 | **T7 = recall.** A per-player recall action spends one token to re-show the last three signals. `signal_display_seconds` stays 6 and `signal_log_depth` stays 0. | T7 | Decided, **contingent on #19** |
+| 18 | **Amendment 12 → `round_seconds` = 420.** 60 + 420 = 8 minutes, which meets A5's day-1 promise. It stays inside A3 pillar 5's 360–600 band. | amendment 12 | Decided |
+
+### #19 — T8 checked: the signal channel as specified does not comply. Decided: redesign it (a)
+
+The Lead PO's check against current Roblox documentation was made on 2026-09-30. The
+governing page is **[Preset system guidelines](https://create.roblox.com/docs/chat/preset-system-guidelines)**
+(source `Roblox/creator-docs`, `content/en-us/chat/preset-system-guidelines.md`,
+last changed 2026-07-07). It defines a preset system as one that lets "users
+safely send predefined text to each other to coordinate gameplay", for example a
+wheel. `mechanics.md` §4.1 specifies exactly that: "one token selected from a
+radial wheel of `vocabulary_size` marks", broadcast to every player.
+
+| Requirement (quoted) | Design as specified | Complies? |
+|---|---|---|
+| "Preset systems must not gain meaning when combined, repeated, or sequenced." | The whole thesis. Referents are *discovered* (`tuning.md: mark_alphabet_size`), and groups build conventions over weeks (`loop.md` §1.4) | **No** |
+| Must not "Encode custom messages" or carry "slang that could carry hidden or evolving meanings" | A group's convention stock is exactly an evolving meaning | **No** |
+| "Limit the number of presets displayed to 12 or less" | `vocabulary_size` = 16 | **No** |
+| "Add a rate-limit (10 seconds per send)" | `signal_rate_limit_seconds` = 1.5 | **No** |
+| "All presets must go through `TextService:FilterStringAsync()`"; label them **system preset**; no terminal punctuation | not specified | Not yet |
+
+The page also says a system that enables "free-form, two-way, directed, and
+dynamic conversation" must instead respect chat's own requirements: users must be
+age-checked and of a similar age. Since January 2026, Roblox has made an age check
+mandatory for chat, groups chat by age band, and turns chat off by default for
+under-9s without parental consent.
+
+**Consequences.**
+
+1. **M3 cannot be planned against the current channel specification.** The two
+   ways to comply pull in opposite directions:
+   - **(a) Make the channel a compliant preset system for all ages.** At most 12
+     presets, each a standalone gameplay intent ("Ready", "Wait", "Go", object
+     pings); a 10 s rate limit; no meaning carried by sequence. This fits #14. It
+     removes "the group invents a language" as the core fantasy, and the puzzle
+     would have to move to information asymmetry, pointing at world objects, and
+     timing. **That is a redesign of the central mechanic, for the Game Designer.**
+   - **(b) Keep the language, and gate the channel behind chat eligibility**
+     (`TextChatService:CanUsersChatAsync`). This contradicts #14: unverified
+     players, and under-9s by default, could not use the one mechanic the game is
+     made of. It also still conflicts with amendment 7's rule that the game be
+     fully playable without chat.
+   The Lead PO recommends (a), because it is the only option consistent with #14.
+   **Decided by the operator on 2026-09-30: (a).** The signal channel is redesigned as
+   a compliant preset system for all ages. The redesign is the Game Designer's, and it
+   comes before M3 planning.
+2. #16 and #17 are recorded but may be superseded by the redesign. Both tune a
+   channel that may not survive it.
+3. This bears on amendment 8 (genre B). B's "asymmetric information, co-operative"
+   shape survives (a). Its "the constrained channel *is* the puzzle, and players
+   build conventions" framing does not survive intact.
+4. This is the Lead PO's reading of a published guideline, not a ruling from Roblox.
+   Enforcement is at Roblox's discretion ("may review... require changes or
+   removal"). A clarifying question on the Developer Forum is cheap, but it would
+   not change the audience conflict in 1(b).
+
+### Consequences for the tree, not yet acted on
+
+- `docs/wiki/game/tuning.md` still carries `round_seconds` 480, `difficulty_band`
+  (c) and no recall constant. That is the Game Designer's file, and it waits on
+  the #19 redesign.
+- `src/shared/Tuning.luau` still carries `round_seconds` 480, and its comment says
+  amendment 12 is "carried, not resolved". Changing it is a code change pinned by
+  ROUND-002's tests, so it needs its own story.
+
+---
+
 # Part A — Product
 
 > **A1 and A3 pillar 1 below are superseded.** A1 describes the hidden-role
