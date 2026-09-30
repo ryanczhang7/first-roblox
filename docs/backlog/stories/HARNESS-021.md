@@ -4,8 +4,8 @@ title: A gate record goes stale when a doc the tests read changes
 slug: a-gate-record-goes-stale-when-a-doc-the
 epic: 
 type: fix
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-021-a-gate-record-goes-stale-when-a-doc-the
 depends_on: [HARNESS-020]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -924,7 +924,7 @@ hash covers the docs a gate reads". Not split.
   covers it alongside tuning.md. The user confirmed during PLANNED that it stays
   in. It is the smaller exposure, because AC-3 of that test pins three
   sentences, not numbers.
-- **Q2.** Should the follow-up guard in `## Out of scope` ("a test reads a doc
+- **Q2 (resolved 2026-09-30, user: yes; filed as HARNESS-022).** Should the follow-up guard in `## Out of scope` ("a test reads a doc
   with no covers line") be filed now?
 
 ### PLANNED → RED checks (orchestrator, 2026-09-30)
@@ -998,3 +998,14 @@ and `$2` is a space-separated list of docs to treat as kept.
 
 Calibration: with an empty keep list it prints `b4a9cb21…`, which equals the real
 `gate_tree_hash_of 762a99f`.
+
+### REVIEW → DONE (orchestrator, 2026-09-30)
+
+PR [ryanczhang7/first-roblox#39](https://github.com/ryanczhang7/first-roblox/pull/39)
+was merged as `c54148d` at 2026-09-30T18:33:11Z. Timings from its first CI run:
+
+- `gates` job: run 36755957868, 2m9s against `timeout-minutes: 45`. The "Harness
+  self-test" step took 1m36s and "Run gates" took 16s.
+- `boundaries` job: run 36755958085, 5s.
+
+Nothing is near a limit.
