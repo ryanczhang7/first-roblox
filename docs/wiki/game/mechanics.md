@@ -1,498 +1,608 @@
 # Mechanics
 
 One section per mechanic: inputs, rules, states, edge cases, and the decision it
-produces. Constants appear by **name**; their values, labels and rationale are in
-`tuning.md` and nowhere else. If a number appears here it is because it is
-structural (a bijection size, a cycle length), not because it is tuned.
+produces. Constants appear by **name**. Their values, labels and rationale are in
+`tuning.md` and nowhere else. If a number appears here, it is because it is
+structural (a cycle length, a count ceiling set by a platform rule), not tuned.
 
-Everything below is a function of state. `§9` maps each rule to what a Lune test
-can check without a Roblox runtime; if a rule is not in that table it should not
+Everything below is a function of state. §9 maps each rule to what a Lune test
+can check without a Roblox runtime. A rule that is not in that table should not
 have been specified.
+
+**Revised 2026-09-30 (third pass) for brief §0d #19.** Section numbers are
+unchanged on purpose, because source, tests and stories cite them.
+
+| § | Status in this pass |
+|---|---|
+| 1 World | revised: machines have dials; a live lamp |
+| 2 Look | kept; reading requires range as well as light |
+| 3 Procedure | **3.1 revised, 3.2 replaced**: two tracks, private turn cues, a public progress bar (T10 (c)), no order fragments |
+| 4 Channel | **replaced**: pings and presets. The old signal channel is summarised in §4.7 |
+| 5 Actuation | kept; the finale replaces free-floating paired operations |
+| 6 Generator | revised: invariants re-derived, I2 superseded, I3 replaced |
+| 7 Trace | re-aimed |
+| 8 Edge cases | revised |
+| 9 Headless | revised |
 
 ---
 
 ## 1. The world
 
-**Inputs:** none — established at round start by the generator (§6).
+**Inputs:** none. The generator establishes it at round start (§6).
 
 The facility is `room_count` rooms of modular hard-surface geometry, connected as
-a graph. It is dark. Each player carries a directional light; a player sees what
-their light is pointed at and little else. There are no NPCs, no enemies and no
-combat, per A2 #3 and its anti-goals.
+a graph through doorways. It is dim. Each player carries a directional light,
+sees what their light is pointed at, and sees little else at range. There are no
+NPCs, no enemies and no combat (A2 #3 and its anti-goals).
 
-Each room contains zero or more **actuators**. An actuator is a machine with:
+Each room contains zero or more **machines** (called *actuators* in earlier
+passes and in code comments; the same thing). A machine has:
 
 | Property | Visible to | Notes |
 |---|---|---|
-| **tag** — one mark | anyone with light on it | the actuator's name, and the only name it has |
-| **key class** — one of `n` classes | anyone with light on it | who may operate it |
-| **current setting** — a mark, or unset | anyone with light on it | changes when actuated |
-| **required value** — a mark | only the lens that covers its key class | this is the secret |
-| **committed** — bool | anyone with light on it | the operation has been performed correctly and in turn |
+| **tag**: a symbol | anyone with light on it | how a person recognises "my ◆ machine". Distinct within a key class |
+| **key class**: one of `n` | anyone with light on it | who may turn it. Shown as the class's colour |
+| **dial**: `dial_settings` positions, and its current setting | anyone with light on it | the thing a turner sets |
+| **required setting** | **only the helper for its key class**, within `lens_read_range_studs`, with light on it | the secret. The right position glows for that one player |
+| **live lamp**: lit or dark | anyone who can see the machine | lit while this machine is a step that may be turned now (§3.2) |
+| **committed**: bool | anyone who can see the machine | the step is done. Its room gets a little brighter |
 
-**States:** `unset → set(mark) → committed`. A committed actuator cannot be
-changed. An actuator set to the wrong value, or set out of turn, does not commit
-and returns to `unset` after `actuation_reset_seconds`.
+Tags and dial settings use **disjoint visual alphabets** (for example, tags are
+shapes and settings are colours). This is derived: if they shared one, a tag
+could be read as an answer.
 
-**Edge case — an actuator in a blacked-out room.** Its tag and key class become
-unreadable (§5). Its required value was never readable there anyway. A player may
-still actuate it if they can reach it and already know what it is; blackout
-removes information, not access. This is deliberate: the group's memory of a room
-is worth something after the lights fail.
+**States of a machine:** `idle → live → committed`, and `live → rejected → live`
+on a wrong turn, after `actuation_reset_seconds`. A committed machine cannot be
+changed. Machines that are not in the Procedure (decoys, §3.1) stay `idle` all
+round, and turning one is a wrong turn.
+
+**Edge case: a machine in a blacked-out room.** Its tag, key class and dial
+become unreadable at range, and **its required setting can no longer be read by
+its helper** (§5). Pings remain visible, because a ping is a light source.
+Turning is still possible. Blackout removes information, not access, so a
+setting remembered from before the lights went is still worth something.
 
 **The decision it produces:** none directly. The world is the substrate. It
-exists to make *where you are standing* determine *what you can know*, which is
-what makes §4's channel necessary.
+makes *where you are standing* decide *what you can know*, and that is what
+makes §4's channel spatial.
 
 ---
 
 ## 2. Look — observation and the lens
 
-**Inputs:** player position, player camera direction.
+**Inputs:** player position, player light direction.
 
-A player learns a fact when their light falls on a surface carrying it. Two
-classes of fact exist, and the distinction is the whole asymmetry:
+Two classes of fact, and the distinction is the whole asymmetry:
 
-- **Public facts** — an actuator's tag, key class and current setting. Anyone
-  with light on it reads them. These are properties of the world.
-- **Lens facts** — an actuator's *required value*. Rendered only for the player
-  whose **lens** covers that actuator's key class, and only while they have light
-  on it. These are properties of the player.
-
-A lens fact is therefore a **pairing**: *(tag, required value)* — two marks. That
-shape is the reason the channel is hard, and §4.4 explains why.
+- **Public facts:** tag, key class, dial position, live lamp, committed. Anyone
+  with light on the machine reads them.
+- **Lens facts:** the *required setting*. Rendered only for the player whose
+  **lens** covers the machine's key class, only within `lens_read_range_studs`,
+  and only while their light is on it.
 
 **Rules:**
 
-- A player's lens covers exactly one key class, fixed for the round (`roles.md §2`).
-- Lens rendering is server-authoritative and **the required value is never
-  replicated to a client that does not hold the lens**, per B4. A client that is
-  not the lens-holder must not be able to read it out of its own memory.
-- Reading is free, instantaneous, unlimited and untimed. There is no scanning
-  minigame. Looking is not where the difficulty lives.
+- A player's lens covers exactly one key class, fixed for the round (`roles.md`
+  §2), and stored, not recomputed (SEAT-003).
+- **The required setting is never replicated to a client that does not hold the
+  lens** (B4). A non-holder's client must not be able to read it from its own
+  memory. This is unchanged and is still the single most important trust
+  property in the game.
+- Reading is free, instantaneous and untimed. There is no scanning minigame.
 
 **Edge cases:**
 
-- *Two players in the same room.* Both read the public facts. Only the
-  lens-holder sees the lens fact — co-location does not share lenses. This is why
-  standing together is not an exploit, merely a waste of one body.
-- *A player looks at an actuator whose class their lens covers and which they can
-  also operate.* Impossible by construction: the lens/key permutation is a
-  derangement (`roles.md §2`). If a future variant breaks the derangement, that
-  player becomes self-sufficient for that actuator and k-essentiality fails.
+- *Two players at the same machine.* Both read the public facts. Only the helper
+  sees the glow. Standing together does not share a lens.
+- *A helper outside `lens_read_range_studs`.* They see the machine, but no glow.
+  To help, they have to walk over. This rule is the reason the design is
+  spatial, and it is why a range, and not only light, is specified.
+- *A player whose lens covers their own key class.* Impossible by construction:
+  σ is a derangement (`roles.md` §2).
 
-**The decision it produces:** *where to stand.* Standing at an actuator lets you
-read it and actuate it; it does not let you read the room your lens-partner needs
-you to describe. Movement is the opportunity cost of observation, and §3's
-simultaneous operations make it a hard one.
+**The decision it produces:** *where to stand.* Standing at your partner's
+machine lets you read it. Standing at yours lets you turn it. You cannot do both
+at once, and that is the tension §3's two tracks turn into a decision.
 
 ---
 
-## 3. The Procedure — the two-layer puzzle
+## 3. The Procedure
 
-This is the objective. The first pass's sharpest complaint about the brief was
-that no objective was named anywhere in it; this is the repair.
+The objective. There is one win condition: every step of the Procedure committed
+before the clock expires.
 
-**The Procedure** is an ordered sequence of `procedure_length` operations. Each
-operation is *set actuator a to its required value v*, and the sequence must be
-performed **in order**. Performing every operation correctly and in order before
-the clock expires is the win condition. There is no other win condition.
+### 3.1 The steps — what setting, on which machine
 
-The Procedure is never known to anyone in full. It is split into two layers whose
-information lands in different heads, and the split is what makes the round a
-group problem rather than four private ones.
+The Procedure is `procedure_length` **steps**. Each step is *turn machine m to
+its required setting v*. The generator's constraints:
 
-### 3.1 The local layer — what value
+- There are more machines than steps: `actuator_count = procedure_length ×
+  actuator_redundancy`. The rest are **decoys**. A helper who reads all of their
+  partner's machines sees more required settings than matter, and does not know
+  which ones matter, because the order is not theirs to see (§3.2).
+- Every key class has at least one step (`INV_every_class_has_a_step`). This is
+  all k-essentiality now needs (§6.3).
+- Steps are spread across classes as evenly as `procedure_length / n` allows
+  (`INV_balanced_steps`), so nobody is a passenger.
 
-Every actuator carries a **tag** (a mark, public) and a **required value** (a
-mark, visible only through a lens). The generator's constraints:
+> **Superseded 2026-09-30 by brief §0d #19: the value-mark bijection.** The second
+> pass required the Procedure's required values to be pairwise distinct and to
+> exhaust the mark alphabet (`mark_alphabet_size = procedure_length`), so that "a
+> value-mark uniquely names an operation". That existed to let a group *discover*
+> that marks had become referents, which is the evolving meaning the guideline
+> forbids. Nothing now needs a setting to name a step: a ping names it by
+> pointing. Settings may repeat across steps.
 
-- Tags are distinct **within a key class**, so a player can name their dependent's
-  actuators unambiguously.
-- `required_value ≠ tag` for every actuator — the answer is never written on the
-  machine.
-- The `procedure_length` required values of the operations *in the Procedure* are
-  pairwise distinct and exhaust the mark alphabet, which is why
-  `mark_alphabet_size = procedure_length`.
+### 3.2 The tracks — what order, and who knows it
 
-That last constraint has the consequence the whole language leans on:
+The Procedure is split into `procedure_tracks` **tracks**, each an ordered
+sequence of steps. Within a track steps must be done in order. The tracks are
+independent of each other, except at the end.
 
-> **A value-mark uniquely names an operation** — and nothing in the game says so.
-> A group discovers that marks have become referents. That discovery is the first
-> convention most groups will build, and it costs nothing to support.
+- A step is **live** when it is the first uncommitted step of its track. Its
+  machine's live lamp is lit.
+- **The finale.** The last step of every track forms one **paired operation**:
+  the two machines must both be turned correctly within
+  `simultaneous_window_seconds` of each other, or neither commits. Each finale
+  machine shows a **partner lamp** that is lit while the other finale machine's
+  turner is within reach of it. So the world, not a preset, tells a pair they are
+  both in position.
+- **Private turn cues.** A turner is shown, privately, when one of their own
+  machines is live ("your ◆ is live", with a direction arrow), and which of their
+  machines is next once it is within `turn_cue_lookahead` steps of live. Nobody
+  else is shown anyone else's cues. **T10 answered (c) by the operator,
+  2026-09-30**: private cues, plus the public progress bar below.
+- **The public progress bar.** Every player's HUD shows the same bar. It is the
+  only public view of the order, and it is specified by what it must not show as
+  much as by what it shows, so that it cannot turn into the public board that
+  T10 (b) was rejected for.
 
-**There are more actuators than operations** — `actuator_count =
-procedure_length × actuator_redundancy`, so at the default band half of them are
-not in the Procedure at all, and a lens does not say which. So a player's lens
-shows `pairs_per_lens` pairings of which only some matter, and *which* is
-determined by the order layer — which is in other people's heads. This is what
-makes a view larger than a contribution, and it is the reason "which fact is
-load-bearing" is a question rather than a formality.
+  | The bar shows | Rule |
+  |---|---|
+  | **steps committed, out of `procedure_length`** | `progress_bar_segments` = `procedure_length` identical segments, filled left to right as steps commit. The fill order is the count only: segment 3 means "the third commit", never "step 3" |
+  | **which segments are the finale** | the last `procedure_tracks` segments are marked as the finale (`progress_bar_marks_finale`). This adds nothing: the finale is always the last commits by construction. It gives a child "the big one at the end" |
 
-The union of all `n` lenses determines every required value. No `n−1` of them do
-(§6.3).
+  | The bar must **never** show | Why |
+  |---|---|
+  | which step is live or next, in any track | that is the order, and the order is private (anti-quarterback device 4) |
+  | per-track progress, or which track a commit belonged to (`progress_bar_split_by_track` = false) | "track B is behind" is a routing instruction to a planner, and it is most of what a public board would say |
+  | any machine, tag, room, key class, colour or player for any segment | identity is what turns a count into a plan |
+  | the finale's armed or partner-lamp state | the partner lamp is world state, readable in person only |
+  | time, pace, par, or a forecast | par belongs to the trace, after the round |
 
-### 3.2 The global layer — what order
+  **The bar is a function of public state only.** Every commit is already public
+  (the room brightens, a tone plays facility-wide, §5), so the bar
+  adds reach, not information: it tells you *how many* from anywhere, and never
+  *which*. It updates on commit only. An armed finale machine does not move it,
+  and the two finale steps commit together, so the bar's last move is always a
+  jump of `procedure_tracks`.
 
-The generator picks a total order over the `procedure_length` operations and
-publishes it to nobody. It distributes **order fragments** — statements of the
-form *the operation whose value is `x` precedes the operation whose value is `y`*
-— `order_fragments_per_player` to each player, readable from a fixed terminal in
-a designated room rather than from a lens.
+  **It does not touch the preset or ping count.** The bar is game state that no
+  player originates: nothing is sent, selected or sequenced. It sits under CA-4
+  (§4.6) with the live and partner lamps, and outside `presets_plus_pings_max`.
 
-The cross-cut is the point: an order fragment names operations by **value**, and
-the player holding the fragment generally does not know which actuator has that
-value — that is somebody else's lens. So the order layer cannot be resolved along
-the ring. It requires the whole group.
+Why there are two tracks, derived rather than preferred: with one track exactly
+one step is live at a time, so no player ever needs to be in two places at once,
+and the decision in `loop.md` §1.2 never arises. Two is the minimum at which a
+player can be both the turner of one live step and the helper of another.
 
-**States of an operation:** `unknown → value-known → placed (order known) → committed`.
-A group does not need to fully order the Procedure before starting; it needs to
-know what comes *next*, which is why partial order fragments are playable.
+**States of a step:** `waiting → live → committed`; a finale step is
+`waiting → live → armed (turned, window open) → committed`, or back to `live`
+if the window closes.
 
 **Edge cases:**
 
-- *Fragments that are individually satisfiable but jointly contradictory.*
-  Forbidden by construction — the generator derives fragments from a real total
-  order, so the union is always consistent. A group may still *believe*
-  contradictory things, which is a different thing and is the game.
-- *A group that attempts operation k+1 before k.* Rejected; instability +1; the
-  actuator does not commit. This is the main channel through which order errors
-  are punished, and it is deliberately as costly as a wrong value.
-- *Simultaneous operations.* At least `simultaneous_ops_min` operations are
-  flagged **paired**: two actuators, in different rooms, of different key classes,
-  which must both be set within `simultaneous_window_seconds` or neither commits
-  and instability rises. This is the mechanism that puts bodies in two places
-  (loop.md §1.6 device 3).
+- *A turn on a machine that is not live* (a decoy, or a step not yet reached):
+  rejected, instability +1. Out of order costs the same as a wrong setting.
+- *One track finishes its ordinary steps long before the other.* Its finale
+  machine goes live and waits. The early pair is free to go and help the late
+  track, which is the choreography `loop.md` §1.4 means.
+- *The finale at n = 3, after a disconnect.* The two finale turners are always
+  ring-neighbours in a 3-cycle, so one of them is also the other's helper. It is
+  still solvable: they ping their partner's finale setting first (a ping
+  persists) and then walk to their own machine. The trace records the round as
+  degraded (`roles.md` §6).
 
-**The decision it produces:** *act on a belief now, or spend another token
-confirming it.* A wrong actuation costs instability, a clock penalty and a room's
-lights. A confirmation costs a token from a budget that will not last. Every
-operation in the Procedure is that trade made once, under a clock that makes
-waiting lose too.
+> **Superseded 2026-09-30 by brief §0d #19: order fragments.** The second pass
+> distributed `order_fragments_per_player` statements of the form *the operation
+> whose value is x precedes the one whose value is y*, read at a terminal and
+> relayed by tokens. Relaying such a fact without a text channel would need an
+> *ordered sequence of references* (point here, then there, meaning "before"),
+> and that is "gaining meaning when sequenced". The rule this pass draws from
+> it: **no fact in the game may need a sequence of references to transfer.**
+> Order is therefore never relayed. Each turner sees their own place in it,
+> privately, and the world shows what is live. The progress bar is consistent
+> with this rule: it is a single count, and a count needs no sequence of
+> references.
+
+**The decision it produces:** *act now or wait.* A step is live, and your helper
+is not here. Guess the dial, or call and wait? And if two steps need you, which
+first? See `loop.md` §1.2.
 
 ---
 
-## 4. The signal channel — the central mechanic
+## 4. The channel — pings and presets
 
-Read this section before any other. Everything else exists to make this one
-matter.
+**Replaced 2026-09-30.** The second pass's signal channel is summarised in §4.7.
+Read §4.3 before changing anything in this section: its rules are compliance
+requirements, not preferences.
 
-### 4.1 What a signal is
+### 4.0 The rule the section is built on
 
-**Inputs:** one token selected from a radial wheel of `vocabulary_size` marks.
+> **Presets carry intent. Pings carry reference. The world carries facts.**
 
-Pressing a token spends one unit of the sender's budget and broadcasts, to every
-living player:
+A fact (a required setting) crosses from one head to another in exactly one way:
+the helper stands at the machine, sees the glow, and pings that setting. The ping
+itself says only "this". It is informative because of *who* made it and *where*,
+and the ring (`roles.md` §2) makes that unambiguous. Presets never carry a fact
+at all. They say what someone is doing or wants.
 
-    (sender_id, token, server_timestamp)
+### 4.1 The ping
 
-That is the entire message format. It is the whole language.
+**Inputs:** the sender's light direction and a Ping press. The client proposes a
+target, and the server decides (B4: a target is a claim).
+
+**Targets**, and only these three kinds:
+
+| Target | Meaning in play |
+|---|---|
+| a **dial setting** on a machine | "this setting". The fact-bearing ping |
+| a **machine** | "this machine" |
+| a **doorway** | "this way" |
+
+There are no free-position pings on floors or walls. That is derived: a free
+position is a drawing surface, and the set above is the minimum the design uses.
 
 **Rules:**
 
-- The budget is `signal_budget_per_player`, **per player, per round, and
-  non-transferable.** Nobody can send on your behalf.
-- `signal_reserve` tokens of that budget are locked until
-  `reserve_unlock_seconds_remaining` seconds are left on the clock, so no player
-  can be rendered completely mute by their own early enthusiasm.
-- Every token costs `signal_cost` = 1. No token costs more than any other.
-- A sender may send at most one token per `signal_rate_limit_seconds`. This is
-  simultaneously a game rule (it makes the stream readable) and a trust-boundary
-  requirement (B4: every remote is rate-limited).
-- A received token is displayed for `signal_display_seconds` and is then **gone**.
-  `signal_log_depth` is 0: there is no scrollback, no history, no transcript.
-- Signals are attributed to their sender by name (`signal_reveals_sender`). They
-  do **not** carry the sender's room (`signal_reveals_sender_room` = false, open
-  as T6).
-- The server records every signal for the post-round trace (§7). Players do not
-  see that record until the round is over.
+- **One active ping per player.** A new ping replaces your previous one. Nobody
+  can lay out a pattern of pings.
+- A ping lasts `ping_display_seconds`, or until the machine it targets commits,
+  or until you replace it.
+- A sender may ping at most once per `ping_rate_limit_seconds`.
+- Server validation: the target must exist, be within `ping_range_studs` of the
+  sender, and be in the sender's line of sight. `ping_range_studs` =
+  `lens_read_range_studs`, derived: you can point at exactly what you could
+  read, and no further.
+- **Broadcast to every player, attributed by the sender's colour**
+  (`ping_reveals_sender`). Your helper's current ping is also shown on your HUD
+  as an edge arrow. That is safe, because your helper's identity is already in
+  your projection (`roles.md` §6).
+- **No text.** A ping is a marker and a colour. It has no label, no kinds and no
+  words, and that keeps it outside "predefined text" (CA-1).
+- The server logs every ping (sender, target, position, time) for the trace
+  (§7). Players do not see the log until the round ends.
 
-**States:** a player is `has_budget → reserve_only → mute`. A mute player can still
-look, move and actuate; they cannot originate. The reserve exists so that
-`mute` before the endgame is a real failure of husbandry rather than a common
-accident.
+**States per player:** `no ping → active(target) → expired`, with `cooling`
+while rate-limited.
 
-### 4.2 What the vocabulary can express
+**Edge cases:**
 
-`vocabulary_size` tokens in four groups:
+- *A non-helper pings a setting.* Allowed, and it carries no knowledge. It is
+  somebody pointing. The HUD distinguishes "your helper's ping" from anyone
+  else's, and that distinction is part of the floor (`loop.md` §1a).
+- *A helper pings a setting in a blacked-out room.* Allowed. They cannot read
+  the glow there, so it is a guess or a memory, and the trace marks it as
+  unread.
+- *A ping on a machine that commits.* The ping clears. A stale marker on a
+  finished machine would teach the wrong thing.
 
-| Group | Count | Tokens | Literal meaning |
+### 4.2 The preset wheel
+
+**Inputs:** one choice from `preset_count` presets.
+
+The list the operator chose (**T12**, ryanczhang7, 2026-09-30: the words are taste; the count and the rules are
+not):
+
+| Preset | Intent it states, completely, on its own | Phases |
+|---|---|---|
+| `Ready` | I am in position | Round, Lobby |
+| `Wait` | hold | Round |
+| `Go` | act now | Round |
+| `Help` | I need my helper, here | Round |
+| `On my way` | I am coming | Round |
+| `Follow me` | come with me | Round |
+| `Got it` | acknowledged | Round |
+| `Thanks` | thanks | Round, Post |
+| `Nice one` | good play | Round, Post |
+| `Well played` | good game | Post |
+
+**Rules:**
+
+- **Broadcast to every player.** Never addressed, never directed.
+- **Attributed** by name (`preset_reveals_sender`) and **positioned**: shown as a
+  bubble over the sender and as a beacon at their location that others can see
+  through walls, for `preset_display_seconds`
+  (`preset_reveals_sender_position`). Derived from the guideline's "stand alone
+  and be complete": "Help" without a place is not complete.
+- **Rate limit: one preset per `preset_rate_limit_seconds` (= 10) per player,
+  across the whole wheel.** It is one limiter per player, not one per preset,
+  because the guideline says "per send".
+- **Filtering:** every preset string passes `TextService:FilterStringAsync()`
+  server-side before it is broadcast. **Fail closed:** if filtering errors, the
+  preset is not sent, the sender is told, and the rate limit is not consumed.
+- **Presentation** (for the Lead Designer, as requirements): icon plus word, so a
+  non-reader can use it; visually distinct from native chat; no terminal
+  punctuation; labelled **"system preset"** wherever it appears inside a chat
+  surface. **Delivery route (2026-09-30):** the sanctioned implementation for a
+  preset wheel is reported to be `TextChatService` system messages
+  (forum-reported, effective 2026-01-09; engineering to confirm, CA-6). If so,
+  presets *do* appear in the chat surface, as system messages labelled
+  "system preset", in addition to the in-world bubble and position beacon,
+  which carry the gameplay meaning. The earlier provisional choice (never route
+  presets into chat) is superseded by that report.
+- A preset is legal only in the phases its row lists. Out-of-phase
+  sends are rejected by the net wrapper's phase check, which already exists
+  (NET-002).
+- The server logs every preset for the trace.
+
+**States per player:** `ready → cooling (preset_rate_limit_seconds) → ready`.
+
+**Presets are enrichment, not a dependency.** The canonical schedule the
+generator verifies (§6.3, `INV_traversal`) uses no presets. A group that never
+opens the wheel can win. That is amendment 7's rule, applied one level down: the
+game is fully playable with no free-form communication, and also with no preset
+communication.
+
+### 4.3 Compliance, as design rules
+
+Each rule quotes the requirement it implements (Roblox, *Preset system
+guidelines*, changed 2026-07-07) and says how it is checked.
+
+| # | Rule | Source | Checked by |
 |---|---|---|---|
-| **Marks** | `mark_alphabet_size` | abstract glyphs | the qualities tags and values take. No referent, no noun, no verb. |
-| **Ordinals** | 3 | `FIRST`, `BEFORE`, `AFTER` | sequence relations, unbound to anything |
-| **Polarity** | 2 | `YES`, `NO` | assertion and denial, unattached to any proposition |
-| **Meta** | 3 | `AGAIN`, `WAIT`, `GO` | re-assert my last token; hold; act now |
+| C1 | `preset_count` + `ping_kinds` ≤ 12, **across the universe** | "Limit the number of presets displayed to 12 or less for your Universe" | a headless test over the preset table; any future mode shares the same 12 |
+| C2 | **No preset names a fact**: no setting, colour, shape, tag, room, number, ordinal, direction, yes or no | "immediate gameplay intent, not dialog"; no "slang that could carry hidden or evolving meanings" | review of the preset table (it is 10 rows), plus a headless denylist test for colour, shape, number and ordinal words |
+| C3 | **No fact is cheaper to send by sequence than by a single ping** (`INV_ping_dominates`) | "must not gain meaning when combined, repeated, or sequenced ... 'say anything, just slower'" | structural: every transferable fact is a required setting, and a required setting has a one-ping form whenever it can be read at all |
+| C4 | One preset per 10 s per player | "Add a rate-limit (10 seconds per send)" | the net wrapper's rate stage (NET-003), declared at 10 |
+| C5 | Every preset string filtered | "All presets must go through `TextService:FilterStringAsync()`" | server-side, fail closed |
+| C6 | "system preset" label in chat; visually distinct; no terminal punctuation | the guideline's requirements list | Lead Designer; a headless test that no preset string ends in `.`, `!` or `?` |
+| C7 | Each preset complete alone | "Each preset must stand alone and be complete without requiring a response unrelated to gameplay" | the position beacon; `Got it` is the only response-shaped preset, and "'Help' followed by 'OK' is acceptable" |
+| C8 | No question/answer structures, no greetings, no yes/no | the "not allowed" list | the preset table has no question, no greeting and no polarity pair |
+| C9 | Broadcast only | the page's line between presets and "free-form, two-way, directed" conversation | the remote takes no recipient argument |
 
-A mark can be uttered. A relation can be uttered. **Nothing can be said about
-anything.**
+**Why C3 is the one that matters.** The second pass failed the guideline because
+its *difficulty* lived in sequence: the only way to send a pairing was two marks
+in an agreed order. This pass removes the incentive rather than trying to police
+the behaviour. Pointing at a setting is always faster and clearer than any code a
+group could build from ten presets at one per 10 s. A group *could* agree that
+"Wait, Go" means something. It would gain nothing by it.
 
-### 4.3 What the vocabulary deliberately cannot express
+### 4.4 What the channel deliberately cannot carry
 
-This list is the design, not a list of missing features:
+- **A setting from anywhere but the machine.** No preset names one, and a ping
+  must be in range and in sight.
+- **Order.** No channel relays "this before that" (§3.2).
+- **Addressing.** Nothing is sent to one player.
+- **Questions.** Nothing asks. `Help` states a need.
+- **Anything invented.** There is no grammar to build, and no preset gains a
+  meaning it was not shipped with.
 
-- **Binding.** There is no way to attach a mark to an actuator, a room, a player
-  or another mark. `AMBER TEAL` is two marks. Whether that is one pairing or two
-  unrelated facts, and in which direction, is not in the language.
-- **Deixis.** No `HERE`, no `THAT ONE`, no room names, no player names as
-  addressees. You cannot point.
-- **Scope for polarity.** `NO` denies nothing in particular. It denies whatever
-  the listener currently believes is under discussion, which may not be what the
-  sender believes is under discussion.
-- **Quantity.** There are no numbers.
-- **Time beyond order.** `BEFORE` and `AFTER` relate two things the language
-  cannot identify.
-- **Addressing.** Everything is broadcast. You cannot speak to one player.
-
-### 4.4 Why the gap is the puzzle and not a frustration
-
-The distinction is not rhetorical and it can be stated as a rule the generator
-must satisfy.
-
-> **The Expressibility Rule.** For every fact the round requires to be transferred
-> between two players, at least one encoding of that fact exists within the
-> vocabulary and within the budget. No required fact is *unsendable*; some
-> required facts are unsendable in **one token**.
-
-A design where the necessary thing cannot be said at all produces frustration and
-players who blame the game. A design where the necessary thing can be said only
-by inventing a convention produces players who blame themselves and ask to go
-again — which is precisely the working/not-working split in `playtest.md: P-3`.
-
-The gap is bridged by exactly one resource the language does have and never
-mentions: **adjacency in the stream**. Two tokens from the same sender in quick
-succession are two events with an order, and order is a free bit the language did
-not intend to carry. A group that agrees "tag first, then value" has manufactured
-a grammar out of timing. A group that has not will send `AMBER TEAL`, have it read
-backwards, actuate wrongly, lose a room's lights, and learn.
-
-This is the moment the whole design is built around. Three properties protect it:
-
-1. **The game never teaches it.** No tutorial, no tooltip, no autocomplete, no UI
-   affordance that pairs two tokens into a phrase. The wheel sends one token.
-2. **The game never rewards a canonical convention.** There is no "correct"
-   grammar the design has in mind. Tag-then-value and value-then-tag are equally
-   workable; what matters is that four people use the same one.
-3. **Failure is legible.** A convention mismatch produces a *specific*, visible
-   wrong actuation, not a vague loss — and the post-round trace (§7) shows the
-   pairing that was sent and the pairing that was needed, side by side.
-
-**The second lossy axis.** Expressive lossiness is defeated by a group on
-Discord (loop.md T5). The channel is therefore lossy along a second axis that
-voice does not repair: signals are **ephemeral**, the stream is **shared and
-serial**, and attending to it competes for the same seconds as pointing your light
-at a panel. `signal_display_seconds`, `signal_log_depth` and
-`signal_rate_limit_seconds` are the constants that carry this, and the generator
-must satisfy a *rate* requirement (§6.3) and not merely a quantity one.
+The second pass's version of this list was the *puzzle*. This one is a
+**compliance boundary**, and the puzzle is elsewhere (§2, §3.2, §5).
 
 ### 4.5 The decision it produces
 
-Stated once, since it is the answer to the second of the five questions:
+The channel no longer holds the central decision. Its job is to make the spatial
+decision *possible* without words:
 
-> Which single fact of the many I can see is the one the group cannot deduce
-> without me — and is it worth more than the token it costs?
+> *Where do I need to be to show what I know, and when do I ask someone to come
+> to me?*
 
-You are choosing under three ignorances: what others can see, what they have
-already inferred, and what the order layer will turn out to require. Your only
-evidence about the first two is the tokens they have spent, which were selected
-under the same ignorance. There is no dominant option, the choice recurs
-throughout the round, and the budget guarantees you cannot dodge it by saying
-everything.
+`Help` is the preset that decision uses most. When to send it (before your step
+is live, or only once it is) is a ceiling skill (`loop.md` §1a: anticipation).
+
+### 4.6 Compliance assumptions — for the Lead PO to verify
+
+These are readings of a published guideline, not rulings. Each says what the
+design loses if the reading is wrong.
+
+| # | Assumption | If wrong, the design loses |
+|---|---|---|
+| **CA-1** | **A ping is not a preset.** The guideline covers "predefined text", and a ping has no text. **Status, 2026-09-30: unconfirmable.** The Lead PO found no official Roblox page on pings and no staff answer; forum reports say only that gestures and animations are accepted. **Decision: take the stricter reading on rate** (`ping_rate_limit_seconds` = 10, derived). The count was already computed with the ping included | Already paid, by construction: the count is 11 ≤ 12, and `INV_traversal` was computed at 10 s, so no instance became unwinnable. What the design did lose: a mis-ping takes 10 s to correct, and doorway-pinging ("this way") is sluggish. The residual risk is that a sequence of setting-pings could in principle be a slow cipher. The mitigation (**allow setting-pings only on live machines**, `ping_settings_live_only`) was **declined by the operator, 2026-09-30 (T20 = (a))**, because it costs early pinging, a ceiling skill. The risk is accepted, bounded by the 10 s rate, one active ping per player and 4-setting dials. **`playtest.md: P-S` is the protocol that would reopen it**: if groups are seen building codes from ping sequences, the switch goes back to the operator |
+| CA-2 | Pointing a light, walking, and turning a machine are world interaction, not communication | Nothing designable. Every co-op game on the platform relies on this reading |
+| CA-3 | A preset shown with the sender's position is still one standalone preset, not a combination. **Supported by the guideline's own allowed examples**: "Defending this area" and "Enemy nearby" are listed as acceptable presets, and each is complete only because it is read with the sender's location. `Help` shown at the sender's position is the same shape | `preset_reveals_sender_position` → false. `Help` then needs the turn cue and live lamps to be found, and "complete on its own" becomes arguable. T6 reverts to #16's answer |
+| CA-4 | Live lamps, committed lights, partner lamps **and the progress bar** are game state, not communication | The finale needs a preset countdown (`Ready`, `Go`), and the floor gets harder for children. The progress bar is the easiest of these to defend, because no player originates it; if even it were counted, it would be removed rather than counted, since the design does not depend on it |
+| CA-5 | Broadcasting to all keeps presets outside "two-way, directed" conversation | Nothing. This is the page's own distinction |
+| CA-6 | Filtering developer-authored strings with `FilterStringAsync` per send, using the broadcast form of the result, satisfies C5. **The sanctioned implementation for a preset wheel is reported to be `TextChatService` system messages** (forum-reported, effective 2026-01-09). If that holds, presets are delivered as system messages inside the chat surface, and C6's "system preset" label applies to every one of them. **Engineering to confirm both the filtering API shape and the delivery route** | engineering only; plus the presentation change in §4.2 (presets in chat, labelled) if the route is confirmed |
+| CA-7 | "12 or less for your Universe" counts distinct presets, not sends, and counts lobby and post-round presets too | the spare slot. Any future mode (a tutorial, a hub) must fit within 12 − 11 = 1 new preset |
+| CA-8 | "Relevant to the current game mode" permits the neutral presets (`Thanks`, `Nice one`, `Well played`) during a round | three presets move to Post only. Cosmetic |
+
+### 4.7 Superseded 2026-09-30 by brief §0d #19: the signal channel
+
+The second pass's §4, summarised. The verbatim text is at commit `38dc58a`.
+
+| Old rule | What it was | Disposition |
+|---|---|---|
+| 4.1 message format | `(sender_id, token, server_timestamp)` from a radial wheel of `vocabulary_size` = 16 | **superseded.** 16 > 12, and the tokens were the language |
+| 4.1 budget | `signal_budget_per_player` 12, non-transferable, `signal_reserve` 2 locked until 90 s remain | **superseded.** No budget; no ping budget either (T11, operator, 2026-09-30) |
+| 4.1 rate | 1.5 s per token | **superseded** by 10 s (presets) and `ping_rate_limit_seconds` |
+| 4.1 ephemerality | shown 6 s, `signal_log_depth` 0 | **superseded.** Pings persist; presets carry no facts |
+| 4.1 sender's room | not revealed (T6, then §0d #16) | **superseded, and transformed** (`loop.md` §5) |
+| 4.2 vocabulary | 8 abstract marks, `FIRST`/`BEFORE`/`AFTER`, `YES`/`NO`, `AGAIN`/`WAIT`/`GO` | **superseded.** Marks and ordinals are fact-bearing; YES/NO is a Q/A structure and a binary code. `WAIT`/`GO` survive as presets with no information role |
+| 4.3 what it cannot express | no binding, no deixis, no scope, no quantity, no addressing | **inverted.** Binding and deixis are now free (pointing). Addressing is still absent |
+| 4.4 the Expressibility Rule | every required fact sendable, some not in one token; bridged by inventing a grammar from adjacency | **superseded.** That bridge is exactly the forbidden mechanism. C3 replaces it: every fact is sendable in *one* ping |
+| 4.4 the second lossy axis | attentional: ephemeral, serial, competing with looking | **replaced** by the spatial axis (`loop.md` appendix A4) |
+| 4.5 the decision | which single fact of the many I can see is the one the group cannot deduce without me? | **superseded.** See `loop.md` §1.2 |
+| — recall (§0d #17) | spend a token to re-show the last three signals | **superseded** before it was specified (`loop.md` §5) |
 
 ---
 
 ## 5. Actuation, instability and the dark
 
-**Inputs:** a player at an actuator whose key class matches their key, selecting a
-mark.
+**Inputs:** a player at a machine of their own key class, choosing a dial
+setting.
 
 **Rules:**
 
-- Actuation is server-validated: sender identity, key class match, proximity,
-  phase legality, rate limit (B4).
-- The server evaluates: is this actuator the *next* operation in the Procedure,
-  and is the selected mark its required value?
-  - **Both true** → commit. The actuator locks. A light in that room comes up and
-    a confirming tone plays. Progress is public and unambiguous.
-  - **Either false** → reject. `instability += 1`. The actuator returns to `unset`
-    after `actuation_reset_seconds`. A failure tone plays, audible facility-wide.
-- **The rejection does not say which was wrong.** Wrong value and wrong turn
-  produce an identical response. That ambiguity is information the group must
-  resolve through the channel, and it is the single cheapest difficulty lever in
-  the design; it is `actuation_failure_is_diagnostic`, a taste constant.
+- Server-validated: sender identity, key class match, proximity, phase legality,
+  rate limit (B4).
+- The server evaluates: is this machine live, and is the chosen setting its
+  required setting?
+  - **Both true:** commit. The machine locks, its room brightens, and a
+    confirming tone plays. Progress is public.
+  - **Either false:** reject. `instability += 1`. The dial returns to unset
+    after `actuation_reset_seconds`, and a failure tone plays facility-wide.
+- **Whether the rejection says which was wrong** is
+  `actuation_failure_is_diagnostic`. **T13 answered by the operator, 2026-09-30:
+  it does** (*true*), for an all-ages floor, reversing the second pass's
+  *false*.
+- **The finale:** each finale turn arms its machine for
+  `simultaneous_window_seconds`. If the other is turned correctly inside the
+  window, both commit. If the window closes, both disarm and instability rises by
+  1 (one operation, one penalty).
 
 **Instability effects** (thresholds in `tuning.md`):
 
 | Effect | Rule |
 |---|---|
-| Clock | each point of instability removes `instability_clock_penalty_seconds` from the remaining clock, immediately |
-| Blackout | at each multiple of `instability_blackout_threshold`, `blackout_rooms_per_threshold` rooms go permanently dark; tags and key classes in them become unreadable |
+| Clock | each point removes `instability_clock_penalty_seconds` immediately |
+| Blackout | at each multiple of `instability_blackout_threshold`, `blackout_rooms_per_threshold` rooms go dark: helpers can no longer read required settings there, and tags and dials become unreadable at range. **Permanent** (T15, operator, 2026-09-30); the tone of the dark is still open, with the Lead Designer |
 | Loss | at `instability_max`, the round ends in failure regardless of the clock |
 
-Blackout room selection is server-side and **weighted toward rooms with
-uncommitted operations**, so degradation bites. It is not random cruelty; it is
-the mechanism that makes early guessing a compounding mistake.
+Blackout selection is server-side and **weighted toward rooms with live or
+waiting steps**, so degradation bites.
 
-**States:** the round is `running → won → lost(clock) → lost(instability)`.
+**States:** the round is `running → won | lost(clock) | lost(instability) |
+unwinnable | no_contest`. These are exactly the outcomes the M1 phase machine
+already accepts as events. It does not compute them.
 
 **Edge cases:**
 
-- *Two players actuate the correct next operation simultaneously.* Impossible by
-  key class — an operation has exactly one eligible key-holder — except for paired
-  operations, where both actuations are required. Resolution is server-ordered by
-  receipt timestamp.
-- *A paired operation where the second actuation arrives after the window.* Both
-  reject, instability +1 (not +2 — one operation, one penalty).
-- *The last uncommitted operation's actuator is in a blacked-out room, and its
-  key-holder has disconnected.* See §8. The round can become unwinnable; the
-  design's position is that it should **end immediately with a stated reason**
-  rather than run the clock out on a group that cannot win.
+- *Two players turn the same machine.* Impossible: a machine has one key class,
+  and one holder, except after a disconnect transfer, which is still one player.
+- *Finale: the second turn arrives after the window.* Both disarm, instability +1.
+- *A turn with no helper ping* (a guess). Legal. A right guess commits and costs
+  nothing. The trace records it as a guess (§7).
 
-**The decision it produces:** *how much confirmation is an actuation worth.*
-Instability is the price of acting on a belief you have not checked, and the
-blackout rule makes that price rise as you pay it.
+**The decision it produces:** *how much certainty is a turn worth.* A wrong turn
+costs clock and moves the facility toward the dark, and the dark takes away the
+only way settings are read.
 
 ---
 
 ## 6. The generator
 
 The hardest system in the project, and the one that carries A2 #4 (difficulty in
-systems, not asset volume) and A2 #2 (28-day retention without content).
+systems, not asset volume).
 
 ### 6.1 What it produces
 
-An **instance**:
-
 | Component | Shape |
 |---|---|
-| layout | `room_count` rooms and their connectivity |
-| actuator placement | actuators to rooms |
-| tag assignment | marks to actuators, distinct within each key class |
-| **value assignment** | a required value per actuator, never equal to its own tag; the values of operations *in* the Procedure exhaust the mark alphabet |
-| **the Procedure** | which `procedure_length` of the `actuator_count` actuators are in it |
-| **total order** | a permutation of the operations |
-| **σ** | a cyclic derangement over players: lens/key binding (`roles.md §2`) |
-| lens split | which required-value pairings land in which lens |
-| fragment split | which order fragments land with which player |
-| paired ops | which operations are simultaneous, and their rooms |
+| layout | `room_count` rooms and their doorway graph |
+| machine placement | `actuator_count` machines to rooms |
+| tags | a symbol per machine, distinct within each key class |
+| **required settings** | a dial position per machine |
+| **the Procedure** | which `procedure_length` machines are steps, split into `procedure_tracks` ordered tracks |
+| **the finale** | the last step of each track: machines in different rooms, of non-adjacent key classes when n ≥ 4 |
+| **σ** | a cyclic derangement over players (already built: SEAT-001) |
+| **par** | the canonical schedule's duration (§6.3) |
 
-Every component is combinatorial and tiny. The whole instance is a few hundred
-bytes. Generation is seeded, so an instance is reproducible from a seed — which
-is what makes the generator testable and a bad round reportable.
+Seeded, so an instance is reproducible. The ring draws from `rng:derive("seats")`
+and the instance from `rng:derive("instance")`, so neither moves the other (a
+property SEAT-001 already built for).
 
 ### 6.2 Structural invariants
 
-These are hard constraints; the generator rejects and resamples.
+Hard constraints. The generator rejects and resamples.
 
-1. No actuator's required value equals its own tag (`INV_no_self_value`).
-2. Tags distinct within a key class; the required values of the operations in the
-   Procedure pairwise distinct and exhausting the mark alphabet. (This is what
-   makes a value-mark a referent — §3.1.)
-3. `σ` is a **single n-cycle**, not merely a derangement. Two 2-cycles would split
-   four players into two independent pairs who never need each other.
-4. Every paired operation's two actuators are in different rooms with different
-   key classes, and the rooms are at least `paired_room_distance_min` apart in the
-   connectivity graph.
-5. Every player holds at least one pairing and at least one order fragment. A
-   player with nothing to say has nothing to do.
-6. No room is reachable only through a room that starts dark.
+| # | Invariant | Status |
+|---|---|---|
+| 1 | `INV_no_self_value` (required value ≠ tag) | **superseded**: tags and settings use disjoint alphabets (§1) |
+| 2 | `INV_tags_distinct_in_class` | kept |
+| — | `INV_values_distinct` (in-Procedure values exhaust the mark alphabet) | **superseded** (§3.1) |
+| 3 | `INV_cyclic_sigma`: σ is one n-cycle | kept; already enforced by construction in `Ring.luau` |
+| 4 | `INV_finale`: the finale's machines are in different rooms at least `paired_room_distance_min` apart, of non-adjacent key classes when n ≥ 4 | revised from "every paired operation" |
+| 5 | `INV_every_class_has_a_step`, and `INV_balanced_steps`: step counts per class differ by at most 1 | revised from "every player holds a pairing and a fragment" |
+| 6 | no room is reachable only through a room that starts dark | kept |
+| 7 | `INV_track_alternates`: consecutive steps in a track have different key classes | new. Stops one player camping a track |
 
-### 6.3 Information invariants
+### 6.3 Information and timing invariants
 
-These are the ones that make the design work, and they are the reason this
-section exists rather than "generate a puzzle".
+**I1 — k-essentiality, re-derived.** Each required setting of class k(q) is
+readable only by σ⁻¹(q), and each class's machines are turnable only by q. With
+`INV_every_class_has_a_step`, removing any one player leaves at least one step
+whose setting nobody can read, which has `dial_settings` ≥ 2 candidates, and at
+least one step nobody can turn. So **no n−1 players can finish with certainty**.
+The second pass had to *construct* this for the value layer; here it follows
+from the ring and one counting invariant.
 
-**I1 — k-essentiality.** The union of all `n` lenses and all fragments admits
-**exactly one** consistent Procedure. The union of any `n−1` of them admits **at
-least two**. Brute-forceable at these sizes; a Lune test can verify it
-exhaustively for a generated instance.
+**I2 — the centralisation bound. Superseded 2026-09-30.** It required
+`signal_budget_per_player < view_enumeration_tokens` so that three players could
+not brief a fourth. There is no longer any channel that carries a setting from a
+distance, so briefing is impossible **structurally** and no inequality needs to
+hold. `INV_centralisation` is retired.
 
-> Worked, for the order layer, where it is nearly free: a total order over
-> `procedure_length` operations needs at least `procedure_length − 1` covering
-> relations. Removing any one player's `order_fragments_per_player` fragments from
-> the pool leaves fewer than that, so the order is underdetermined and at least two
-> Procedures remain consistent. The generator only has to check that the *full*
-> pool determines it uniquely.
->
-> Worked, for the value layer, where it must be constructed: with `n−1` lenses the
-> union fixes every required value except those of one key class. The missing ones
-> are constrained only by `INV_no_self_value` and by the requirement that the
-> in-Procedure values exhaust the alphabet. The generator must verify that more
-> than one assignment survives those constraints; if the leftover set is forced, the
-> instance is rejected and resampled. At these sizes the check is exhaustive.
+**I3 — the rate bound. Replaced by `INV_traversal`.** The binding resource is
+no longer transfers per second. It is **bodies per second**. The generator
+computes a **canonical schedule**:
 
-**I2 — the centralisation bound.** Let `V` = `view_enumeration_tokens` be what it
-costs one player to say everything they know literally, and `M` =
-`cooperative_minimum_tokens` what the canonical cooperative protocol the generator
-constructs costs that player. Then, per player:
+- a naive plan: steps taken in track order, alternating tracks; for each step
+  the helper and the turner walk (shortest doorway path, `room_traversal_seconds`
+  per edge) to the machine, the helper pings, and the turner turns;
+- **no anticipation, no guessing and no presets**;
+- **pings at 10 s**, which is `ping_rate_limit_seconds` since the Lead PO's CA-1
+  decision (2026-09-30), and equal to the preset rate. If a later decision ever
+  lowers the ping rate, par stays computed at 10, so that the invariant never
+  depends on CA-1 being read in our favour.
 
-    M · protocol_slack  ≤  signal_budget_per_player  <  V
+Its duration is **par**. The invariant is:
 
-The left inequality makes the instance solvable with room to be wrong. The right
-one says **you cannot say everything you know** — which is simultaneously what
-forces selection (loop.md §1.2) and what makes quarterbacking not fit in the
-channel, since three players spending everything still cannot brief a fourth.
+    par × schedule_slack  ≤  round_seconds
 
-The gap between `M` and `V` is not an accident of arithmetic; it is produced by
-`WAIT`, `NO` and `GO`. Relaying an order fragment costs three tokens; **acting on
-one** — gating the group at the moment it is about to go out of turn — costs one,
-and does not require the fragment to be understood by anyone else. Distributed
-control is cheaper than centralised knowledge, and that is why the meta tokens are
-not filler. It is also why `actuator_redundancy` exists: without facts that turn
-out not to matter, `V` and `M` converge and the bound has nothing to stand on.
-
-**I3 — the rate bound.** The canonical protocol's `M` transfers must be
-distributable across the round such that no player needs to send faster than
-`signal_rate_limit_seconds` allows, with at least `rate_headroom` slack. This is
-what stops the generator producing an instance that is solvable in principle and
-impossible in eight minutes, and it is the invariant that makes the attentional
-axis (§4.4) load-bearing rather than decorative.
+This is what stops the generator emitting an instance that is solvable in
+principle and impossible in seven minutes. It is also what keeps the floor low:
+a group that does nothing clever still fits (`loop.md` §1a). Par is shown in the
+trace as the thing a good group beats.
 
 ### 6.4 What varies, and what does not
 
-Varies per instance: everything in §6.1. Varies per **band**
-(`difficulty_band`, taste-pending per loop.md T5): `procedure_length`,
-`mark_alphabet_size`, `pairs_per_lens`, `signal_budget_per_player`,
-`instability_max`, whether tags and values may collide, and whether
-`actuation_failure_is_diagnostic`.
+Varies per instance: everything in §6.1. Per band: nothing; the operator chose one band for v1 (T17, 2026-09-30). If a later version adds a
+band, its levers are `dial_settings`, `turn_cue_lookahead`,
+`actuation_failure_is_diagnostic`, `procedure_length`, `schedule_slack`.
 
-Does **not** vary and is not authored: any grammar, any convention, any hint.
+Does **not** vary and is not authored: any preset, any grammar, any hint.
 
 ---
 
 ## 7. The post-round trace
 
-**Inputs:** the instance, the full signal log, the full actuation log, the outcome.
+**Inputs:** the instance, the ping log, the preset log, the actuation log,
+position samples at `trace_position_sample_seconds`, the outcome.
 
-The answer to question 5 — what failure teaches. A reveal is a result; this is a
-lesson, and it is a pure function of state.
+Re-aimed 2026-09-30. The second pass's trace taught *selection* (the fact nobody
+sent, wasted tokens, convention mismatches). This one teaches *choreography*. It
+is still a pure function of logs.
 
-The trace screen shows the Procedure as it actually was, in order, and against it:
+The trace is the **first time the order is public**. During the round the
+progress bar (§3.2) showed only a count. The trace shows each step with its
+track, machine and position, which is exactly what the bar withheld. Nothing is
+lost by showing it now: the round is over, so there is nothing left to plan.
 
-1. **The critical moment.** The earliest timestamp at which the union of what had
-   been *sent* was sufficient to determine the next operation. If the group acted
-   wrongly after that moment, the failure was in reading the channel. If before,
-   it was in filling it.
-2. **The fact nobody sent.** Any pairing or fragment that was in a player's lens
-   for the whole round and never entered the stream, named to that player:
-   *"The valve tagged AMBER needed TEAL. It was in your lens for 4:12."*
-3. **Wasted tokens.** Every signal that carried no information the group did not
-   already hold — a re-assertion of something already sent, or a token whose every
-   consistent reading was already determined. This is the group's budget
-   efficiency, and it is the number that improves as a group learns.
-4. **The convention mismatch, when one occurred.** Where a pairing was sent in one
-   direction and acted on in the other, both readings are shown side by side. This
-   is how a group discovers it has two grammars.
+1. **The headline.** One sentence, readable by a child: the longest wait in the
+   round and what it waited for. For example: "Step 3 waited 40 seconds for its
+   helper."
+2. **Par against actual.** The group's finishing time (or where it got to: the
+   progress bar's final count, the same number every player saw during the round)
+   against par (§6.3). Beating par is the visible skill ceiling.
+3. **The timeline.** Per step: went live, first helper ping, turned. Each gap is
+   labelled *waiting for helper* or *waiting for turner*, which follows directly
+   from the logs.
+4. **Guesses.** Turns made with no helper ping on that machine, and whether they
+   were right. That shows whether a group's guessing was bold or reckless.
 
-**Rules:** the trace is shown for `post_round_seconds`, to everybody, win or
-lose. It names players, because attribution is what makes it actionable, and
-because there is no betrayal in this game so attribution is not an accusation.
+**Rules:** shown for `post_round_seconds`, to everybody, win or lose. **Whether it
+names players was T14; the operator answered (a) on 2026-09-30.** It names steps and machines,
+not players.
 
-**Edge case:** on a win with zero wasted tokens and no mismatch, the trace shows
-the group's transfer count against `M` (§6.3) — the theoretical minimum. That is
-the skill ceiling, and it is the only leaderboard this design needs.
+> **Superseded 2026-09-30 by brief §0d #19:** "the fact nobody sent" (the fact is
+> now visible to its helper, and was either delivered or not, which is the
+> *waiting for helper* gap), "wasted tokens" (no tokens), "the convention
+> mismatch" (no conventions), and "transfer count against M" (replaced by par).
 
-**The decision it produces:** none in-round. It shapes the next one, which is the
-point.
+**Edge case:** a win under par with no guesses shows the margin. That is the only
+leaderboard this design needs (amendment 9).
 
 ---
 
@@ -500,35 +610,38 @@ point.
 
 | Case | Rule |
 |---|---|
-| **Disconnect** | the ring breaks. The leaver's key class transfers to their ring-*predecessor* — the player who could already see those values, so the instance stays solvable and gets easier. Their lens and remaining budget are lost. `disconnect_grace_seconds` before reassignment, in case they rejoin. |
-| **Below `min_players_to_continue`** | the round ends immediately as a no-contest. No loss is recorded and season progress is unaffected: the group did not fail, the lobby did. |
-| **Every player mute** (budget exhausted) | the round continues. It is usually lost, and that is a legitimate and instructive way to lose. The reserve (§4.1) makes it rare before the endgame. |
-| **The round becomes unwinnable** (remaining clock < minimum time to execute remaining operations, or a required key-holder is gone with no predecessor) | end immediately with a stated reason, then show the trace. Never run out a clock on a group that cannot win. |
-| **Instability and clock hit their limits in the same tick** | instability resolves first; the recorded loss reason is instability. Deterministic ordering matters because the trace reports the reason. |
-| **A player actuates the correct operation by accident, having been told nothing** | it commits. Guessing correctly is allowed and costs nothing; the design punishes guessing *wrongly*, which is the same thing said in the direction that can be tuned. |
-| **Two players send the same token in the same second** | both appear, attributed. The stream is not deduplicated — who said it is part of what was said. |
-| **Rejoin after disconnect** | within the grace window, the player resumes with their lens and remaining budget. After it, they spectate until the next round; their key class has already moved. |
-| **All operations committed with the clock still running** | immediate win. No bonus round, no overtime. The remaining seconds are reported in the trace as the group's margin. |
+| **Disconnect** | the ring breaks. The leaver's key class transfers to their **supplier**, the helper who could already read it, so that player can now read *and* turn those steps. The leaver's lens is lost: their partner's settings become unreadable and must be guessed. `dial_settings` keeps that survivable rather than fatal. `disconnect_grace_seconds` before reassignment. *(Unchanged in rule, already built: SEAT-003.)* |
+| **Below `min_players_to_continue`** | no contest. No loss recorded; season progress unaffected. *(Unchanged; already built.)* |
+| **The round becomes unwinnable** (remaining clock < the remaining canonical schedule, or a key is gone with no supplier) | end immediately with a stated reason, then the trace |
+| **Instability and clock hit their limits in the same tick** | instability resolves first; the recorded reason is instability |
+| **A correct guess** | commits. Guessing correctly is free; guessing wrongly is what is priced |
+| **Two players ping the same target** | both markers show, in both colours. Who pinged is part of what was said |
+| **A preset during its sender's cooldown** | rejected by the net wrapper's rate stage, with a visible "wait" state on the wheel; the attempt does not restart the cooldown (already how `RateLimiter` behaves) |
+| **Preset filtering fails** | fail closed: not sent, sender told, cooldown not consumed |
+| **A ping at a target out of range or out of sight** | rejected. The client's target is a claim |
+| **Rejoin after disconnect** | within the grace window, the seat is restored. After it, spectate until the next round. *(Unchanged; already built.)* |
+| **All steps committed with the clock running** | immediate win. The remaining seconds are the margin |
+| ~~**Every player mute**~~ | **superseded**: there is no budget to exhaust |
+| ~~**Two players send the same token in the same second**~~ | **superseded** by the ping row above |
 
 ---
 
 ## 9. What a headless test can check
 
-Per the standing preference for rules that are functions of state. Everything in
-the left column runs under Lune with no Roblox runtime.
+Everything in the left column runs under Lune with no Roblox runtime.
 
 | Mechanic | Headlessly verifiable | Needs a human |
 |---|---|---|
-| §1 world | actuator state machine; commit is terminal; reset timing | whether a dark room is atmospheric or just annoying |
-| §2 lens | lens facts never appear in a non-holder's replicated state (B4) | whether reading a panel in the dark is pleasant |
-| §3 Procedure | order enforcement; paired-window resolution; every edge case in §8 | whether the two-layer split is legible |
-| §4 channel | budget arithmetic; reserve unlock; rate limit; ephemerality timing; server log completeness | **everything that matters** — see `playtest.md` |
-| §5 instability | thresholds, clock penalties, blackout selection weighting, loss ordering | whether degradation feels like pressure or like punishment |
-| §6 generator | **all of §6.2 and §6.3, exhaustively, per seed** | whether the instances are interesting |
-| §7 trace | the critical moment, the unsent fact, wasted-token accounting — all computable from logs | whether anyone reads it |
+| §1 world | machine state machine; commit is terminal; reset timing | whether a dim room is atmospheric or frightening (T15) |
+| §2 lens | required settings never in a non-holder's replicated state (B4); range rule | whether reading a glow in the dark is pleasant |
+| §3 Procedure | live-step rule per track; finale window; turn cues only in the key-holder's projection; **the progress bar's replicated payload is exactly `{committed, total}`**: an allowlist with no step, track, machine, room, class or player field, and `committed` equals the count of committed steps | whether two tracks are legible to a child, and whether the bar reads as progress or as a plan |
+| §4 channel | ping target validation (kind, range, sight as a claim); one active ping; preset table rules C1, C2 (denylist), C6 (punctuation), C8; the 10 s limiter; fail-closed filtering; broadcast-only remote shape | **whether presets are used as intended, or bent into codes** (`playtest.md: P-S`) |
+| §5 instability | thresholds, penalties, blackout weighting, loss ordering | whether the dark reads as pressure or punishment |
+| §6 generator | **all of §6.2 and §6.3 per seed, including par and `INV_traversal`** | whether instances are interesting |
+| §7 trace | headline, gaps, guesses, par. All computable from logs | whether anyone reads it, and whether a child understands the headline |
 | §8 edge cases | every row | — |
 
-The right-hand column is what `playtest.md` exists for. Note that the mechanic
-with the most headless coverage (§6) and the mechanic with the least (§4) are
-respectively the hardest to build and the one the game lives or dies by. That
-asymmetry is worth knowing before M3 rather than during it.
+The balance shifted in this pass. The mechanic with the least headless coverage
+used to be the one the game lived or died by (the signal channel). Now the
+channel is mostly checkable, and the thing no test can see is whether the
+*spatial* decision is interesting, which is `playtest.md: P-D`.

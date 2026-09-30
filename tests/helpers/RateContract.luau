@@ -16,11 +16,14 @@
 	the token schema shape - and nothing in it or in `PhaseContract.luau` is
 	redefined here.
 
-	THE ORACLE PARTITION IS HONOURED HERE. AC-1 is settled: 1.5 is
-	`tuning.md` §3's `signal_rate_limit_seconds`, marked derived, and it is READ
-	OUT as `MIN_INTERVAL_SECONDS` below and declared on the test remote - never
-	put into `src/shared/Tuning.luau`, whose scope is §1 and §5 and whose guard
-	would fail on it. The boundary is inclusive: `now - lastAccepted >=
+	THE ORACLE PARTITION IS HONOURED HERE. AC-1's 1.5 is a FIXTURE interval,
+	chosen for its fractional boundary (see below): the limiter is
+	value-agnostic, taking its interval from the remote's own declaration.
+	NET-003 read it out of `tuning.md` §3's `signal_rate_limit_seconds`; brief
+	§0d #19 superseded that constant on 2026-09-30 (`tuning.md` §9), and from
+	ROUND-006 on 1.5 has no design provenance. It is declared on the test
+	remote and never put into `src/shared/Tuning.luau`, whose scope is §1
+	and §5. The boundary is inclusive: `now - lastAccepted >=
 	minIntervalSeconds`, accepted exactly at the interval, and AC-1 is the ONLY
 	check that lands exactly on it - every other check keeps its acceptances
 	clear of the boundary so that a `>` implementation fails AC-1 alone.
@@ -62,12 +65,14 @@ export type World = {
 }
 
 --[[
-	`tuning.md` §3, `signal_rate_limit_seconds` = 1.5, marked DERIVED. Settled:
-	read out, not tuned. It reaches the wrapper through the remote's own
-	declaration (`rateLimit = { minIntervalSeconds = 1.5 }`), and
-	`tests/net/rate_limit_provenance_test.luau` anchors this literal to the
-	document's table row so the number here cannot drift from the document
-	unnoticed.
+	A FIXTURE interval, not a design value. It was `tuning.md` §3's
+	`signal_rate_limit_seconds` until brief §0d #19 superseded it (ROUND-006,
+	NET-003's `## Notes`); the preset design's real rates are 10 s, guarded in
+	`tests/net/rate_limit_provenance_test.luau` against the document, and M3's
+	channel story declares its remotes at them. 1.5 stays because the limiter
+	is value-agnostic and a fractional interval keeps the float-boundary
+	reasoning in this header valid. It reaches the wrapper through the
+	remote's own declaration (`rateLimit = { minIntervalSeconds = 1.5 }`).
 ]]
 RateContract.MIN_INTERVAL_SECONDS = 1.5
 

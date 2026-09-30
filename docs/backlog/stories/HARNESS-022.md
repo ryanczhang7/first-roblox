@@ -4,8 +4,8 @@ title: A test that reads a file outside the gate hash fails, naming it
 slug: a-test-that-reads-a-file-outside-the-gat
 epic: 
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-022-a-test-that-reads-a-file-outside-the-gat
 depends_on: [HARNESS-021]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -1274,3 +1274,25 @@ DV-2 and DV-3 stay with GATES.
 - **Gates re-run** on `bfe22c1`, alone with no toolchain process running:
   `All required gates passed (6 ran, 3 unconfigured, 0 known)`. `gates.sh`
   recorded it in `## Gate results`.
+
+### REVIEW → DONE (orchestrator, 2026-09-30)
+
+PR [ryanczhang7/first-roblox#40](https://github.com/ryanczhang7/first-roblox/pull/40)
+was merged as `9648b50` at 2026-09-30T21:01:49Z, with head `c26b59d`. Timings
+from its first and only CI run, on `c26b59d`:
+
+- `gates` job: run [36773823126](https://github.com/ryanczhang7/first-roblox/actions/runs/36773823126), 2m25s in all.
+  The "Harness self-test" step took 1m46s and included `classify: 59 passed, 0 failed`
+  and `project-counters: 40 passed, 0 failed`. "Run gates" took 22s:
+  format 1s, lint 0s, typecheck 2s, **unit 4s** (observed 471, floor 443),
+  build 0s and harness 13s. Locally, unit took 37-64s.
+- `boundaries` job: run [36773823084](https://github.com/ryanczhang7/first-roblox/actions/runs/36773823084), 8s.
+
+Neither workflow declares a `timeout-minutes` key: `grep -rn timeout .github/workflows/`
+finds only a comment about another project. So the limit is GitHub's default
+of 6 hours, and nothing is near it. No gate reached REVIEW as *pending CI*.
+
+**Open items carried out of this story:** HARNESS-020's Q4 is still open.
+`--gated` exists only in this repository, so a `refresh-harness.sh` from
+`../agentic-dev-harness` that lacks it would make every `GatedFs` read fail
+closed.

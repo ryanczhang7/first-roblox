@@ -1,12 +1,17 @@
 # Roles
 
-Co-operative does not mean symmetric. Every player has the same verbs — look,
-signal, actuate — and none of them has the same **position** in the information
+Co-operative does not mean symmetric. Every player has the same verbs (move,
+look, show, turn) and none of them has the same **position** in the information
 structure. A role here is not a class, a loadout or an unlock. It is a seat in a
-ring, assigned per round by the generator, and the seat determines who you must
-talk to and who must talk to you.
+ring, assigned per round, and the seat decides who you must help and who must
+help you.
 
 Constants are named, not valued; see `tuning.md`.
+
+**Revised 2026-09-30 (third pass) for brief §0d #19.** The ring (§2) is
+unchanged and already built (SEAT-001 to SEAT-003). What each seat *knows* and
+*how it passes it on* changed (§3), and so did the emergent roles (§4). Section
+numbers are unchanged, because source and tests cite them.
 
 ---
 
@@ -14,110 +19,126 @@ Constants are named, not valued; see `tuning.md`.
 
 Three things must be true at once, and one mechanism produces all three.
 
-- **Nobody can act alone.** If any player can both see what is required and do it,
-  that player is a solo game with three spectators.
+- **Nobody can act alone.** If any player can both see what is required and do
+  it, that player is playing a solo game with three spectators.
 - **Nobody is redundant.** If any three players can finish without the fourth,
   the fourth is a spectator by a slower route.
-- **Nobody can be replaced by a spokesperson.** If one player can absorb the other
-  three and direct them, the game has one player and three input devices.
+- **Nobody can be replaced by a spokesperson.** If one player can absorb the
+  other three and direct them, the game has one player and three input devices.
 
 The mechanism is a **cyclic derangement of lens and key**. It is one line of
-generation logic, requires no art, produces all three properties, and is exactly
-checkable by a test.
+generation logic, needs no art, produces all three properties, and a test can
+check it exactly. The third property is now *stronger* than in the second pass:
+there is no channel through which a spokesperson could collect everyone's facts
+(§3).
 
 ---
 
 ## 2. The ring
 
+*Unchanged. Built by SEAT-001; its projection by SEAT-002; disconnects by
+SEAT-003.*
+
 Each player `p` is dealt two things for the round:
 
 | | Name | What it is |
 |---|---|---|
-| **key** | `k(p)` | the class of actuators `p` — and only `p` — may operate |
-| **lens** | `λ(p)` | the class of actuators whose **required values** `p` — and only `p` — can read |
+| **key** | `k(p)` | the class of machines `p`, and only `p`, may turn |
+| **lens** | `λ(p)` | the class of machines whose **required settings** `p`, and only `p`, can read |
 
-The binding is a permutation `σ` over the players, and the generator constrains it
-to be a **single n-cycle** (`mechanics.md §6.2` invariant 3):
+The binding is a permutation `σ` over the players, constrained to be a **single
+n-cycle** (`mechanics.md` §6.2 invariant 3):
 
     λ(p) = k(σ(p))          σ(p) ≠ p, and σ is one cycle, not two
 
-Two consequences, both structural:
-
-- **You cannot act on what you can see.** `σ` has no fixed points. Every required
-  value you can read belongs to an actuator you cannot touch.
-- **The dependency graph is one ring, not two pairs.** A derangement of four
-  players could also be two disjoint swaps, which would produce two independent
-  two-player games sharing a map. The cycle constraint forbids it.
+- **You cannot act on what you can see.** `σ` has no fixed points.
+- **The dependency graph is one ring, not two pairs.** Two disjoint swaps would
+  be two two-player games sharing a map.
 
 For four players the ring reads:
 
-    P1 ──sees the values for──▶ P2 ──▶ P3 ──▶ P4 ──▶ P1
+    P1 ──can read the settings for──▶ P2 ──▶ P3 ──▶ P4 ──▶ P1
 
-Two terms used throughout:
+Two terms used throughout (and in `Ring.luau`):
 
-- your **supplier** is your ring-predecessor: the one player who can see what your
-  actuators need.
-- your **dependent** is your ring-successor: the one player whose actuators only
-  you can see.
+- your **supplier** is your ring-predecessor, σ⁻¹(p): the one player who can see
+  what your machines need. In player-facing words, your **helper**.
+- your **dependent** is your ring-successor, σ(p): the one player whose machines
+  only you can read. In player-facing words, your **partner**.
 
-There are six possible cyclic derangements of four players and the generator
-picks one per round, so the ring's shape is itself variance — you do not develop
-a fixed relationship with one person.
+The player-facing names are the Lead Designer's to choose. "Supplier" and
+"dependent" are not words a seven-year-old should have to learn (§0d #14).
+
+There are six cyclic derangements of four players, and one is picked per round,
+so you do not develop a fixed relationship with one person.
 
 ---
 
 ## 3. What each seat knows, wants and must do
 
-Every seat is structurally identical; what differs is who is on either side of
-you and which fragments you were dealt. So this is one description, not four.
+Every seat is structurally identical, so this is one description, not four.
 
 ### What you know
 
 | Source | Content | Shared with |
 |---|---|---|
-| **Your lens** | `pairs_per_lens` pairings *(tag → required value)* for your **dependent's** actuators | nobody |
-| **Your fragments** | `order_fragments_per_player` precedence statements over operations, named by value | nobody |
-| **Public world** | tags, key classes and current settings of every actuator you have light on | anyone in the room |
-| **The stream** | every token anyone has sent in the last `signal_display_seconds`, attributed | everyone, briefly |
+| **Your lens** | the required setting of each of your **partner's** machines, **only while you stand within `lens_read_range_studs` with your light on it** | nobody |
+| **Your turn cues** | which of your own machines is live now, and which is next once it is within `turn_cue_lookahead` steps | nobody |
+| **Public world** | tags, key classes, dial positions, live lamps, committed lights, partner lamps, for machines you can see | anyone who can see them |
+| **Pings** | every player's current ping, in their colour; your helper's also as a HUD arrow | everyone |
+| **Presets** | every preset sent in the last `preset_display_seconds`, with sender and position | everyone, briefly |
+| **The progress bar** | how many steps the group has committed, out of `procedure_length`, with the finale's segments marked. Never which step is next, which track, which machine, or whose (`mechanics.md` §3.2) | everyone, the same bar. **Added 2026-09-30, T10 (c)** |
 
-Note what you do **not** know: the required values for your own actuators, the
-full order, what any other player can see, and what any other player currently
-believes.
+> **Superseded 2026-09-30 by brief §0d #19:** "Your fragments", the
+> `order_fragments_per_player` precedence statements, and "The stream", every
+> token sent in the last `signal_display_seconds`. Order is now seen privately
+> as turn cues and never relayed (`mechanics.md` §3.2). The stream is replaced by
+> pings (reference) and presets (intent).
+
+What you do **not** know: the required settings of your own machines; anyone
+else's turn cues, and so the order of anything but your own steps (the progress
+bar tells you how far the group has got, never where it goes next); and what
+anyone else is about to do, except what the world and their presets show you.
 
 ### What you want
 
-The same thing everyone wants — the Procedure completed before the clock. There
-is no private win condition, no traitor, no scoring against each other
-(amendment 9). But the *local* obligations are asymmetric and they are what you
-act on minute to minute:
+Everyone wants the same thing: the Procedure done before the clock. There is no
+private win condition and no traitor (amendment 9). But the *local* obligations
+are asymmetric:
 
-1. **Get your dependent right.** Only you can. Every wrong actuation by your
-   dependent is, in the trace's accounting, usually your transfer that failed.
-2. **Get yourself told.** You cannot read your own actuators' requirements. If
-   your supplier is lost, confused, or out of budget, you are stuck holding a key
-   and no knowledge — and you cannot fix it by looking harder.
-3. **Contribute your fragments to the order.** These are the only facts that do
-   not flow along the ring. They are group property and they are the reason the
-   round is not four private conversations.
+1. **Get your partner's machines right.** Only you can read them. When their
+   machine is live, you are the only person who can make it go well, and you
+   have to be standing there to do it.
+2. **Get yourself helped.** You cannot read your own machines. When your step is
+   live and your helper is elsewhere, you wait, call (`Help`), or guess.
+3. **Be where the finale needs you.** At the end, four bodies in two rooms.
+
+> **Superseded 2026-09-30:** "Contribute your fragments to the order" (the second
+> pass's third obligation). There are no fragments. The group-level problem the
+> fragments used to create (the round is not four private conversations) is now
+> created by the **two tracks**: your step and your partner's step compete for
+> your body.
 
 ### Why you must act — you specifically, not the group
 
-This is question 7 of the five-questions set, in its co-op form: *why do you act
-rather than let the confident player run the round?*
-
 | | Because |
 |---|---|
-| **Your budget is yours** | `signal_budget_per_player` is per player and non-transferable. Nobody else can spend it. Your facts can only enter the world through you. |
-| **You are not redundant** | k-essentiality (`mechanics.md §6.3` I1): any three lenses admit at least two consistent Procedures. Your three teammates cannot finish without you, however well they play. |
-| **The solver cannot act** | `σ` is a derangement. A player who has somehow deduced everything still holds the wrong key for almost all of it. Knowing is not doing. |
-| **The channel cannot carry a briefing** | I2's centralisation bound: three players spending their entire budgets cannot relay their full views to a fourth. |
-| **Somebody has to be in the other room** | paired operations require two keys turned in two rooms inside `simultaneous_window_seconds`. |
-| **Nobody can hold it all** | signals are ephemeral and there is no log. A would-be quarterback is trying to keep four decaying views in working memory for eight minutes. |
+| **Only you can read your partner's machines** | knowledge is local and in person. Nobody can tell your partner what you know unless they stand where you would have stood, and they could not read it anyway |
+| **You are not redundant** | k-essentiality (`mechanics.md` §6.3 I1): every class has a step, so without you one class cannot be read and one cannot be turned |
+| **The knower cannot act** | σ is a derangement. Knowing is not doing |
+| **Nobody can brief anybody** | no preset names a fact, and a ping works only on site (`mechanics.md` §4.3). A planner cannot collect settings, because there is no channel that would carry them to the planner |
+| **Nobody sees the whole order** | turn cues are private, and the only public view of the order is a count (T10 (c), operator, 2026-09-30). A planner knows how many steps are left, and not what is next for anyone else |
+| **Somebody has to be in the other room** | the finale needs four bodies in two rooms at n = 4 |
 
-These six are structural, which is the only kind of answer worth writing down.
-Whether they *work* is `playtest.md: P-Q`, and its "not working" reading is
-deliberately written to catch the polite failure — three players who act, but only
-when instructed.
+> **Superseded 2026-09-30:** "Your budget is yours" (there is no budget), "The
+> channel cannot carry a briefing" as a *tuned* bound (it is now structural), and
+> "Nobody can hold it all" through ephemerality (retired; the floor has no memory
+> load).
+
+Whether these work is `playtest.md: P-Q`. Its "not working" reading still
+catches the polite failure: three players who act, but only when told to. The
+new form of that failure to watch for is a planner steering people with doorway
+pings.
 
 ---
 
@@ -126,22 +147,24 @@ when instructed.
 Within a session a group will invent functional roles, and the design neither
 provides nor forbids them:
 
-- the **runner** who takes the far room because the paired operations keep landing
-  there;
-- the **clock** who spends tokens on `WAIT` and `GO` rather than on facts, buying
-  synchronisation with information;
-- the **cartographer** who stops reading their lens and spends the round assembling
-  the global order from fragments.
+- the **runner**, who takes the far rooms because their legs are the group's
+  bottleneck;
+- the **anchor**, who goes to the finale early and waits there, pinging the way;
+- the **caller**, who sends `Help` *before* their step is live so that their
+  helper arrives on time.
 
 These are good. They are the group's own solution to a problem the design posed,
-they cost nothing to support, and they are exactly the kind of thing that makes a
-specific group's play different from a stranger group's — which is the A2 #2
-thesis (`loop.md §1.4`).
+they cost nothing to support, and they are the **choreography** that `loop.md`
+§1.4 now leans on for retention.
 
-They become the failure mode only when one of them is **"the one who decides"**,
-which is what §3's six devices exist to prevent. The distinction to watch in
-playtest is not whether roles emerge — they will — but whether any emergent role
-is *decisional* rather than *functional*.
+> **Superseded 2026-09-30:** the **clock** (spent tokens on `WAIT` and `GO` to buy
+> synchronisation with information; presets now carry no information, and the
+> finale's partner lamp does the synchronising) and the **cartographer**
+> (assembled the global order from fragments; there are no fragments).
+
+They become the failure mode only when one of them is **"the one who decides"**.
+The distinction to watch in playtest is still whether an emergent role is
+*decisional* rather than *functional*.
 
 ---
 
@@ -149,43 +172,62 @@ is *decisional* rather than *functional*.
 
 | Absent | Why |
 |---|---|
-| **Character classes** | a class is content; a seat in a generated ring is a system. A2 #4. |
-| **Role unlocks** (A5, days 2–7) | there is nothing to unlock. Under amendment 9 progression is shared and seasonal; unlock cadence should be re-derived by the Lead PO against a co-op shape, and "more roles" is not the answer available to it. |
-| **A hidden role / traitor** | amendment 8. And see `loop.md` appendix A1: under a fixed vocabulary, lying is free, so a traitor bolted onto this design would be undetectable by construction. If anyone proposes one later, that is the argument to answer first. |
-| **Visual identification of players** | amendment 10. Identity is carried by signal attribution (`signal_reveals_sender`), which works in a dark room and needs no art. |
-| **Per-player skill trees or stat differences** | they would break the k-essentiality symmetry and give a "best" player a reason to take over. |
+| **Character classes** | a class is content; a seat in a generated ring is a system. A2 #4 |
+| **Role unlocks** (A5, days 2–7) | there is nothing to unlock. Progression is shared and seasonal (amendment 9); the days 2–7 re-derivation is the Lead PO's (§0c R4) |
+| **A hidden role / traitor** | amendment 8. And a traitor could now also ping a wrong setting, indistinguishable from an honest ping (`loop.md` appendix A1) |
+| **Visual identification of players** | amendment 10. Identity is carried by ping colour and preset attribution |
+| **Per-player skill trees or stat differences** | they would give a "best" player a reason to take over |
+| **A free-text or invented vocabulary** | new, 2026-09-30. §0d #19: every word a player can send is one of `preset_count` shipped presets, and none of them names a fact |
 
 ---
 
 ## 6. Assignment, the trust boundary, and disconnects
 
-**Assignment** happens server-side at round start, from the generator's seed. Per
+**Assignment** happens server-side at round start from the round's seed. Per
 B4:
 
-- A player's lens contents are replicated **only to that player**. A required value
-  must not exist in any other client's replicated state at any point. This is the
-  single most important trust-boundary property in the game: a client that can
-  read another player's lens is not cheating at a scoreboard, it has deleted the
-  game.
-- `σ`, the total order, and the full value assignment exist only on the server until the trace.
-- Every actuation remote validates that the caller's key class matches the
-  actuator's, in addition to proximity, phase and rate (`mechanics.md §5`).
+- A player's **lens contents** (required settings of their class of machines) are
+  replicated **only to that player**, and in practice only for the machine they
+  are reading. A required setting must not exist in any other client's
+  replicated state at any point. This is unchanged and is still the most
+  important trust property in the game.
+- A player's **turn cues** are replicated only to that player. New in this pass,
+  and the second per-player secret.
+- `σ`, the Procedure, the track order and the full setting assignment exist only
+  on the server until the trace.
+- Every turn validates key class, proximity, phase and rate (`mechanics.md` §5).
+  Every ping validates target kind, range and line of sight. Every preset
+  validates phase and the 10 s rate, and passes the filter.
 
-**Disconnect** breaks the ring, and the repair is the only one that keeps the
-instance solvable: the leaver's **key class transfers to their supplier** — the
-player who could already see those required values. That player now holds two
-keys and can act on one of their own lens's pairings, so the round gets easier and
-k-essentiality is degraded. That is correct: the group has been harmed enough.
+**What changes in the projection (`src/server/seats/Projection.luau`).** It stays
+an allowlist. M3 adds, by name:
 
-The leaver's **lens is lost**, which means their dependent's requirements become
-unknowable and those operations must be brute-forced against instability. This is
-the sharpest consequence of a dropout and it is why `min_players_to_continue` and
-`disconnect_grace_seconds` matter more here than in most designs.
+| Field | Carries | Status |
+|---|---|---|
+| lens contents | the required setting of a partner machine the player is reading | as planned in SEAT-002 ("pairings"), narrowed to "what I am reading now" |
+| turn cues | own live step and own next step | **new** |
+| ~~fragments~~ | ~~own order fragments~~ | **superseded 2026-09-30.** SEAT-002's header names this as a field M3 would add. It will not be added |
 
-**Rejoin** inside the grace window restores the original seat and the remaining
-budget. After it, the seat is gone and the player spectates until the next round.
+**The progress bar is not in the per-player projection.** It is the same for
+every player and carries no secret: its payload is exactly `{committed, total}`
+(`mechanics.md` §3.2), and every commit it counts is already public world state.
+It belongs with round-public state, next to the phase and the clock. It must not
+be built by widening `PublicSeatView`, because that type is the allowlist for
+*per-player* facts, and a shared field there invites a per-player one next to it.
 
-**Edge case worth naming:** with `n = 3` after a dropout, the ring is a 3-cycle and
-the game is playable but structurally thinner (`loop.md §2`). It is a degraded
-round, not a different game, and the trace should say so rather than record it as
-a clean result.
+Nothing already built is invalidated. `playerId`, `keyClasses`, `lensClass`,
+`supplierId`, `dependentId` and `seatOrder` are all still exactly what a player
+needs, and `supplierId` is now what lets the HUD say "your helper's ping".
+
+**Disconnect** *(unchanged, built by SEAT-003)*. The leaver's **key class
+transfers to their supplier**, the player who could already read those settings,
+who can now read and turn them. The leaver's **lens is lost**, so their partner's
+settings become unreadable and must be guessed. With `dial_settings` at 4 that is
+survivable rather than fatal, which suits an all-ages audience.
+
+**Rejoin** inside `disconnect_grace_seconds` restores the seat. After it, the
+player spectates until the next round.
+
+**Edge case:** with n = 3 after a dropout, the ring is a 3-cycle and the finale's
+turners are ring-neighbours (`mechanics.md` §3.2). It is a degraded round, not a
+different game, and the trace says so.

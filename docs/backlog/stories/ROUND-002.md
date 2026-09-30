@@ -44,9 +44,9 @@ values without resolving either:
   6, `min_players_to_continue` 3, `lobby_seconds` 60, `post_round_seconds` 45,
   `season_length_days` 28.
 - **AC-2** — Given the module, when each constant named in `tuning.md` §5 is read,
-  then it holds the specified value: `round_seconds` 480, `round_seconds_min` 360,
+  then it holds the specified value: `round_seconds` 420, `round_seconds_min` 360,
   `round_seconds_max` 600, `per_operation_seconds` 45,
-  `traversal_reserve_seconds` 120, `first_round_within_seconds` 480,
+  `traversal_reserve_seconds` 60, `first_round_within_seconds` 480,
   `disconnect_grace_seconds` 30.
 - **AC-3** — Given the module, when any consumer attempts to assign to a constant
   or add a key, then the attempt fails rather than succeeding silently.
@@ -64,6 +64,26 @@ values without resolving either:
   `hidden_faction_ratio`, no key beginning `vote_`, and no per-player score, rank,
   MMR or ladder constant.
   *Control:* adding `vote_seconds = 30` to the module **must** make this fail.
+
+## Amendments
+
+**A-1 (2026-09-30, landed by ROUND-006).**
+
+- **AC-2**: `round_seconds` said **480** and now says **420**;
+  `traversal_reserve_seconds` said **120** and now says **60**. Every other value
+  in AC-2 is unchanged, and no other criterion changes.
+- **Approved by:** the operator (ryanczhang7). For `round_seconds`, product-brief
+  §0d #18 (2026-09-30). For `traversal_reserve_seconds`, the Game Designer's
+  third-pass re-derivation of `tuning.md` §5 under §0d #19(a), approved by the
+  operator in chat on 2026-09-30, and again in the ROUND-006 session that landed
+  this entry ("approve A-1").
+- **Why:** the values changed because the design changed, not because a test was
+  wrong. `tuning.md` is the specification by its first paragraph, and its third
+  pass moves both rows. `tests/helpers/TuningSpec.luau`'s `ACCEPTANCE` follows
+  this entry in ROUND-006's RED.
+- **Out of scope, overtaken:** the `## Out of scope` bullet "Resolving amendment
+  12's day-1 conflict" is overtaken by §0d #18. The conflict is resolved in the
+  specification (60 + 420 = 480), and ROUND-006 AC-3 pins the promise met.
 
 ## Contract
 
