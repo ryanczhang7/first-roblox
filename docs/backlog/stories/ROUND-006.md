@@ -5,7 +5,7 @@ slug: third-pass-tuning-lands-a-420-s-round-a
 epic: EPIC-01
 type: feature
 status: in-progress
-phase: GREEN
+phase: GATES
 branch: story/ROUND-006-third-pass-tuning-lands-a-420-s-round-a
 depends_on: [ROUND-002, NET-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -358,15 +358,54 @@ check (#8) and the rewritten day-1 test (#9) **must** all go red, naming
 suite is green again. RED cannot run this: the module is still 480 in RED, so
 there is nothing to mutate *back*. Owner: GATES.
 
+*Result (GATES, 2026-09-30, run by the orchestrator):* **as predicted.**
+`bash scripts/mutate.sh src/shared/Tuning.luau 's/round_seconds = 420,/round_seconds = 480,/' -- lune run test`
+
+    FAIL  tests/shared/tuning_spec_test.luau :: AC-4: every constant tuning.md §1 and §5 names is in the module with a matching value
+      round_seconds (docs/wiki/game/tuning.md §5 -> Tuning.round): spec 420, module 480
+    FAIL  tests/shared/tuning_test.luau :: AC-2: every round constant tuning.md §5 names holds its specified value
+      round_seconds: expected 420, module has 480
+    FAIL  tests/shared/tuning_test.luau :: ROUND-006 AC-3: lobby_seconds + round_seconds meets first_round_within_seconds - amendment 12 is closed
+      tuning_test:161: ROUND-006 AC-3: lobby_seconds 60 + round_seconds 480 = 540, which exceeds first_round_within_seconds 480. ...
+    473 passed, 3 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_shared_Tuning.luau.20260930T224256Z.1135948.bak) ===
+
 **D-2. A wrong value, not a revert.** With `traversal_reserve_seconds` set to 61
 (a value no document has ever held), #1 and #8 **must** go red naming
 `traversal_reserve_seconds`, 60 and 61, and the day-1 test **must stay green**
 (it does not read the reserve). This proves the guard catches corruption as well
 as reversion. Owner: GATES.
 
+*Result (GATES, 2026-09-30, run by the orchestrator):* **as predicted.**
+`bash scripts/mutate.sh src/shared/Tuning.luau 's/traversal_reserve_seconds = 60,/traversal_reserve_seconds = 61,/' -- lune run test`
+
+    FAIL  tests/shared/tuning_spec_test.luau :: AC-4: every constant tuning.md §1 and §5 names is in the module with a matching value
+      traversal_reserve_seconds (docs/wiki/game/tuning.md §5 -> Tuning.round): spec 60, module 61
+    FAIL  tests/shared/tuning_test.luau :: AC-2: every round constant tuning.md §5 names holds its specified value
+      traversal_reserve_seconds: expected 60, module has 61
+    pass  tests/shared/tuning_test.luau :: ROUND-006 AC-3: lobby_seconds + round_seconds meets ...
+    474 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_shared_Tuning.luau.20260930T224338Z.1138473.bak) ===
+
 **D-3. The `==` half of AC-3.** With `first_round_within_seconds` set to 540 in
 the module, the day-1 test **must** go red on its `== 480` assertion. So must the
 spec-to-module guard, naming `first_round_within_seconds`. Owner: GATES.
+
+*Result (GATES, 2026-09-30, run by the orchestrator):* **as predicted**, plus
+`tuning_test`'s AC-2 value check, which also reads the constant.
+`bash scripts/mutate.sh src/shared/Tuning.luau 's/first_round_within_seconds = 480,/first_round_within_seconds = 540,/' -- lune run test`
+
+    FAIL  tests/shared/tuning_spec_test.luau :: AC-4: every constant tuning.md §1 and §5 names is in the module with a matching value
+      first_round_within_seconds (docs/wiki/game/tuning.md §5 -> Tuning.round): spec 480, module 540
+    FAIL  tests/shared/tuning_test.luau :: AC-2: every round constant tuning.md §5 names holds its specified value
+      first_round_within_seconds: expected 480, module has 540
+    FAIL  tests/shared/tuning_test.luau :: ROUND-006 AC-3: lobby_seconds + round_seconds meets first_round_within_seconds - amendment 12 is closed
+      tuning_test:150: ROUND-006 AC-3: first_round_within_seconds is 540, A5 says 480. ...
+    473 passed, 3 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_shared_Tuning.luau.20260930T224413Z.1140494.bak) ===
+
+AC-3 failed at line 150, the `== 480` assertion. The sum check alone (540 <= 540)
+would have passed.
 
 ## Model guidance
 
@@ -629,8 +668,22 @@ stale at DONE (Game Designer's, out of scope here).
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run. Do not paste or
-     edit it. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-09-30T22:48:59Z
+    commit: 2b1f066
+    tree:   ccc7253f3b570d7d00ecff66cc1315c76ce8ee2b
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 92)
+    PASS         lint (1s, observed 92, floor 1)
+    PASS         typecheck (2s, observed 17)
+    PASS         unit (44s, observed 476, floor 443)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 57906)
+    PASS         harness (19s, observed 40)
+    UNCONFIGURED mutation
 
 ## Notes
 
@@ -722,3 +775,26 @@ stale at DONE (Game Designer's, out of scope here).
        === mutate: command exited 1; restored (verified byte-for-byte ...) ===
 
    The count matched the prediction.
+6. **`gates.sh --fast` on the GREEN commit `2b1f066`:** format, lint, typecheck,
+   unit (`observed 476, floor 443`), build and harness all PASS. "changes: 2
+   changed source path(s), all exercised by a required gate." GREEN is finished.
+   **For GATES:** the `unit` floor in `project.conf` is 443 and the suite is now
+   476. Decide there whether to raise it (Lead PO's file).
+
+### GATES (2026-09-30)
+
+1. **Freeze:** snapshot taken right after `phase.sh set ROUND-006 GATES`, over the
+   same 13 paths as GREEN.
+2. **D-1, D-2 and D-3 were run before `gates.sh`.** All came out as predicted; the
+   results are pasted under `## Deferred verifications`. `git status -- src` was
+   clean afterwards.
+3. **PO decision: the `unit` floor stays at 443.** Raising it would change a gate
+   (`project.conf`), which is outside this story's scope and would owe a
+   `## Gate probes` entry. AC-5's ">= 471" is shown by the recorded run's
+   `observed` count instead. Raising the floor to the current count is left to
+   the next story that adds tests.
+4. **Full `gates.sh`:** all required gates PASS (6 ran, 3 unconfigured), recorded
+   by the script under `## Gate results`. `unit` observed 476, which meets AC-5's
+   floor of 471. The optional gates (coverage, integration, mutation) are
+   unconfigured, and no `WARN` was raised. Freeze before leaving GATES:
+   `frozen: OK — 13 path(s) unchanged since the snapshot for ROUND-006`
