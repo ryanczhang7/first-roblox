@@ -5,7 +5,7 @@ slug: a-test-that-reads-a-file-outside-the-gat
 epic: 
 type: feature
 status: in-review
-phase: GATES
+phase: REVIEW
 branch: story/HARNESS-022-a-test-that-reads-a-file-outside-the-gat
 depends_on: [HARNESS-021]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -936,19 +936,19 @@ failure is that case and nothing else moved.
 
 <!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
 
-    run:    2026-09-30T20:18:11Z
-    commit: d645e00
+    run:    2026-09-30T20:34:47Z
+    commit: bfe22c1
     tree:   60d95aaa2bca459288dde28bcab412154f4e859d
     result: pass (6 ran, 3 unconfigured, 0 known)
 
     PASS         format (0s, observed 92)
     PASS         lint (1s, observed 92, floor 1)
-    PASS         typecheck (2s, observed 17)
-    PASS         unit (37s, observed 471, floor 443)
+    PASS         typecheck (3s, observed 17)
+    PASS         unit (64s, observed 471, floor 443)
     UNCONFIGURED coverage
     UNCONFIGURED integration
     PASS         build (1s, observed 57746)
-    PASS         harness (13s, observed 40)
+    PASS         harness (19s, observed 40)
     UNCONFIGURED mutation
 
 ## Notes
@@ -1244,3 +1244,33 @@ DV-2 and DV-3 stay with GATES.
 - **Gate probes:** this story adds or changes no `gate |` line, so
   `## Gate probes` owes nothing. The new check lives in `unit`, and DV-1 is its
   observed failure.
+
+### Phase commits cut at REVIEW (Lead PO, 2026-09-30; the user chose this fix)
+
+- **What happened.** The work of RED, GREEN and GATES was first committed as one
+  GATES commit (`d645e00`, never pushed), with a REVIEW commit after it.
+  `check-boundaries.sh` then refused the branch:
+  `FAIL story HARNESS-022: commit d645e00 changed '.claude/tests/classify.test.sh' while the story was in GATES, which may not write tests`
+  (and the same for `project-counters.test.sh`). Its check 3j reads the phase
+  from the **committed** frontmatter, commit by commit. The two suites were
+  written in RED, but they were first committed at GATES. This was the
+  orchestrator's error: HARNESS-021 committed each phase as it went.
+- **The fix, which the user chose over a formal return to RED.** A return to
+  RED would leave `d645e00` in the PR range, so the check would still fail. The
+  two unpushed commits were rebuilt. `2b6c7c6` (**RED**, 14 files) holds
+  everything RED wrote: the test files and both `.claude/tests` suites, with
+  this story's frontmatter at `phase: RED`. `bfe22c1` (**GATES**, 4 files) holds
+  `scripts/classify.sh`, `SKILL.md`, `stack.md` and the story. The RED commit is
+  **cut after the fact**, and its story text is this file's final text with
+  only the phase line changed.
+- **Why this is honest and not a workaround.** The content did not change.
+  `git diff d645e00 bfe22c1 -- . ':!docs/backlog/stories/HARNESS-022.md'` is
+  empty, and the gate tree hash is `60d95aaa2bca459288dde28bcab412154f4e859d`
+  in both records. That these files were written in RED and not after is
+  proved by the freeze snapshots, not by the commits: `frozen: OK — 77 path(s)`
+  at the end of GREEN and again at the end of GATES. Those 77 paths cover every
+  test file and both harness suites, and they were taken immediately after each
+  `phase.sh set`.
+- **Gates re-run** on `bfe22c1`, alone with no toolchain process running:
+  `All required gates passed (6 ran, 3 unconfigured, 0 known)`. `gates.sh`
+  recorded it in `## Gate results`.
