@@ -4,8 +4,8 @@ title: Third-pass tuning lands: a 420 s round, a 60 s reserve, rate limits at th
 slug: third-pass-tuning-lands-a-420-s-round-a
 epic: EPIC-01
 type: feature
-status: in-progress
-phase: GATES
+status: in-review
+phase: REVIEW
 branch: story/ROUND-006-third-pass-tuning-lands-a-420-s-round-a
 depends_on: [ROUND-002, NET-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
