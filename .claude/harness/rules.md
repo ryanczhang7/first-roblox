@@ -118,14 +118,20 @@ record: what each dispatch RESOLVED to goes in underneath it, by name.
 | any | vendor, ignored | installed dependencies, build output, and anything the project's `.gitignore` covers — generated, not authored |
 | `PLANNED` | docs, harness | story is being written |
 | `RED` | test, manifest, docs, harness | failing tests only; source frozen. The manifest is writable for **test** dependencies only — see below |
-| `GREEN` | source, config, manifest, docs, harness | make them pass; tests frozen |
-| `GATES` | source, config, manifest, docs, harness | fix lint/type/build; tests frozen |
+| `GREEN` | source, tooling, config, manifest, docs, harness | make them pass; tests frozen |
+| `GATES` | source, tooling, config, manifest, docs, harness | fix lint/type/build; tests frozen |
 | `REVIEW` | docs, harness | PR is open |
 | `SCAFFOLD` | everything | bootstrap/chore stories only; every source file named in `## Scaffold inventory` |
 | `DONE` | docs, harness | closed |
 
 No active story means no restrictions. The lock protects a cycle in flight; it
 is not a general permission system.
+
+**`tooling` is the harness's own production code** - `scripts/**` and
+`.claude/hooks/**` - split out of `harness` so that it is frozen exactly where
+`source` is, and a harness story cannot write in RED the code that makes its own
+new test pass. It means nothing else `source` means. The rest of `harness`,
+`.claude/tests/**` included, keeps its every-phase permission.
 
 **RED may declare a test dependency, and only a test dependency.** A failing
 test routinely needs one — a temp-directory crate, an async `pytest` plugin, a

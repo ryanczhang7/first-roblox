@@ -617,8 +617,8 @@ code_changed_since() {
 # check-boundaries.sh recomputes it, and the Stop hook asks whether it moved.
 # Three readers of one predicate cannot disagree; three predicates would.
 #
-# Kept: source, test, config, and harness - the hooks, the scripts, the gate
-# manifest, the CI workflow. Dropped: docs (the story file that records the
+# Kept: source, test, config, tooling - the hooks and the scripts - and
+# harness - the gate manifest, the CI workflow, the harness's tests. Dropped: docs (the story file that records the
 # hash cannot be part of it), vendor, ignored, harness runtime state, and
 # harness MARKDOWN. That last one is deliberate. A command file, an agent
 # spec, a skill and CLAUDE.md classify as harness because they live under
@@ -628,7 +628,8 @@ code_changed_since() {
 # recorded gate hash went stale on a change the gates could not have judged.
 gated_stdin() {
   awk -F'\t' '
-    ($1 == "source" || $1 == "test" || $1 == "config" || $1 == "harness") \
+    ($1 == "source" || $1 == "test" || $1 == "config" || $1 == "harness" \
+      || $1 == "tooling") \
       && !($1 == "harness" && $2 ~ /\.md$/) \
       && index($2, ".claude/state/") != 1 { print }'
 }

@@ -64,7 +64,9 @@ resolved and judged, and one it cannot resolve is declined and logged rather
 than waved through; and anything `.gitignore` covers is always writable. If it
 still blocks a command that writes nothing, that is a bug in the guard: add the
 case to `.claude/tests/phase-guard.test.sh` and fix it there, which is the one
-form of "working around the lock" that is allowed.
+form of "working around the lock" that is allowed. That fix is never made from
+inside another story's RED - the guard is `tooling`, frozen there -
+but with the lock cleared (`bash scripts/phase.sh clear`) or as its own story.
 
 ```bash
 bash scripts/phase.sh show                 # what is active, what may be written
