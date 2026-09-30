@@ -306,7 +306,9 @@ lock treats it exactly as before. Only `docs` paths enter this way (never
 vendor, ignored output or harness prompts, however broad the glob), and never
 anything under `docs/backlog/`: the story file records the hash and cannot be
 an input to it. Name each doc a test actually reads, not `docs/**`, or every
-wiki edit stales the record.
+wiki edit stales the record. `bash scripts/classify.sh --gated [PATHSPEC...]`
+lists exactly the hashed set, one path per line, which is what a test's read
+helper asks before it reads (HARNESS-022).
 
 ## WARN must mean something changed
 

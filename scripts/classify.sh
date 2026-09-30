@@ -5,6 +5,7 @@
 #   printf '%s\n' src/main.ts | bash scripts/classify.sh    the same, from stdin
 #   bash scripts/classify.sh --only source PATH...          just the paths, one per line
 #   bash scripts/classify.sh --list source [PATHSPEC...]    every such file in the tree
+#   bash scripts/classify.sh --gated [PATHSPEC...]          every file the gate hash covers
 #
 # Categories come from .claude/harness/paths.conf, plus ignored, source, outside
 # and vendor, which the classifier returns without a rule. `--only` and `--list`
@@ -31,6 +32,17 @@
 # ones would hand the caller build output. Probe artifacts are excluded by their
 # CLASSIFICATION - see the `__probe_` convention in paths.conf - never by
 # whether they happen to be committed yet.
+#
+# --gated answers a different question with the same enumeration: which of those
+# files does the gate tree hash cover (HARNESS-022). A unit test that reads a
+# file outside that set can change what `unit` reports while the recorded gate
+# stamp still matches, so the tests' read helper asks this before every read.
+# It does not decide anything itself: it pipes the enumeration through
+# classify_stdin | gated_stdin, the one definition gate_tree_hash hashes, so the
+# two cannot drift. One pipeline, not the per-path classify loop --list uses,
+# because it runs once per unit run (0.14s against 4s over the whole tree). One
+# stated difference from the hash: a file deleted from the working tree but
+# still in the index is listed here and dropped there; nothing can read it.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -44,8 +56,8 @@ categories() {
 }
 
 usage() {
-  printf 'usage: classify.sh [--only CATEGORY | --list CATEGORY] [PATH...]\n\n' >&2
-  sed -n '5,8p' "$0" | sed 's/^# \{0,1\}//' >&2
+  printf 'usage: classify.sh [--only CATEGORY | --list CATEGORY | --gated] [PATH...]\n\n' >&2
+  sed -n '5,9p' "$0" | sed 's/^# \{0,1\}//' >&2
   printf '\ncategories: %s\n' "$(categories | tr '\n' ' ')" >&2
   exit 2
 }
@@ -54,7 +66,12 @@ MODE=pairs
 WANT=""
 while [ $# -gt 0 ]; do
   case "$1" in
+    --gated)
+      # One mode per call: --gated with --only or --list is a usage error.
+      [ "$MODE" = pairs ] || { printf 'classify: --gated cannot be combined with another mode\n\n' >&2; usage; }
+      MODE=gated; shift ;;
     --only|--list)
+      [ "$MODE" = gated ] && { printf 'classify: --gated cannot be combined with another mode\n\n' >&2; usage; }
       [ "$1" = "--list" ] && MODE=list || MODE=only
       shift
       # A category is required, and an option in its place is a typo rather than
@@ -95,6 +112,19 @@ emit() { # <category> <path>
   esac
   return 0
 }
+
+if [ "$MODE" = gated ]; then
+  # No pathspec means the whole repository. An empty answer is an answer: a
+  # pathspec naming a missing or ignored file prints nothing and exits 0.
+  [ $# -eq 0 ] && set -- .
+  files="$(git ls-files --cached --others --exclude-standard -- "$@")" \
+    || { printf 'classify: git ls-files failed\n' >&2; exit 1; }
+  [ -n "$files" ] || exit 0
+  # pipefail: a failing stage is an error, never a shorter list - the caller
+  # treats absence from this output as "refuse the read".
+  printf '%s\n' "$files" | classify_stdin | gated_stdin | cut -f2- | LC_ALL=C sort -u
+  exit $?
+fi
 
 if [ "$MODE" = list ]; then
   # No pathspec means the whole repository.

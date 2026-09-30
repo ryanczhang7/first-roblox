@@ -224,6 +224,20 @@ catch it independently. The `N == 0` check is still load-bearing, because
 **RED, GREEN and `task test` run `lune run test` directly**, where no evidence
 line applies — and that is precisely where a vanished suite would read as green.
 
+**Tests read files through `tests/helpers/GatedFs.luau`, never `@lune/fs`
+(HARNESS-022).** Every file a unit test reads has to be in the gate tree hash.
+Otherwise an edit to it after a gate run changes what `unit` reports while the
+recorded stamp still matches, which is HARNESS-021's bug. `GatedFs.readFile`
+asks `bash scripts/classify.sh --gated`, the same definition `gate_tree_hash`
+uses, once per run, and asks again for a path it has not seen. A read outside
+the hash raises `read outside the gate hash: <path>` before reading anything.
+The fix is a `covers | unit | <path>` line in `project.conf`, if the gate really
+reads that file. A guard in `tests/shared/gated_fs_test.luau` fails any other
+file under `tests/` that holds a `"@lune/fs"` literal in code. The runner itself
+(`lune/test.luau`) is exempt: it walks `tests/` and reads no file contents. The
+cost is one bash spawn per run, measured at about 1.5s on Windows, where most of
+it is bash startup.
+
 ---
 
 

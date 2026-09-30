@@ -5,7 +5,7 @@ slug: a-test-that-reads-a-file-outside-the-gat
 epic: 
 type: feature
 status: in-review
-phase: RED
+phase: GATES
 branch: story/HARNESS-022-a-test-that-reads-a-file-outside-the-gat
 depends_on: [HARNESS-021]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
