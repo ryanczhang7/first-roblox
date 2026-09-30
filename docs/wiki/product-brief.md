@@ -277,15 +277,12 @@ T10 c, rest default".
 
 ### Consequences for the tree, not yet acted on
 
-- **The third-pass `docs/wiki/game/` specifies what M0–M2's code does not yet
-  carry, and three test files read it.** Against the new `tuning.md`, `lune run test`
-  gives `445 passed, 7 failed`:
-  - `tuning_spec_test` (ROUND-002): `round_seconds` 420, `traversal_reserve_seconds` 60;
-  - `tuning_controls_test`: the same two drifts, through its control modules;
-  - `rate_limit_provenance_test` (NET-003): `signal_rate_limit_seconds` is superseded.
-  The design docs therefore land **with** a story that moves `src/shared/Tuning.luau`,
-  re-points NET-003's provenance, and records `## Amendments` against ROUND-002's
-  and NET-003's frozen criteria. They do not land on `main` alone, red.
+- ~~**The third-pass `docs/wiki/game/` specifies what M0–M2's code does not yet
+  carry, and three test files read it.**~~ **Acted on by ROUND-006** (DONE
+  2026-09-30, PR #41). The third pass landed together with `src/shared/Tuning.luau` at
+  420 / 60 and the tests re-pointed at the preset design. It came with ROUND-002
+  `## Amendments` A-1 and a NET-003 `## Notes` entry; NET-003's criteria did not
+  change. The suite on `main` is `476 passed, 0 failed`.
 - M0–M2 is otherwise valid as built. PhaseMachine, the ring, the projection
   allowlist, the remote pipeline and telemetry all survive. The only other drift is
   stale comments (`Projection.luau`, `RateLimiter.luau:37`, `Tuning.luau`), and

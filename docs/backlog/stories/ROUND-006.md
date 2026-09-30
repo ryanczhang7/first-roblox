@@ -4,8 +4,8 @@ title: Third-pass tuning lands: a 420 s round, a 60 s reserve, rate limits at th
 slug: third-pass-tuning-lands-a-420-s-round-a
 epic: EPIC-01
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/ROUND-006-third-pass-tuning-lands-a-420-s-round-a
 depends_on: [ROUND-002, NET-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -798,3 +798,14 @@ stale at DONE (Game Designer's, out of scope here).
    floor of 471. The optional gates (coverage, integration, mutation) are
    unconfigured, and no `WARN` was raised. Freeze before leaving GATES:
    `frozen: OK — 13 path(s) unchanged since the snapshot for ROUND-006`
+
+### REVIEW → DONE (2026-09-30)
+
+- PR [ryanczhang7/first-roblox#41](https://github.com/ryanczhang7/first-roblox/pull/41)
+  merged at 2026-09-30T22:55:53Z as `7140e26`.
+- **CI timings, read from the first run:** `boundaries` pass in 6 s. `gates` pass
+  in 2 m 58 s against `timeout-minutes: 45`, with `unit` taking 5 s
+  (`476 passed, 0 failed`) and `harness` 14 s. Nothing is near a limit, and no
+  gate went through the *pending CI* path.
+- Product-brief §0d's "Consequences for the tree, not yet acted on" bullet about
+  the three test files is struck through, citing ROUND-006.
