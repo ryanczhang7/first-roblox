@@ -22,15 +22,19 @@
 	and `min_players_to_continue` are counts of seated players.
 
 	`per_operation_seconds` is `(round_seconds - traversal_reserve_seconds) /
-	procedure_length` in the specification. It is carried here as a SPECIFIED
-	VALUE rather than computed, because `procedure_length` is an M3 constant that
-	does not exist yet; when it arrives the relation becomes a test.
+	procedure_length` in the specification: (420 - 60) / 8 = 45. It is carried
+	here as a SPECIFIED VALUE rather than computed, because `procedure_length` is
+	an M3 constant that does not exist yet; when it arrives the relation becomes
+	a test.
 
-	AMENDMENT 12 IS CARRIED, NOT RESOLVED. `lobby_seconds` 60 + `round_seconds`
-	480 = 540 exceeds `first_round_within_seconds` 480, so A5's day-1 promise is
-	violated by the specification itself (product-brief §0c, amendment 12; also
-	`tuning.md` §8, last row). That is an open operator decision. This module
-	transcribes the specified values and a test fails if anybody "fixes" it here.
+	AMENDMENT 12 IS RESOLVED. It recorded that `lobby_seconds` 60 +
+	`round_seconds` 480 = 540 exceeded `first_round_within_seconds` 480, so A5's
+	day-1 promise was violated by the specification itself (product-brief §0c,
+	amendment 12). The operator resolved it by shortening the round, not by
+	moving the promise: `round_seconds` is 420 (product-brief §0d #18), and
+	60 + 420 = 480 meets it exactly. ROUND-006 AC-3 pins the promise met, and
+	pins `first_round_within_seconds` at 480 so that nobody "fixes" a future
+	conflict here by moving it.
 
 	FREEZING. `table.freeze` is applied to `session`, to `round` AND to the module
 	table, so that no consumer can make a round's behaviour depend on load order.
@@ -73,12 +77,12 @@ local session: SessionTuning = table.freeze({
 
 -- `tuning.md` §5. Round timing.
 local round: RoundTuning = table.freeze({
-	round_seconds = 480, -- placeholder: moves together with `procedure_length`
+	round_seconds = 420, -- taste (operator, brief §0d #18)
 	round_seconds_min = 360, -- derived: A3 pillar 5
 	round_seconds_max = 600, -- derived: A3 pillar 5
-	per_operation_seconds = 45, -- derived: (round_seconds - traversal_reserve) / procedure_length
-	traversal_reserve_seconds = 120, -- placeholder: a guess with no observation behind it
-	first_round_within_seconds = 480, -- derived; conflicts with 60 + 480. Amendment 12, open.
+	per_operation_seconds = 45, -- derived: (420 - 60) / 8, i.e. (round - traversal_reserve) / procedure_length
+	traversal_reserve_seconds = 60, -- placeholder: re-derived, third pass (the opening read and walk)
+	first_round_within_seconds = 480, -- derived: A5; met exactly by 60 + 420
 	disconnect_grace_seconds = 30, -- placeholder: replace with observed reconnect times
 })
 

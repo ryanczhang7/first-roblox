@@ -5,7 +5,7 @@ slug: third-pass-tuning-lands-a-420-s-round-a
 epic: EPIC-01
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/ROUND-006-third-pass-tuning-lands-a-420-s-round-a
 depends_on: [ROUND-002, NET-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -694,3 +694,31 @@ stale at DONE (Game Designer's, out of scope here).
    failed only on the precondition "the working tree carries no stray .luau
    files", because RED's edits were uncommitted. RED is committed, as the house
    practice is, and `harness` is re-run on that commit below.
+5. **On the RED commit `15b780a`:** `gates.sh --gate harness` gives `PASS
+   harness (15s, observed 40)`. RED is finished.
+
+### The orchestrator's GREEN acceptance (2026-09-30)
+
+1. **Resolved model:** GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5).
+   Planned `opus`, dispatched with an explicit `model: opus`.
+2. **Diff:** `src/shared/Tuning.luau` (420 / 60, the per-operation comment
+   `(420 - 60) / 8`, amendment 12 rewritten as resolved) and the
+   `src/net/RateLimiter.luau` comment. Nothing else; types and freezing
+   unchanged.
+3. **Freeze:** snapshot taken right after `phase.sh set ROUND-006 GREEN`, over the
+   six RED test files, `TuningFakes.luau`, `tuning_spec_test.luau` and the five
+   game docs. Before leaving GREEN:
+   `frozen: OK — 13 path(s) unchanged since the snapshot for ROUND-006`
+4. **Suite, run independently:** `476 passed, 0 failed` (AC-5 floor 471).
+5. **A discrimination mutation of my own**, not one of D-1 to D-3: `round_seconds`
+   420 to **419**. Predicted: the spec guard and AC-2 red, and AC-3 **green**
+   (60 + 419 = 479 <= 480, so the day-1 check is `<=`, not `==`). Measured:
+
+       FAIL  tests/shared/tuning_spec_test.luau :: AC-4: every constant tuning.md §1 and §5 names is in the module with a matching value
+       FAIL  tests/shared/tuning_test.luau :: AC-2: every round constant tuning.md §5 names holds its specified value
+       round_seconds (docs/wiki/game/tuning.md §5 -> Tuning.round): spec 420, module 419
+       pass  tests/shared/tuning_test.luau :: ROUND-006 AC-3: lobby_seconds + round_seconds meets first_round_within_seconds ...
+       474 passed, 2 failed
+       === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+   The count matched the prediction.
