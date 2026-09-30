@@ -4,8 +4,8 @@ title: Harness source is frozen during RED
 slug: harness-source-is-frozen-during-red
 epic: 
 type: chore
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-020-harness-source-is-frozen-during-red
 depends_on: [HARNESS-009]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -69,7 +69,7 @@ recommended split (below) was applied in a throwaway worktree. There,
 `gate_tree_hash_of 01e502b` gives `e852f851933cb64800209a1cce52af276f8304a1` with
 and without the split. That is exactly the tree `HARNESS-009`'s `## Gate results`
 recorded. With the split, but with `gated_stdin` **not** taught the new category,
-the same call gives `81917885dffda34a78a10d6a1f1454b41274f18c`. At that point
+the same call gives `cd93a70e2b1c3b305ab5cd3fd47759b15b75c137` (amended; see `## Amendments`). At that point
 `scripts/**` and `.claude/hooks/**` have dropped out of the hash. That is AC-6's
 negative control, measured.
 
@@ -127,7 +127,7 @@ measurement. **AC-3 follows the user's answer to Q1** (PO decision 1 in `## Note
   `gate_tree_hash` changes. The same holds for `.claude/hooks/`. The gates' record
   of "the code they ran against" still covers harness code after the split.
   *Negative control:* with `tooling` absent from `gated_stdin`, the hash of
-  `01e502b` measured `81917885…` against `e852f851…`, so a check that passes
+  `01e502b` measured `cd93a70e…` against `e852f851…`, so a check that passes
   either way asserts nothing.
 
 - **AC-7**: Given the fixture's `phases.conf` edited so that `RED`'s row gains
@@ -329,7 +329,7 @@ Two kinds, and RED treats them differently:
 |---|---|---|
 | AC-1, AC-2, AC-4, AC-5 | **Mechanical** | Pin exactly: `category: tooling` and `path:     <p>` in the denial (the `assert_blocked` shape in `_lib.sh:185`), one command per path, with no loops that hide which path failed. |
 | AC-3 | **Mechanical** | One `set_phase` per phase, and every phase named in the AC is covered. |
-| AC-6 | **Settled** | Read the numbers out: `e852f851…` for `01e502b` unchanged, `81917885…` for the broken predicate. Do not re-derive them. Extend the existing `lib.test.sh:329` block ("a hook moves the hash") with "a script moves the hash". |
+| AC-6 | **Settled** | Read the numbers out: `e852f851…` for `01e502b` unchanged, `cd93a70e…` for the broken predicate (amended). Do not re-derive them. Extend the existing `lib.test.sh:329` block ("a hook moves the hash") with "a script moves the hash". |
 | AC-7 | **Mechanical, with a required negative control** | The control is the whole criterion. Edit the *fixture's* `phases.conf` (the one `make_fixture` copied), watch the verdict move, restore, and watch it move back. Use a `cp` restore from `$REPO_ROOT`, not `git checkout`: the CRLF lesson in `HARNESS-009`'s handoff. |
 | AC-8 | **Mechanical** | Use `models_stdout` and `red_row` in `plan.test.sh`, anchored as they already are. |
 
@@ -555,6 +555,34 @@ red, because the fixture copies the mutated real `phases.conf`. Verbatim:
      wrong, record the ORCHESTRATOR'S OWN reproduction of it - different
      inputs, not the subagent's code. That claim is also what an agent says
      when it wants to stop failing. -->
+
+### A-1. AC-6's negative-control hash (2026-09-30, approved by the user)
+
+- **Which:** AC-6, its *Negative control* sentence. The same literal also appears in
+  `## Context` §4 and in the AC-6 row of the oracle-partition table, and all three
+  are corrected.
+- **Said:** "with `tooling` absent from `gated_stdin`, the hash of `01e502b`
+  measured `81917885…` against `e852f851…`".
+- **Says now:** "... measured `cd93a70e…` against `e852f851…`". Nothing else in the
+  criterion changed.
+- **Why:** the planning prototype's number did not reproduce. The RED subagent
+  measured `cd93a70e2b1c3b305ab5cd3fd47759b15b75c137`. The orchestrator
+  reproduced it by a different method, without the subagent's code or any change
+  to a frozen file (`## Notes`, "AC-6's recorded negative-control hash is
+  wrong"): hashing `git ls-tree -r 01e502b` through `classify_stdin | gated_stdin`,
+  with and without the `scripts/` and `.claude/hooks/` paths. The calibration run
+  reproduced `e852f851…` exactly. GREEN measured the same `cd93a70e…` against the
+  shipped `lib.sh` through `mutate.sh`. The criterion's claim, that the broken
+  predicate gives a different hash, held throughout. No test reads the literal.
+- **Approved by:** the user, in chat ("approve the AC-6 amendment"), after PR #38
+  merged. So the correction lands in the DONE commit on `main`.
+
+### REVIEW → DONE (2026-09-30)
+
+PR #38 merged as `faf147f`. CI on `5e0d962`: `boundaries` success (the check ran
+in about 1s), `gates` success. In the gates job, the harness self-test took 2m18s and
+`Run gates` took 27s, against `timeout-minutes: 45`. No limit is within 10 %, and no gate
+reached REVIEW pending CI.
 
 ## Model guidance
 
