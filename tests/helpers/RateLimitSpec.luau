@@ -32,7 +32,7 @@
 	nothing compares nothing, and it must fail loudly rather than pass.
 ]]
 
-local fs = require("@lune/fs")
+local fs = require("./GatedFs")
 
 local RateLimitSpec = {}
 

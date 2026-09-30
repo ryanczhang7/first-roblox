@@ -55,7 +55,17 @@ end
 -- The rows every module control is compared against come from the REAL
 -- specification file, parsed once. That is what makes the baseline below a
 -- measurement rather than a tautology.
-local realRows = TuningSpec.read().rows
+--
+-- Parsed on first use, not at load (HARNESS-022): this was the one read in
+-- tests/ that ran at require time, and through GatedFs a read is a
+-- `classify.sh --gated` spawn, which `lune run test -- --list` must not pay.
+local parsedRows: { TuningSpec.Row }? = nil
+local function realRows(): { TuningSpec.Row }
+	if parsedRows == nil then
+		parsedRows = TuningSpec.read().rows
+	end
+	return parsedRows :: { TuningSpec.Row }
+end
 
 --[[
 	A mini specification, used where the control is about the PARSER rather than
@@ -131,13 +141,13 @@ return {
 		local correct = TuningFakes.correct()
 		accepts(function()
 			TuningSpec.assertNoFindings(
-				TuningSpec.missingOrMismatched(realRows, correct),
+				TuningSpec.missingOrMismatched(realRows(), correct),
 				"AC-4 spec -> module"
 			)
 		end, "a correct module must satisfy AC-4 in the spec -> module direction")
 		accepts(function()
 			TuningSpec.assertNoFindings(
-				TuningSpec.unspecified(realRows, correct),
+				TuningSpec.unspecified(realRows(), correct),
 				"AC-4 module -> spec"
 			)
 		end, "a correct module must satisfy AC-4 in the module -> spec direction")
@@ -164,7 +174,7 @@ return {
 
 		local message = refuses(function()
 			TuningSpec.assertNoFindings(
-				TuningSpec.missingOrMismatched(realRows, drifted),
+				TuningSpec.missingOrMismatched(realRows(), drifted),
 				"AC-4: tuning.md and src/shared/Tuning.luau disagree"
 			)
 		end, "a module whose lobby_seconds is 61 must fail AC-4")
@@ -176,7 +186,7 @@ return {
 		accepts(
 			function()
 				TuningSpec.assertNoFindings(
-					TuningSpec.unspecified(realRows, missing),
+					TuningSpec.unspecified(realRows(), missing),
 					"AC-4 module -> spec"
 				)
 			end,
@@ -185,7 +195,7 @@ return {
 
 		local message = refuses(function()
 			TuningSpec.assertNoFindings(
-				TuningSpec.missingOrMismatched(realRows, missing),
+				TuningSpec.missingOrMismatched(realRows(), missing),
 				"AC-4: tuning.md and src/shared/Tuning.luau disagree"
 			)
 		end, "a module missing season_length_days must fail AC-4")
@@ -200,14 +210,14 @@ return {
 		local extra = TuningFakes.with("round", "warmup_seconds", 15)
 		accepts(function()
 			TuningSpec.assertNoFindings(
-				TuningSpec.missingOrMismatched(realRows, extra),
+				TuningSpec.missingOrMismatched(realRows(), extra),
 				"AC-4 spec -> module"
 			)
 		end, "an EXTRA constant is invisible to the spec -> module direction - that is the trap")
 
 		local message = refuses(function()
 			TuningSpec.assertNoFindings(
-				TuningSpec.unspecified(realRows, extra),
+				TuningSpec.unspecified(realRows(), extra),
 				"AC-4: the module carries constants the specification does not name"
 			)
 		end, "a module carrying warmup_seconds must fail AC-4's other direction")
@@ -218,7 +228,7 @@ return {
 		local stringy = TuningFakes.with("round", "round_seconds", "480")
 		local message = refuses(function()
 			TuningSpec.assertNoFindings(
-				TuningSpec.missingOrMismatched(realRows, stringy),
+				TuningSpec.missingOrMismatched(realRows(), stringy),
 				"AC-4: tuning.md and src/shared/Tuning.luau disagree"
 			)
 		end, 'a module whose round_seconds is the string "480" must fail AC-4')
@@ -308,7 +318,7 @@ return {
 		local voting = TuningFakes.with("session", "vote_seconds", 30)
 		accepts(function()
 			TuningSpec.assertNoFindings(
-				TuningSpec.missingOrMismatched(realRows, voting),
+				TuningSpec.missingOrMismatched(realRows(), voting),
 				"AC-4 spec -> module"
 			)
 		end, "vote_seconds does not disturb the spec -> module direction - AC-5 is what catches it")

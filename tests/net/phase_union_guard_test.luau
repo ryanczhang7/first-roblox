@@ -38,7 +38,7 @@
 	It catches the way the type is written today.
 ]]
 
-local fs = require("@lune/fs")
+local fs = require("../helpers/GatedFs")
 local PhaseUnion = require("../helpers/PhaseUnion")
 local SourceScan = require("../helpers/SourceScan")
 

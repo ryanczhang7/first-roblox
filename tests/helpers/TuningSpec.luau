@@ -35,7 +35,7 @@
 ]]
 
 local Contract = require("./Contract")
-local fs = require("@lune/fs")
+local fs = require("./GatedFs")
 
 local TuningSpec = {}
 

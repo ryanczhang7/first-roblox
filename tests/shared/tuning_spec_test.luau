@@ -29,7 +29,7 @@
 	modules that are wrong on purpose.
 ]]
 
-local fs = require("@lune/fs")
+local fs = require("../helpers/GatedFs")
 local TuningSpec = require("../helpers/TuningSpec")
 
 local loaded, loadResult = pcall(require, "../../src/shared/Tuning")

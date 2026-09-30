@@ -215,4 +215,112 @@ out="$(cls --nonsense src/main.ts 2>&1)"; rc=$?
 assert_eq "an unknown option is a usage error" 2 "$rc"
 assert_contains "and says so" "usage" "$(printf '%s' "$out" | tr 'A-Z' 'a-z')"
 
+# ---------------------------------------------------------------------------
+describe "--gated lists what the gate tree hash covers, and only that (HARNESS-022, AC-1..AC-3)"
+
+# A test helper (tests/helpers/GatedFs.luau) refuses a read of any file that is
+# not in the gate tree hash, and it ASKS this mode rather than re-deriving
+# gated_stdin. So `--gated` has to agree with gate_tree_hash by construction -
+# the same `classify_stdin | gated_stdin` pipeline, fed the `--list`
+# enumeration - and this block pins that agreement from both sides: what it
+# prints moves the hash (AC-2's moving case reads its path OUT of the --gated
+# output, so a mode printing nothing fails it), and what it does not print
+# does not.
+#
+# Its own fixture, committed with the covers line already in project.conf
+# (the oracle partition: write_conf BEFORE the commit), and with one path per
+# category the hash can meet: source, a covered doc, an uncovered doc, a
+# story file, a harness prompt, and an ignored build artefact.
+GFIX="$(make_project_fixture)"
+trap 'rm -rf "$FIX" "$GFIX"' EXIT
+mkdir -p "$GFIX/docs/wiki/game" "$GFIX/docs/backlog/stories" "$GFIX/.claude/commands" "$GFIX/build"
+printf '| roundSeconds | 90 |\n' > "$GFIX/docs/wiki/game/tuning.md"
+printf '# architecture\n'       > "$GFIX/docs/wiki/architecture.md"
+printf -- '---\nid: T-1\nphase: RED\n---\n' > "$GFIX/docs/backlog/stories/T-1.md"
+printf '# x\n'                  > "$GFIX/.claude/commands/x.md"
+printf 'build/\n'              >> "$GFIX/.gitignore"
+printf 'out\n'                  > "$GFIX/build/out.txt"
+write_conf "$GFIX" <<'CONF'
+gate   | unit | required | . | true
+covers | unit | docs/wiki/game/tuning.md
+CONF
+git -C "$GFIX" add -A >/dev/null 2>&1
+git -C "$GFIX" -c user.email=t@t -c user.name=t commit -qm "gated fixture" >/dev/null 2>&1
+
+gcls() { ( cd "$GFIX" && bash scripts/classify.sh "$@" 2>&1 ); }
+# The real lib.sh, pointed at the fixture, in a subshell so that nothing it
+# exports leaks into the `cls` calls above (they resolve their own root).
+gth() { ( cd "$GFIX" && export CLAUDE_PROJECT_DIR="$GFIX" && . "$REPO_ROOT/.claude/hooks/lib.sh" && gate_tree_hash ); }
+# Whole-line count: 1 means printed exactly once as a line of its own, 0 means
+# not printed as a line. A floating `contains` would let `src/main.ts.bak` or a
+# usage message that quotes the path satisfy it.
+lines_eq() { printf '%s\n' "$1" | grep -cx -- "$2"; }
+
+# --- AC-1 -------------------------------------------------------------------
+out="$(gcls --gated)"; rc=$?
+assert_eq "AC-1: --gated exits 0" 0 "$rc"
+assert_eq "AC-1: --gated prints src/main.ts as a whole line"               1 "$(lines_eq "$out" src/main.ts)"
+assert_eq "AC-1: --gated prints the covered docs/wiki/game/tuning.md"      1 "$(lines_eq "$out" docs/wiki/game/tuning.md)"
+assert_eq "AC-1: --gated does not print the uncovered docs/wiki/architecture.md" 0 "$(lines_eq "$out" docs/wiki/architecture.md)"
+assert_eq "AC-1: --gated does not print the story file docs/backlog/stories/T-1.md" 0 "$(lines_eq "$out" docs/backlog/stories/T-1.md)"
+assert_eq "AC-1: --gated does not print the harness prompt .claude/commands/x.md" 0 "$(lines_eq "$out" .claude/commands/x.md)"
+assert_eq "AC-1: --gated does not print the ignored build/out.txt"         0 "$(lines_eq "$out" build/out.txt)"
+# No category column: the output is a file list, which is what GatedFs splits
+# on newlines and compares whole.
+assert_eq "AC-1: --gated prints no category column" 0 "$(printf '%s\n' "$out" | grep -c "$(printf '\t')")"
+
+# Control: the same tree without the covers line. tuning.md drops out and
+# src/main.ts stays, so the covers line is the cause and the mode is not
+# "everything under docs/" or "nothing".
+write_conf "$GFIX" <<'CONF'
+gate   | unit | required | . | true
+CONF
+out="$(gcls --gated)"
+assert_eq "AC-1 control: without the covers line, tuning.md is not printed" 0 "$(lines_eq "$out" docs/wiki/game/tuning.md)"
+assert_eq "AC-1 control: and src/main.ts still is"                          1 "$(lines_eq "$out" src/main.ts)"
+write_conf "$GFIX" <<'CONF'
+gate   | unit | required | . | true
+covers | unit | docs/wiki/game/tuning.md
+CONF
+
+# --- AC-2 -------------------------------------------------------------------
+# Paired through --gated's OWN OUTPUT: the path edited in the moving case is
+# the docs path --gated printed, not a name this test chose. A --gated that
+# lists something the hash ignores fails the moving case; one that omits
+# something the hash counts fails the static case (asserted not printed in
+# AC-1 above, then shown not to move). Each edit has its own before and after.
+out="$(gcls --gated)"
+moving="$(printf '%s\n' "$out" | grep '^docs/' | head -n 1)"
+assert_eq "AC-2: --gated printed exactly one docs path, tuning.md, to edit" "docs/wiki/game/tuning.md" "$moving"
+h0="$(gth)"
+case "$h0" in unavailable|'') _bad "AC-2: gate_tree_hash is available on the fixture" "got: '$h0'" ;; *) _ok "AC-2: gate_tree_hash is available on the fixture" ;; esac
+if [ -z "$moving" ]; then
+  _bad "AC-2: editing the doc --gated printed moves the hash" "--gated printed no docs path, so there was nothing to edit; its output was: $out"
+else
+  printf '| roundSeconds | 91 |\n' > "$GFIX/$moving"
+  h1="$(gth)"
+  if [ "$h1" = "$h0" ]; then _bad "AC-2: editing the doc --gated printed moves the hash" "unchanged: $h0"; else _ok "AC-2: editing the doc --gated printed moves the hash"; fi
+fi
+h2="$(gth)"
+printf '# architecture, reworded\n' > "$GFIX/docs/wiki/architecture.md"
+assert_eq "AC-2: editing the doc --gated did not print leaves the hash unchanged" "$h2" "$(gth)"
+
+# --- AC-3 -------------------------------------------------------------------
+out="$(gcls --gated docs)"
+assert_eq "AC-3: --gated docs prints tuning.md"          1 "$(lines_eq "$out" docs/wiki/game/tuning.md)"
+assert_eq "AC-3: --gated docs does not print src/main.ts" 0 "$(lines_eq "$out" src/main.ts)"
+out="$(gcls --gated docs/wiki/game/nope.md)"; rc=$?
+assert_eq "AC-3: --gated on a path that does not exist exits 0" 0 "$rc"
+assert_eq "AC-3: and prints nothing" "" "$out"
+# A pathspec narrows the QUESTION, not the answer: naming an ignored file
+# does not make it gated.
+out="$(gcls --gated build/out.txt)"; rc=$?
+assert_eq "AC-3: --gated build/out.txt (ignored) exits 0" 0 "$rc"
+assert_eq "AC-3: and prints nothing for the ignored file" "" "$out"
+# An untracked, non-ignored file written after the commit - the path GatedFs
+# takes on a miss, for a probe written mid-run.
+printf 'export const late = 1\n' > "$GFIX/src/late.ts"
+out="$(gcls --gated src/late.ts)"
+assert_eq "AC-3: an untracked src/late.ts created after the commit is printed by --gated src/late.ts" 1 "$(lines_eq "$out" src/late.ts)"
+
 summary "classify"

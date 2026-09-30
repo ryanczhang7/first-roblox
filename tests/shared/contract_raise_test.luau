@@ -31,7 +31,7 @@ local RingStubs = require("../helpers/RingStubs")
 local SourceScan = require("../helpers/SourceScan")
 local TelemetryContract = require("../helpers/TelemetryContract")
 local TelemetryStubs = require("../helpers/TelemetryStubs")
-local fs = require("@lune/fs")
+local fs = require("../helpers/GatedFs")
 
 local loaded, loadResult = pcall(require, "../helpers/Contract")
 
