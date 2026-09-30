@@ -253,14 +253,44 @@ under-9s without parental consent.
    removal"). A clarifying question on the Developer Forum is cheap, but it would
    not change the audience conflict in 1(b).
 
+### The redesign's taste answers, and the compliance checks (2026-09-30)
+
+The Game Designer redesigned the channel under #19(a) (`docs/wiki/game/`, third
+pass). The design, in one line: presets carry intent, pings carry reference, and
+the world carries facts. The operator answered its taste questions in chat: "T16 a,
+T10 c, rest default".
+
+| # | Decision | Status |
+|---|---|---|
+| 20 | **T16 = (a).** The retention layer is choreography plus generated variety. The second pass's "a group invents a private language" is gone, because the preset guidelines forbid it. Amendment 8 (genre B) stands. | Decided |
+| 21 | **T10 = (c).** Turn cues are private, plus a public progress bar that shows a count of steps committed and nothing else (`mechanics.md` §3.2). | Decided |
+| 22 | **Every other taste question takes its provisional default.** T11: no ping budget. T12: the 10-word preset list. T13: a failed turn says why. T14: the trace names steps, not players. T15: permanent blackout (tone still open, shared with the Lead Designer). T17: no harder band in v1. T18: target win rate 0.45 for regular groups and 0.6 for a first session. T19: the youngest player the floor is designed for is 7. | Decided |
+| 16 | **Superseded by the redesign.** A preset must "stand alone", so presets now carry their sender's position. Pings are positional by nature. What #16 protected, the invention of spatial convention, was removed by #19. | Superseded |
+| 17 | **Superseded by the redesign.** There is no ephemeral stream of facts to recall. Pings persist, and the floor carries no memory load. | Superseded |
+
+**Compliance assumptions (`mechanics.md` §4.6), as checked by the Lead PO:**
+
+- **CA-3, "a preset shown with its sender's position is still one standalone preset": supported.** The guideline's own allowed examples refer to place and context ("Defending this area", "Enemy nearby").
+- **CA-1, "a text-free ping is not a preset": cannot be confirmed.** No published Roblox page addresses pings, and no staff answer was found. Forum reports that gestures and animations are accepted are suggestive, not authoritative. **Lead PO decision (#23): design to the stricter reading on rate.** `ping_rate_limit_seconds` = 10, and presets plus pings stay ≤ 12 (the design has 11). This costs nothing, because `INV_traversal` is already computed at 10 s.
+- **The remaining CA-1 lever, `ping_settings_live_only`, stays false (#24).** The operator answered T20 = (a) on 2026-09-30: a ping may target any setting in range. Anticipation, pinging a machine before it is live, stays part of the skill ceiling. The residual cipher risk is accepted, bounded by the 10 s rate, one active ping per player and 4-setting dials. `playtest.md: P-S` is the protocol that would reopen it.
+- **Implementation note for M3.** Forum reports say that since 2026-01-09 the sanctioned way to build a preset wheel is TextChatService *system messages*. Engineering must confirm this against the API before M3's channel story.
+
 ### Consequences for the tree, not yet acted on
 
-- `docs/wiki/game/tuning.md` still carries `round_seconds` 480, `difficulty_band`
-  (c) and no recall constant. That is the Game Designer's file, and it waits on
-  the #19 redesign.
-- `src/shared/Tuning.luau` still carries `round_seconds` 480, and its comment says
-  amendment 12 is "carried, not resolved". Changing it is a code change pinned by
-  ROUND-002's tests, so it needs its own story.
+- **The third-pass `docs/wiki/game/` specifies what M0–M2's code does not yet
+  carry, and three test files read it.** Against the new `tuning.md`, `lune run test`
+  gives `445 passed, 7 failed`:
+  - `tuning_spec_test` (ROUND-002): `round_seconds` 420, `traversal_reserve_seconds` 60;
+  - `tuning_controls_test`: the same two drifts, through its control modules;
+  - `rate_limit_provenance_test` (NET-003): `signal_rate_limit_seconds` is superseded.
+  The design docs therefore land **with** a story that moves `src/shared/Tuning.luau`,
+  re-points NET-003's provenance, and records `## Amendments` against ROUND-002's
+  and NET-003's frozen criteria. They do not land on `main` alone, red.
+- M0–M2 is otherwise valid as built. PhaseMachine, the ring, the projection
+  allowlist, the remote pipeline and telemetry all survive. The only other drift is
+  stale comments (`Projection.luau`, `RateLimiter.luau:37`, `Tuning.luau`), and
+  `architecture.md` §0's M3 list, which describes the superseded channel.
+  **`/plan-product` must be re-run for M3.**
 
 ---
 
