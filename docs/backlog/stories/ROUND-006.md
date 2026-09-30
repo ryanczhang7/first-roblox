@@ -4,8 +4,8 @@ title: Third-pass tuning lands: a 420 s round, a 60 s reserve, rate limits at th
 slug: third-pass-tuning-lands-a-420-s-round-a
 epic: EPIC-01
 type: feature
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/ROUND-006-third-pass-tuning-lands-a-420-s-round-a
 depends_on: [ROUND-002, NET-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -400,6 +400,14 @@ on.
 
 - PLANNED - `lead-po` - `claude-opus-5-5` (Opus 5.5, from the session's own model
   identification; no override was reported to this dispatch).
+- RED - `test-developer` - `claude-opus-5-5` (Opus 5.5, from the session's own
+  model identification). Planned `fable`; it ran on Opus 5.5, so this RED is
+  not evidence about the weaker model. Whether a session setting or an override
+  won is not visible from inside the dispatch.
+  *Orchestrator:* the cause is known from outside it. The dispatch passed no
+  `model` override, so the agent definition's `model: opus`
+  (`.claude/agents/test-developer.md:5`) won over the plan's `fable` row. That
+  was an omission in the dispatch, not a decision.
 
 <!-- One line per dispatch, as it happened: phase, agent, the model that
      actually ran, and — if a phase was planned for one model and ran on
@@ -434,22 +442,190 @@ on.
 
 ## Test plan
 
-<!-- Filled by the Test Developer during RED: which tests, at which level,
-     and which AC each one covers. -->
+All unit level (`lune run test`, gate `unit`). No new `.luau` file.
+
+| AC | Test (file :: name) | Kind |
+|---|---|---|
+| AC-1 | `tuning_test` :: "AC-2: every round constant tuning.md §5 names holds its specified value" (unchanged; `ACCEPTANCE` now 420 / 60) | demand, red |
+| AC-1 | `tuning_test` :: "AC-1: every session constant ..." and both "exposes no constant" tests (unchanged) | regression, green |
+| AC-1, AC-2 | `tuning_spec_test` :: "AC-4: every constant tuning.md §1 and §5 names is in the module with a matching value" (unchanged) | demand, red |
+| AC-2 | `tuning_spec_test` :: "AC-4: tuning.md §1 and §5 still hold the values ROUND-002's criteria freeze" (unchanged file; `ACCEPTANCE` moved under A-1) | green on arrival, earned by P1 |
+| AC-2 | `tuning_spec_test` liveness: row floor 13, expected names, no unread row (unchanged) | green, still passing |
+| AC-2 | `tuning_controls_test` :: baseline, "a constant that is not a number" (fake `"420"`, needle `spec 420`), "a constant the specification does not name", "vote_seconds = 30" | green on arrival, earned by P1 |
+| AC-3 | `tuning_test` :: "ROUND-006 AC-3: lobby_seconds + round_seconds meets first_round_within_seconds - amendment 12 is closed" (rewritten from the amendment-12-open test) | demand, red; `== 480` half probed (P5) |
+| AC-4 | `rate_limit_provenance_test` :: "AC-4: the guard checks both live rate constants and the superseded one, by name" | pins `NAMES` / `SUPERSEDED` |
+| AC-4 | `rate_limit_provenance_test` :: "AC-4: tuning.md fixes preset_rate_limit_seconds ... at or above the preset guideline's 10 s" | guard, earned by P3 |
+| AC-4 | `rate_limit_provenance_test` :: "AC-4: tuning.md fixes ping_rate_limit_seconds ... at or above the preset guideline's 10 s" | guard, earned by P2 |
+| AC-4 | `rate_limit_provenance_test` :: "AC-4: tuning.md has no live table row for the superseded signal_rate_limit_seconds ..." | guard, earned by P4 |
+| AC-4 | `rate_limit_provenance_test` :: 7 fixture controls: neither row (both names), two rows, `10 s`, ping at 3, floor inclusive (10 / 11 pass, 9.5 reported), longer name, live superseded row vs struck-through | controls, executed |
+| AC-5 | the whole suite: 473 passed + 3 failed = 476 today, >= 471 | mechanical |
 
 ## Handoff: RED -> GREEN
 
-<!-- Filled by the Test Developer at the end of RED. This is the ONLY channel
-     to the Feature Developer, whose context is fresh. Must contain:
-       * the exact command that runs the new tests
-       * the failure output, and why it is the RIGHT failure
-       * every file touched, and which AC each test covers
-       * the EXPORT SHAPE the tests already pin
-       * any test that passed on arrival, and the probe or negative control
-         that earns it (P1, P2, P3 above - paste the output)
-       * the EXPECTED VALUE of every negative control
-       * confirmation that the caller list in the Contract was re-checked
-       * anything discovered that changes the approach -->
+**Command:** `lune run test` (about 50 s). Gate: `unit`.
+
+**Result at the end of RED:** `473 passed, 3 failed` (was 464 / 7; +5 is the
+provenance file going from 6 tests to 11). Verbatim:
+
+```
+  FAIL  tests/shared/tuning_spec_test.luau :: AC-4: every constant tuning.md §1 and §5 names is in the module with a matching value
+        AC-4: tuning.md and src/shared/Tuning.luau disagree:
+  round_seconds (docs/wiki/game/tuning.md §5 -> Tuning.round): spec 420, module 480
+  traversal_reserve_seconds (docs/wiki/game/tuning.md §5 -> Tuning.round): spec 60, module 120
+  FAIL  tests/shared/tuning_test.luau :: AC-2: every round constant tuning.md §5 names holds its specified value
+        C:\Users\ryanc\Projects\first-roblox\tests\shared\tuning_test:54: AC-2: Tuning.round disagrees with tuning.md §5:
+  round_seconds: expected 420, module has 480
+  traversal_reserve_seconds: expected 60, module has 120
+  FAIL  tests/shared/tuning_test.luau :: ROUND-006 AC-3: lobby_seconds + round_seconds meets first_round_within_seconds - amendment 12 is closed
+        C:\Users\ryanc\Projects\first-roblox\tests\shared\tuning_test:161: ROUND-006 AC-3: lobby_seconds 60 + round_seconds 480 = 540, which exceeds first_round_within_seconds 480. A5's day-1 promise is broken; amendment 12 was closed by §0d #18 (round_seconds 420).
+473 passed, 3 failed
+```
+
+Why these are the right failures: exactly the Contract's #1, #8 and rewritten
+#9, and every one names the module's 480 / 120 against 420 / 60 (AC-1's
+control, satisfied as stated: `round_seconds` with 420 and 480,
+`traversal_reserve_seconds` with 60 and 120; AC-3's control: 540 and 480).
+No import error: `Tuning.luau` loads and every assertion ran.
+
+**What GREEN does:** the Contract's `src/shared/Tuning.luau` block (values
+420 / 60, header rewrite, `per_operation_seconds` comment `(420 - 60) / 8`) and
+the `RateLimiter.luau:36-38` comment. Nothing in `tests/` needs anything else.
+After that the suite should be 476 / 0.
+
+**Files touched (all tests, RED):**
+
+| File | Change | AC |
+|---|---|---|
+| `tests/helpers/TuningSpec.luau` | `ACCEPTANCE.round.round_seconds` 420, `traversal_reserve_seconds` 60; header names ROUND-002 A-1 / ROUND-006 | AC-1, AC-2 |
+| `tests/shared/tuning_test.luau` | amendment-12-open test rewritten to ROUND-006 AC-3 (`== 480`, then `sum <= within`, message names 60, 480/420, the sum and 480) | AC-3 |
+| `tests/shared/tuning_controls_test.luau` | wrong-type control: fake `"420"`, needle `"spec 420"` | AC-2 |
+| `tests/helpers/RateLimitSpec.luau` | the pinned shape below | AC-4 |
+| `tests/net/rate_limit_provenance_test.luau` | rewritten around AC-4; no longer requires `RateContract` | AC-4 |
+| `tests/helpers/RateContract.luau` | header comments only (the ORACLE PARTITION paragraph and the `MIN_INTERVAL_SECONDS` block): 1.5 is a fixture interval; value unchanged | - |
+
+`tests/helpers/RateStubs.luau` was **not** touched: re-read, it makes no
+provenance claim for 1.5 (its only mention is `DEFAULT_INTERVAL`, "the one every
+declaring remote in the suite uses"), so there was nothing to correct.
+
+**Export shape pinned (fact, tests import it):** all test helpers, no production
+export changes. `tests/helpers/RateLimitSpec.luau`:
+`SPEC_PATH`, `NAMES = { "preset_rate_limit_seconds", "ping_rate_limit_seconds" }`
+(order pinned), `SUPERSEDED = "signal_rate_limit_seconds"`, `FLOOR_SECONDS = 10`
+(pinned by the guard), `rowsNaming(text, name) -> { Row }` (unchanged),
+`violations(rows, name, floor) -> { string }`, `supersededViolations(text) -> { string }`,
+`read()`, `describe()`; `NAME` removed. Messages pinned by needles:
+`no table row has \`<name>\` in its first cell`, `the extraction matched nothing`,
+`N table rows name \`<name>\` (lines a, b)`, `the value cell for \`<name>\` is "<cell>", which is not a number`,
+`\`<name>\` is <v> in the document, below the floor of <floor>`, `preset guideline`,
+`<path>:<line> §<n>`, `a live table row has \`signal_rate_limit_seconds\` in its first cell, but it is a superseded constant`.
+Production: `Tuning.round.{round_seconds, traversal_reserve_seconds, first_round_within_seconds}`
+and `Tuning.session.lobby_seconds` as numbers; the types are not constrained further.
+Not constrained: comment wording in `Tuning.luau`, key order, freezing mechanism.
+
+**Green on arrival, and what earns each.** All probes via
+`bash scripts/mutate.sh docs/wiki/game/tuning.md '<expr>' -- lune run test`,
+restored and `cmp`-verified by the script. The baseline on each run includes the
+3 demand failures above; only the deltas are listed.
+
+- **P1** (`158s/^| \`round_seconds\` | 420 |/| \`round_seconds\` | 480 |/`) - **as predicted.** `468 passed, 8 failed`:
+  ```
+  FAIL  tests/shared/tuning_controls_test.luau :: AC-4 control: a constant that is not a number fails and is named
+        ...tuning_controls_test:48: AC-4's wrong-type control: the failure does not mention "spec 420".
+  message: ... round_seconds (docs/wiki/game/tuning.md §5 -> Tuning.round): spec 480, module string
+  FAIL  tests/shared/tuning_controls_test.luau :: AC-4 control: a constant the specification does not name fails and is named
+  FAIL  tests/shared/tuning_controls_test.luau :: AC-5 control: vote_seconds = 30 fails and is named
+  FAIL  tests/shared/tuning_controls_test.luau :: baseline: a correct module passes every AC-4 and AC-5 check against the real tuning.md
+        ... but it failed with: AC-4 spec -> module: round_seconds (docs/wiki/game/tuning.md §5 -> Tuning.round): spec 480, module 420
+  FAIL  tests/shared/tuning_spec_test.luau :: AC-4: every constant tuning.md §1 and §5 names is in the module with a matching value
+        AC-4: tuning.md and src/shared/Tuning.luau disagree:
+  traversal_reserve_seconds (docs/wiki/game/tuning.md §5 -> Tuning.round): spec 60, module 120
+  FAIL  tests/shared/tuning_spec_test.luau :: AC-4: tuning.md §1 and §5 still hold the values ROUND-002's criteria freeze
+  round_seconds: ROUND-002 freezes it at 420, docs/wiki/game/tuning.md:158 now says 480
+  === mutate: command exited 1; restored (verified byte-for-byte against .../docs_wiki_game_tuning.md.20260930T215950Z.1033498.bak) ===
+  ```
+  #1 no longer lists `round_seconds`, only `traversal_reserve_seconds`, exactly as predicted.
+- **P2** (`123s/^| \`ping_rate_limit_seconds\` | 10 |/| \`ping_rate_limit_seconds\` | 3 |/`) - **as predicted.** `472 passed, 4 failed`:
+  ```
+  FAIL  tests/net/rate_limit_provenance_test.luau :: AC-4: tuning.md fixes ping_rate_limit_seconds in exactly one table row, as a bare number, at or above the preset guideline's 10 s
+        ...rate_limit_provenance_test:82: AC-4: docs/wiki/game/tuning.md does not fix `ping_rate_limit_seconds` at or above the preset guideline's floor of 10:
+  docs/wiki/game/tuning.md:123 §3: `ping_rate_limit_seconds` is 3 in the document, below the floor of 10 - the preset guideline's "10 seconds per send" (brief §0d #19; #23 for pings) is a compliance requirement, not tuning
+  pass  ... AC-4: tuning.md fixes preset_rate_limit_seconds ...
+  pass  ... AC-4: tuning.md has no live table row for the superseded signal_rate_limit_seconds ...
+  === mutate: command exited 1; restored (verified byte-for-byte against .../docs_wiki_game_tuning.md.20260930T220043Z.1035203.bak) ===
+  ```
+- **P3** (`119s/^| \`preset_rate_limit_seconds\` |/| \`preset_rate_limit_secs\` |/`) - **as predicted, plus one.** `471 passed, 5 failed`:
+  ```
+  FAIL  tests/net/rate_limit_provenance_test.luau :: AC-4: tuning.md fixes preset_rate_limit_seconds in exactly one table row, as a bare number, at or above the preset guideline's 10 s
+  docs/wiki/game/tuning.md: no table row has `preset_rate_limit_seconds` in its first cell - the extraction matched nothing, and a value compared against nothing would pass
+  FAIL  tests/net/rate_limit_provenance_test.luau :: AC-4: tuning.md has no live table row for the superseded signal_rate_limit_seconds - the struck-through §9 record is not one
+        ...rate_limit_provenance_test:122: docs/wiki/game/tuning.md read without a preset_rate_limit_seconds row; the superseded check would be vacuous
+  === mutate: command exited 1; restored (verified byte-for-byte against .../docs_wiki_game_tuning.md.20260930T220124Z.1036705.bak) ===
+  ```
+  The extra red is deliberate: the superseded guard carries a non-vacuity step
+  (the document it read must hold a live preset row), which the Contract did not
+  name. The ping guard stayed green.
+- **P4** (not in the Contract; earns the superseded guard) - un-strike §9's row,
+  `250s/^| ~~\`signal_rate_limit_seconds\`~~ |/| \`signal_rate_limit_seconds\` |/`. `472 passed, 4 failed`:
+  ```
+  FAIL  tests/net/rate_limit_provenance_test.luau :: AC-4: tuning.md has no live table row for the superseded signal_rate_limit_seconds - the struck-through §9 record is not one
+  docs/wiki/game/tuning.md:250 §9: a live table row has `signal_rate_limit_seconds` in its first cell, but it is a superseded constant (brief §0d #19, tuning.md §9) - replaced by `preset_rate_limit_seconds` and `ping_rate_limit_seconds`
+  === mutate: command exited 1; restored (verified byte-for-byte against .../docs_wiki_game_tuning.md.20260930T220214Z.1038310.bak) ===
+  ```
+- **P5** (not in the Contract; the `== 480` half of AC-3, observable in RED
+  because the module is the one being mutated) -
+  `bash scripts/mutate.sh src/shared/Tuning.luau 's/first_round_within_seconds = 480/first_round_within_seconds = 540/' -- lune run test`.
+  `473 passed, 3 failed`; the AC-3 test now fails on its **first** assertion, where
+  the sum half alone (540 <= 540) would have passed:
+  ```
+  FAIL  tests/shared/tuning_test.luau :: ROUND-006 AC-3: lobby_seconds + round_seconds meets first_round_within_seconds - amendment 12 is closed
+        ...tuning_test:150: ROUND-006 AC-3: first_round_within_seconds is 540, A5 says 480. The day-1 promise is met by shortening the round, not by moving the promise.
+  FAIL  tests/shared/tuning_test.luau :: AC-2: ... first_round_within_seconds: expected 480, module has 540
+  === mutate: command exited 1; restored (verified byte-for-byte against .../src_shared_Tuning.luau.20260930T220302Z.1039905.bak) ===
+  ```
+  This is not D-3 (which runs against the GREEN module at 420); it shows the
+  assertion exists and fires.
+
+**Negative controls - expected and measured.** Unlike an ordinary RED, nothing
+here failed at import: `RateLimitSpec` is a test helper and exists, so every
+control below **executed** in this RED run and passed; the measured column is
+from `lune run test`, not a side harness. The AC-2 controls (`tuning_controls_test`)
+are driven by `TuningFakes`, also executed.
+
+| Control | Threshold / rule | Input | Expected | Measured |
+|---|---|---|---|---|
+| neither rate row | exactly one row | fixture without either | 1 violation per name, "matched nothing" | 1 each, pass |
+| two ping rows | exactly one row | 2 x ping at 10 | 1 violation, "(lines 6, 7)" | pass |
+| unit in value | numeric cell | `10 s` | "not a number", §3 | pass |
+| ping below floor | `value >= 10` | 3 | names ping, 3, 10, "preset guideline"; preset at 10 not reported | pass |
+| floor boundary | `value >= 10` | 10 / 11 / 9.5 | 0 / 0 / 1 violation | pass |
+| longer name | first cell exact | `ping_rate_limit_seconds_v2` = 3 + real row | 1 row at line 7 §3, value 10, 0 violations | pass |
+| superseded | bare backticked first cell | struck-through only / plus live row | 0 / 1 violation at `:9 §3` | pass |
+| AC-3 at module 480 | `60 + rs <= 480` | module as is | fail naming 540, 480 | fails, names 60, 480, 540, 480 |
+| AC-3 at 540 promise | `fr == 480` | P5 | fail on `== 480` | fails at `:150` |
+
+**Deferred verifications D-1, D-2, D-3: declined.** They are owned by GATES and
+need the GREEN module (420 / 60) to mutate back or corrupt; in RED there is
+nothing built to break. I did not run them and make no claim about them. (P5
+above is a related but different observation, against today's module.)
+
+**Caller list re-checked** against the tree with
+`rg -n "round_seconds|traversal_reserve|per_operation_seconds|first_round_within|shared/Tuning|ACCEPTANCE|RateLimitSpec\.|MIN_INTERVAL_SECONDS" src tests lune`:
+it matches the Contract (`RoundConfig.luau:50`, `round_config_test` value-agnostic,
+`RingContract.luau:762` for `disconnect_grace_seconds`, `TuningFakes.luau:41-42`,
+7 `MIN_INTERVAL_SECONDS` uses in `RateContract` and 8 in `RejectionContract`,
+untouched). `RateLimitSpec.NAME` has no remaining caller.
+
+**`gates.sh --fast` at the end of RED:** format PASS (after `stylua` on the three
+rewritten files), lint PASS, typecheck PASS, build PASS, **unit FAIL** (the 3
+demand failures above, 42 s), **harness FAIL** on one assertion only:
+`project-counters` "the working tree carries no stray .luau files" - it lists
+`git status --porcelain` under `tests/`, i.e. RED's uncommitted edits. It clears
+once RED is committed; it is not a test defect.
+
+**Anything that changes the approach:** none for GREEN. Two things for the
+orchestrator: RateStubs needed no edit (above); and `tuning.md`'s header table
+row 39 and §8's "two red tests on landing" row describe this transition and go
+stale at DONE (Game Designer's, out of scope here).
 
 ## Gate results
 
@@ -490,3 +666,31 @@ on.
      gap.
 - **At DONE**, the Lead PO strikes product-brief §0d's "Consequences for the tree,
   not yet acted on" bullet about the three test files, and cites ROUND-006.
+
+### The orchestrator's RED acceptance (2026-09-30)
+
+1. **Suite, run independently:** `lune run test` gives `473 passed, 3 failed`.
+   The three are exactly the predicted demand: `tuning_spec_test` spec -> module
+   (`round_seconds ... spec 420, module 480`, `traversal_reserve_seconds ... spec
+   60, module 120`), `tuning_test` AC-2 (same two values), and the rewritten
+   ROUND-006 AC-3 (`lobby_seconds 60 + round_seconds 480 = 540, which exceeds
+   first_round_within_seconds 480`). No import error; every assertion ran.
+2. **An independent probe, not a re-run of P2:** the ping row set to **9**, just
+   below the floor (the test-developer used 3), through `mutate.sh`:
+
+       FAIL  tests/net/rate_limit_provenance_test.luau :: AC-4: tuning.md fixes ping_rate_limit_seconds in exactly one table row, as a bare number, at or above the preset guideline's 10 s
+       docs/wiki/game/tuning.md:123 §3: `ping_rate_limit_seconds` is 9 in the document, below the floor of 10 - ...
+       472 passed, 4 failed
+       === mutate: command exited 1; restored (verified byte-for-byte against .../docs_wiki_game_tuning.md.20260930T221321Z.1062351.bak) ===
+
+   One extra red, the lone assertion predicted, and the preset and superseded
+   guards stayed green. The file was restored.
+3. **Frozen:** the game docs, `src/shared/Tuning.luau` and
+   `src/net/RateLimiter.luau` were snapshotted before dispatch (the lock does not
+   freeze docs in RED). `frozen: OK — 7 path(s) unchanged since the snapshot for
+   ROUND-006`, after both the test-developer's probes and mine.
+4. **`gates.sh --fast`:** format, lint, typecheck and build PASS; `unit` FAILS
+   with exactly the three demand failures above, which is admissible. `harness`
+   failed only on the precondition "the working tree carries no stray .luau
+   files", because RED's edits were uncommitted. RED is committed, as the house
+   practice is, and `harness` is re-run on that commit below.

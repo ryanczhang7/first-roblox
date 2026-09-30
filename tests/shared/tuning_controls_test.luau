@@ -225,14 +225,14 @@ return {
 	end,
 
 	["AC-4 control: a constant that is not a number fails and is named"] = function()
-		local stringy = TuningFakes.with("round", "round_seconds", "480")
+		local stringy = TuningFakes.with("round", "round_seconds", "420")
 		local message = refuses(function()
 			TuningSpec.assertNoFindings(
 				TuningSpec.missingOrMismatched(realRows(), stringy),
 				"AC-4: tuning.md and src/shared/Tuning.luau disagree"
 			)
-		end, 'a module whose round_seconds is the string "480" must fail AC-4')
-		saysAll(message, { "round_seconds", "spec 480", "string" }, "AC-4's wrong-type control")
+		end, 'a module whose round_seconds is the string "420" must fail AC-4')
+		saysAll(message, { "round_seconds", "spec 420", "string" }, "AC-4's wrong-type control")
 	end,
 
 	--[[

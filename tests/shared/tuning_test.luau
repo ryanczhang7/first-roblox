@@ -132,28 +132,37 @@ return {
 	end,
 
 	--[[
-		The conflict amendment 12 records, pinned so that nobody closes it here.
+		ROUND-006 AC-3: A5's day-1 promise is MET, and amendment 12 is closed.
 
-		`lobby_seconds` 60 + `round_seconds` 480 exceeds `first_round_within_seconds`
-		480, so A5's day-1 promise is violated BY THE SPECIFICATION. That is an
-		open operator decision (`## Out of scope`), and the failure mode this test
-		guards against is a well-meaning implementer "fixing" it - setting
-		`first_round_within_seconds` to 540, or shaving the lobby - which would
-		make the module disagree with the spec and make the decision look taken.
+		Until ROUND-006 this test pinned the conflict OPEN (60 + 480 > 480). The
+		operator closed it with product-brief §0d #18 (`round_seconds` 420), so
+		60 + 420 = 480 meets `first_round_within_seconds` exactly. The comparison
+		is `<=`, A5's own: meeting the promise with slack is still meeting it.
+
+		The `== 480` half is what catches the other way to make the inequality
+		hold - raising `first_round_within_seconds` to 540 - which would satisfy
+		`<=` while breaking the promise. 480 is A5's number (eight minutes), read
+		out, not derived here.
 	]]
-	["AC-2: the day-1 conflict amendment 12 records is carried, not resolved"] = function()
+	["ROUND-006 AC-3: lobby_seconds + round_seconds meets first_round_within_seconds - amendment 12 is closed"] = function()
 		local round = Tuning().round
 		local session = Tuning().session
 		assert(
 			round.first_round_within_seconds == 480,
-			`AC-2: first_round_within_seconds is {tostring(round.first_round_within_seconds)}, `
-				.. `the specification says 480. Amendment 12 is the operator's to close.`
+			`ROUND-006 AC-3: first_round_within_seconds is {tostring(
+				round.first_round_within_seconds
+			)}, `
+				.. `A5 says 480. The day-1 promise is met by shortening the round, not by moving the promise.`
 		)
+		local lobby = session.lobby_seconds
+		local roundSeconds = round.round_seconds
+		local within = round.first_round_within_seconds
+		local sum = lobby + roundSeconds
 		assert(
-			session.lobby_seconds + round.round_seconds > round.first_round_within_seconds,
-			"AC-2: lobby_seconds + round_seconds no longer exceeds first_round_within_seconds, "
-				.. "so amendment 12's conflict has been resolved in the module. It is an open "
-				.. "operator decision; the module transcribes the specification."
+			sum <= within,
+			`ROUND-006 AC-3: lobby_seconds {lobby} + round_seconds {roundSeconds} = {sum}, `
+				.. `which exceeds first_round_within_seconds {within}. A5's day-1 promise is broken; `
+				.. `amendment 12 was closed by §0d #18 (round_seconds 420).`
 		)
 	end,
 

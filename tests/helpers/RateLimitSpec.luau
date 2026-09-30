@@ -1,35 +1,44 @@
 --!strict
 --[[
-	NET-003's provenance reader: the `1.5` the rate suite declares on its test
-	remote is `tuning.md` §3's `signal_rate_limit_seconds`, marked DERIVED, and
-	this module reads that constant out of the document's table so the suite's
-	literal is anchored to the document rather than to somebody's memory.
-	`tests/net/rate_limit_provenance_test.luau` applies it to the tree and
-	drives it with fixtures that must fail.
+	The rate-limit provenance reader, re-pointed by ROUND-006 at the preset
+	design (product-brief §0d #19, #23; `tuning.md` §3 third pass).
+
+	HISTORY. NET-003 wrote this to anchor the rate suite's `1.5` to `tuning.md`
+	§3's `signal_rate_limit_seconds`. Brief §0d #19 superseded that constant on
+	2026-09-30 (`tuning.md` §9): the channel is now presets and pings, each
+	limited by `preset_rate_limit_seconds` / `ping_rate_limit_seconds`. From
+	ROUND-006 on, the rate suite's 1.5 is a FIXTURE interval with no design
+	provenance (see `RateContract.luau`'s header), and this reader guards the
+	document instead: both rate rows exist exactly once, each is a bare number,
+	each is at least the preset guideline's floor, and the superseded name has
+	no live row.
+
+	THE FLOOR IS AN ORACLE, NOT A COPY. `FLOOR_SECONDS` is the published preset
+	guideline's "Add a rate-limit (10 seconds per send)", quoted by brief §0d
+	#19 and applied to pings by #23. The comparison is `value >= floor`, not
+	`value == 10`: equality would be a second copy of the document's number
+	with nothing behind it, while the floor fails for the change that matters -
+	a rate lowered below compliance.
 
 	WHY `TuningSpec.parse` IS NOT REUSED: its scope is `tuning.md` §1 and §5
 	only, by the same `SECTION_TABLE` filter that keeps `src/shared/Tuning.luau`
-	out of §3 (`Tuning.luau:14`, `TuningSpec.luau:420-438`). A §3 constant added
-	to `Tuning` would red `tuning_spec_test` and `tuning_controls_test`, which
-	are ROUND-002's and frozen. So this is a small local reader over the whole
-	document, and the story's Contract says so.
+	out of §3. A §3 constant added to `Tuning` would red ROUND-002's module-to-
+	spec guard. So this is a small local reader over the whole document.
 
 	HOW A ROW IS LOCATED. A markdown table row whose FIRST cell, trimmed, is
-	exactly the constant's name in backticks. The first cell and nothing
-	else: the name also appears in prose, in the Context of stories, and could
-	appear in another row's rationale cell, and none of those is the row
-	that fixes the value. The value is the SECOND cell, converted with
-	`tonumber` after trimming, so `1.5 s` or `**1.5**` is "not a number"
-	rather than a silent 1.5.
+	exactly the constant's name in backticks. The first cell and nothing else:
+	the name also appears in prose and in other rows' rationale cells, and none
+	of those fixes the value. §9's `~~`signal_rate_limit_seconds`~~` is struck
+	through, so its first cell is not the bare backticked name and it is not a
+	live row - which is the intended reading. The value is the SECOND cell,
+	converted with `tonumber` after trimming, so `10 s` or `**10**` is "not a
+	number" rather than a silent 10.
 
-	WHAT THIS CANNOT SEE, stated so the next reader does not assume otherwise:
-	it reads the table row as it is written today - a pipe-delimited row with
-	the name in the first cell in backticks and a bare number in the second.
-	A row whose name is not in backticks, a value written as `1.5 s`, a
-	constant restated in prose, or a table whose columns are reordered are
-	all invisible to it. That is why `violations` carries three vacuity
-	assertions and the first is "exactly one row": an extraction that matches
-	nothing compares nothing, and it must fail loudly rather than pass.
+	WHAT THIS CANNOT SEE: a row whose name is not in backticks, a value with a
+	unit, a constant restated in prose, or reordered columns. That is why
+	`violations` carries three vacuity steps and the first is "exactly one
+	row": an extraction that matches nothing compares nothing, and it must fail
+	loudly rather than pass.
 ]]
 
 local fs = require("./GatedFs")
@@ -37,7 +46,15 @@ local fs = require("./GatedFs")
 local RateLimitSpec = {}
 
 RateLimitSpec.SPEC_PATH = "docs/wiki/game/tuning.md"
-RateLimitSpec.NAME = "signal_rate_limit_seconds"
+
+-- The live rate constants of `tuning.md` §3 (third pass).
+RateLimitSpec.NAMES = { "preset_rate_limit_seconds", "ping_rate_limit_seconds" }
+
+-- The second-pass constant they replace (§9). It must have no live row.
+RateLimitSpec.SUPERSEDED = "signal_rate_limit_seconds"
+
+-- brief §0d #19 quoting the preset guideline ("10 seconds per send"); #23 for pings.
+RateLimitSpec.FLOOR_SECONDS = 10
 
 -- One table row naming the constant: where it is, which `## N` section the
 -- row sits under (nil above the first heading), and the raw value cell.
@@ -87,14 +104,18 @@ function RateLimitSpec.rowsNaming(text: string, name: string): { Row }
 	return out
 end
 
+local function whereOf(row: Row): string
+	return `{RateLimitSpec.SPEC_PATH}:{row.line}`
+		.. (if row.section ~= nil then ` §{row.section}` else "")
+end
+
 --[[
-	Every way `rows` fails to fix `name` at `expected`, accumulated. The
-	three vacuity assertions the Contract lists, in order: exactly one row
-	(zero is the failure mode, two is a document that disagrees with itself);
-	the value cell yields a number, asserted BEFORE it is compared; and that
-	number equals what the suite declares.
+	Every way `rows` fails to fix `name` at or above `floor`, accumulated. The
+	three vacuity steps, in order: exactly one row (zero is the failure mode,
+	two is a document that disagrees with itself); the value cell yields a
+	number, asserted BEFORE it is compared; and only then `value >= floor`.
 ]]
-function RateLimitSpec.violations(rows: { Row }, name: string, expected: number): { string }
+function RateLimitSpec.violations(rows: { Row }, name: string, floor: number): { string }
 	local out: { string } = {}
 	local path = RateLimitSpec.SPEC_PATH
 	if #rows == 0 then
@@ -117,20 +138,38 @@ function RateLimitSpec.violations(rows: { Row }, name: string, expected: number)
 		)
 	end
 	for _, row in rows do
-		local where = `{path}:{row.line}` .. (if row.section ~= nil then ` §{row.section}` else "")
 		local value = tonumber(row.valueCell)
 		if value == nil then
 			table.insert(
 				out,
-				`{where}: the value cell for \`{name}\` is "{row.valueCell}", which is not a number`
+				`{whereOf(row)}: the value cell for \`{name}\` is "{row.valueCell}", which is not a number`
 			)
-		elseif value ~= expected then
+		elseif not (value >= floor) then
 			table.insert(
 				out,
-				`{where}: \`{name}\` is {value} in the document; the suite declares {expected} - `
-					.. `the document is the oracle and the suite's literal must follow it`
+				`{whereOf(row)}: \`{name}\` is {value} in the document, below the floor of {floor} - `
+					.. `the preset guideline's "10 seconds per send" (brief §0d #19; #23 for pings) `
+					.. `is a compliance requirement, not tuning`
 			)
 		end
+	end
+	return out
+end
+
+--[[
+	Every LIVE table row whose first cell is the bare backticked `SUPERSEDED`
+	name. §9's struck-through record (`~~`name`~~`) is not a match.
+]]
+function RateLimitSpec.supersededViolations(text: string): { string }
+	local name = RateLimitSpec.SUPERSEDED
+	local replacements = "`" .. table.concat(RateLimitSpec.NAMES, "` and `") .. "`"
+	local out: { string } = {}
+	for _, row in RateLimitSpec.rowsNaming(text, name) do
+		table.insert(
+			out,
+			`{whereOf(row)}: a live table row has \`{name}\` in its first cell, but it is a superseded `
+				.. `constant (brief §0d #19, tuning.md §9) - replaced by {replacements}`
+		)
 	end
 	return out
 end

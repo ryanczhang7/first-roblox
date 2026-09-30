@@ -24,7 +24,8 @@
 	module and the spec still agree and only the frozen criteria disagree - which
 	is exactly the moment somebody should be asked, per `rules.md`. Changing a
 	number in `ACCEPTANCE` therefore requires an `## Amendments` entry in
-	ROUND-002.
+	ROUND-002. Amended once: ROUND-002 A-1 (landed by ROUND-006) moved round_seconds
+	480 -> 420 and traversal_reserve_seconds 120 -> 60.
 
 	WHAT THIS CANNOT SEE. The parse is textual and reads only the first two cells
 	of a markdown table row in sections 1 and 5. A constant stated in prose, in a
@@ -73,11 +74,11 @@ local ACCEPTANCE: { [string]: { [string]: number } } = {
 		season_length_days = 28,
 	},
 	round = {
-		round_seconds = 480,
+		round_seconds = 420,
 		round_seconds_min = 360,
 		round_seconds_max = 600,
 		per_operation_seconds = 45,
-		traversal_reserve_seconds = 120,
+		traversal_reserve_seconds = 60,
 		first_round_within_seconds = 480,
 		disconnect_grace_seconds = 30,
 	},
