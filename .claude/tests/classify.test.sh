@@ -159,6 +159,25 @@ assert_eq "--list tooling .claude/hooks lists every hook" "$expected_hooks" \
 assert_eq "--list harness .claude/hooks lists none of them" "" "$(cls --list harness .claude/hooks)"
 
 # ---------------------------------------------------------------------------
+describe "a doc a covers line names is still docs (HARNESS-021, AC-6)"
+
+# A `covers | unit | docs/wiki/game/tuning.md` line puts that doc into the gate
+# hash. It changes nothing here: "is it gated?" is answered by gated_stdin, and
+# "who may write it, in which phase?" by the category, which stays `docs`. The
+# comparison is the whole output line, so a category that merely CONTAINS the
+# word would not pass. Passes on arrival; earned by mutating paths.conf's
+# `docs | docs/**` rule and watching it go red (see the story's ## Handoff).
+mkdir -p "$FIX/docs/wiki/game"
+printf '| roundSeconds | 90 |\n' > "$FIX/docs/wiki/game/tuning.md"
+write_conf "$FIX" <<'CONF'
+gate   | unit | required | . | true
+covers | unit | docs/wiki/game/tuning.md
+CONF
+assert_eq "AC-6: docs/wiki/game/tuning.md classifies as docs with the covers line present" \
+  "docs	docs/wiki/game/tuning.md" "$(cls docs/wiki/game/tuning.md)"
+assert_contains "AC-6: and --list docs still returns it" "docs/wiki/game/tuning.md" "$(cls --list docs docs)"
+
+# ---------------------------------------------------------------------------
 describe "the category list cannot drift from paths.conf"
 
 # The bug this closes, found by a mutation audit: classify.sh printed `manifest`

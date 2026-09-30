@@ -380,6 +380,130 @@ h2="$(gate_tree_hash)"
 if [ "$h2" = "$h1" ]; then _bad "source moves the hash" "unchanged: $h1"; else _ok "source moves the hash"; fi
 
 # ---------------------------------------------------------------------------
+describe "gate_tree_hash: a covers line brings the doc a gate reads into the hash (HARNESS-021)"
+
+# Two docs under docs/wiki are read by `lune run test` at test time, so editing
+# either after a recorded gate run changes what the unit gate would report
+# while the recorded stamp still matches. The fix is option B: a
+# `covers | <gate> | <glob>` line in project.conf that matches a `docs` path
+# brings that path into the hash. Classification does not change.
+#
+# Every "does not move" case below is paired with a "does move" case in the
+# SAME fixture state, so an implementation that keeps nothing cannot pass the
+# block: the pairs that fail in RED are the covers-line tuning.md edits (AC-1)
+# and the docs/** architecture.md edit (AC-3). Each edit gets its own before
+# and after hash and its own assertion; no loop hides which path moved.
+#
+# The two docs are named by AC-7 and the story's measurement, not chosen here:
+# tuning.md is the one the gate reads; architecture.md is the control, a doc
+# that is only MENTIONED in test comments and never read.
+mkdir -p "$FIX/docs/wiki/game"
+TUNE_A='| roundSeconds | 90 |'
+TUNE_B='| roundSeconds | 91 |'
+TUNE_C='| roundSeconds | 92 |'
+TUNE_D='| roundSeconds | 93 |'
+printf '%s\n' "$TUNE_A"     > "$FIX/docs/wiki/game/tuning.md"
+printf '# architecture\n'   > "$FIX/docs/wiki/architecture.md"
+
+# --- AC-4, no project.conf: the state every hash case above ran in ----------
+# "Equals the hash of the same tree with no covers arm" is expressed as the
+# observable it implies: no doc's content is an input to the hash, so a doc
+# edit leaves it where it was, while a source edit in the same state moves it.
+# (A literal equality against a hash computed "without the covers arm" would
+# need the test to carry its own copy of gated_stdin's first arm, which is the
+# third predicate the lib.sh comment refuses to have.)
+h3="$(gate_tree_hash)"
+printf '%s\n' "$TUNE_B" > "$FIX/docs/wiki/game/tuning.md"
+assert_eq "AC-4: with no project.conf, a doc a gate could read does not move the hash" "$h3" "$(gate_tree_hash)"
+printf 'export const x = 3\n' > "$FIX/src/main.ts"
+h4="$(gate_tree_hash)"
+if [ "$h4" = "$h3" ]; then _bad "AC-4 pair: with no project.conf, source still moves the hash" "unchanged: $h3"; else _ok "AC-4 pair: with no project.conf, source still moves the hash"; fi
+
+# --- AC-4, a project.conf whose only covers line is src/** -------------------
+# project.conf is harness and not .md, so it is hashed itself: the baseline is
+# taken AFTER the write.
+write_conf "$FIX" <<'CONF'
+gate   | unit | required | . | true
+covers | unit | src/**
+CONF
+h5="$(gate_tree_hash)"
+printf '%s\n' "$TUNE_A" > "$FIX/docs/wiki/game/tuning.md"
+assert_eq "AC-4: covers | unit | src/** keeps no doc: tuning.md does not move the hash" "$h5" "$(gate_tree_hash)"
+printf '# a wiki page, reworded\n' > "$FIX/docs/notes.md"
+assert_eq "AC-4: covers | unit | src/** keeps no doc: docs/notes.md does not move the hash" "$h5" "$(gate_tree_hash)"
+printf '# architecture, reworded\n' > "$FIX/docs/wiki/architecture.md"
+assert_eq "AC-4: covers | unit | src/** keeps no doc: architecture.md does not move the hash" "$h5" "$(gate_tree_hash)"
+printf 'export const x = 4\n' > "$FIX/src/main.ts"
+h6="$(gate_tree_hash)"
+if [ "$h6" = "$h5" ]; then _bad "AC-4 pair: under covers | unit | src/**, source still moves the hash" "unchanged: $h5"; else _ok "AC-4 pair: under covers | unit | src/**, source still moves the hash"; fi
+
+# --- AC-1 control A: the SAME edit, without the covers line ------------------
+# The doc goes from TUNE_A to TUNE_B here and again below; only the conf
+# differs. That is what shows the covers line is the cause.
+write_conf "$FIX" <<'CONF'
+gate   | unit | required | . | true
+CONF
+printf '%s\n' "$TUNE_A" > "$FIX/docs/wiki/game/tuning.md"
+h7="$(gate_tree_hash)"
+printf '%s\n' "$TUNE_B" > "$FIX/docs/wiki/game/tuning.md"
+assert_eq "AC-1 control: the same tuning.md edit without the covers line does not move the hash" "$h7" "$(gate_tree_hash)"
+
+# --- AC-1: the covers line for tuning.md ------------------------------------
+write_conf "$FIX" <<'CONF'
+gate   | unit | required | . | true
+covers | unit | docs/wiki/game/tuning.md
+CONF
+printf '%s\n' "$TUNE_A" > "$FIX/docs/wiki/game/tuning.md"
+h8="$(gate_tree_hash)"
+printf '%s\n' "$TUNE_B" > "$FIX/docs/wiki/game/tuning.md"
+h9="$(gate_tree_hash)"
+if [ "$h9" = "$h8" ]; then _bad "AC-1: with covers | unit | docs/wiki/game/tuning.md, editing tuning.md moves the hash" "unchanged: $h8"; else _ok "AC-1: with covers | unit | docs/wiki/game/tuning.md, editing tuning.md moves the hash"; fi
+# Control B: the covers line names one doc, not "all docs".
+printf '# architecture, reworded again\n' > "$FIX/docs/wiki/architecture.md"
+assert_eq "AC-1 control: with the covers line, editing architecture.md (unread) does not move the hash" "$h9" "$(gate_tree_hash)"
+printf '# a wiki page, reworded again\n' > "$FIX/docs/notes.md"
+assert_eq "AC-1 control: with the covers line, editing docs/notes.md does not move the hash" "$h9" "$(gate_tree_hash)"
+# And the pair for those two controls, in the same conf state: the named doc
+# still moves it after the unread ones did not.
+printf '%s\n' "$TUNE_C" > "$FIX/docs/wiki/game/tuning.md"
+h10="$(gate_tree_hash)"
+if [ "$h10" = "$h9" ]; then _bad "AC-1 pair: after the unread-doc edits, a second tuning.md edit still moves the hash" "unchanged: $h9"; else _ok "AC-1 pair: after the unread-doc edits, a second tuning.md edit still moves the hash"; fi
+# The hash is a function of content, not of mtime: putting the content back
+# puts the hash back. This is what makes a record RE-matchable after a revert,
+# and it is the difference between hashing the blob and hashing the write.
+printf '%s\n' "$TUNE_B" > "$FIX/docs/wiki/game/tuning.md"
+assert_eq "AC-1: restoring tuning.md's content restores the hash" "$h9" "$(gate_tree_hash)"
+
+# --- AC-3: the covers arm admits docs, and only the docs that can be hashed --
+# A broad glob. The story file records the hash and cannot be an input to it,
+# and harness prompts are not reopened through `covers`. The control is the
+# same glob matching a doc that CAN be hashed.
+write_conf "$FIX" <<'CONF'
+gate   | unit | required | . | true
+covers | unit | docs/**
+covers | unit | .claude/commands/**
+CONF
+printf -- '---\nid: T-1\nphase: GREEN\n---\n\n## Gate results\n\n' > "$FIX/docs/backlog/stories/T-1.md"
+h11="$(gate_tree_hash)"
+printf -- '---\nid: T-1\nphase: GATES\n---\n\n## Gate results\n\n  tree: %s\n' "$h11" > "$FIX/docs/backlog/stories/T-1.md"
+assert_eq "AC-3: under covers | unit | docs/**, the story file docs/backlog/stories/T-1.md does not move the hash" "$h11" "$(gate_tree_hash)"
+printf '# advance, reworded under a covers glob\n' > "$FIX/.claude/commands/advance-story.md"
+assert_eq "AC-3: under covers | unit | .claude/commands/**, a command prompt does not move the hash" "$h11" "$(gate_tree_hash)"
+printf '# architecture, under docs/**\n' > "$FIX/docs/wiki/architecture.md"
+h12="$(gate_tree_hash)"
+if [ "$h12" = "$h11" ]; then _bad "AC-3 control: under covers | unit | docs/**, editing docs/wiki/architecture.md moves the hash" "unchanged: $h11"; else _ok "AC-3 control: under covers | unit | docs/**, editing docs/wiki/architecture.md moves the hash"; fi
+printf '%s\n' "$TUNE_D" > "$FIX/docs/wiki/game/tuning.md"
+h13="$(gate_tree_hash)"
+if [ "$h13" = "$h12" ]; then _bad "AC-3 control: under covers | unit | docs/**, editing tuning.md moves the hash" "unchanged: $h12"; else _ok "AC-3 control: under covers | unit | docs/**, editing tuning.md moves the hash"; fi
+# The exclusion is by the docs/backlog/ prefix, not by the file being named
+# T-1.md: an epic under docs/backlog/epics/ stays out too.
+mkdir -p "$FIX/docs/backlog/epics"
+printf '# epic\n' > "$FIX/docs/backlog/epics/E-1.md"
+h14="$(gate_tree_hash)"
+printf '# epic, reworded\n' > "$FIX/docs/backlog/epics/E-1.md"
+assert_eq "AC-3: under covers | unit | docs/**, an epic under docs/backlog/ does not move the hash either" "$h14" "$(gate_tree_hash)"
+
+# ---------------------------------------------------------------------------
 describe "path_is_implausible: a failed parse is inconclusive, not a violation"
 
 # The tokens on the left were all reported as the `path:` of a real denial, on

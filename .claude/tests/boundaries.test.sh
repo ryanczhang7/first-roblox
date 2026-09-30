@@ -238,17 +238,24 @@ describe "a BLOCKED gate can reach REVIEW, but only with the decision written do
 #
 # The record has to be a real one: gates.sh writes the marker and the tree hash,
 # and nothing else can. So the fixture runs it.
+#
+# STORY_CONF_EXTRA, when set, is appended to that project.conf BEFORE the
+# gates.sh run (HARNESS-021, AC-2). project.conf is itself hashed, so a covers
+# line appended after the run would make the record stale for the wrong reason.
 story_blocked() { # <phase> [required_gates] ; body on stdin
   local phase="$1" rg="${2:-}" extra; extra="$(cat)"
   git -C "$FIX" checkout -q main 2>/dev/null
   git -C "$FIX" branch -D story/T-1-fixture >/dev/null 2>&1
   git -C "$FIX" checkout -q -b story/T-1-fixture 2>/dev/null
-  write_conf "$FIX" <<'CONF'
+  {
+    cat <<'CONF'
 gate     | unit  | required | . | printf 'Tests  47 passed (47)\n'
 gate     | types | required | . | printf 'error: could not execute process (never executed)\n'; exit 101
 evidence | unit  | Tests +[1-9][0-9]* passed
 evidence | types | Tests +[1-9][0-9]* passed
 CONF
+    if [ -n "${STORY_CONF_EXTRA:-}" ]; then printf '%s\n' "$STORY_CONF_EXTRA"; fi
+  } | write_conf "$FIX"
   mkdir -p "$FIX/docs/backlog/stories"
   {
     printf -- '---\nid: T-1\ntitle: Fixture story\nslug: fixture\ntype: feature\nstatus: todo\nphase: %s\nbranch: story/T-1-fixture\n' "$phase"
@@ -1527,6 +1534,73 @@ assert_differ "control: a test moving alone still changes the tree hash" \
   "$rec_tree_t" "$now_tree_t"
 refused "the test-only refusal names the RECORDED tree by value" "$rec_tree_t"
 refused "and the CURRENT tree by value, for a test-only change" "$now_tree_t"
+
+# --- HARNESS-021 (AC-2): a doc a gate reads is part of the tree it stamps ----
+# docs/wiki/game/tuning.md is read by `lune run test`. A record made before an
+# edit to it described a suite that no longer runs the same way, and the stamp
+# still matched because gated_stdin dropped every `docs` path. With
+# `covers | unit | docs/wiki/game/tuning.md` in project.conf - in place BEFORE
+# the gates.sh run, through STORY_CONF_EXTRA - the doc is in the hash, and an
+# edit to it after the run is refused like a source edit. The control is an
+# edit to a doc no covers line names, which must still match the record: the
+# fix is not "hash all docs".
+#
+# story_blocked_with_docs   story_blocked with the covers line in the conf and
+# the two docs in the tree. The docs are written UNTRACKED after switching to
+# main - main does not carry them, so a previous story branch's copies vanish
+# on that checkout - and the helper's first commit then adds them on the fresh
+# branch, alongside the conf, before gates.sh runs.
+story_blocked_with_docs() { # <phase> ; body on stdin
+  git -C "$FIX" checkout -q main 2>/dev/null
+  mkdir -p "$FIX/docs/wiki/game"
+  printf '| roundSeconds | 90 |\n' > "$FIX/docs/wiki/game/tuning.md"
+  printf '# architecture\n'       > "$FIX/docs/wiki/architecture.md"
+  STORY_CONF_EXTRA='covers | unit | docs/wiki/game/tuning.md' story_blocked "$@"
+}
+printf '%s\n' "$GATE_STORY_NOTE" | story_blocked_with_docs REVIEW
+# The instrument for the whole block: the covers line reached the conf that
+# gates.sh ran against (read out of the COMMIT, whole line), and the record it
+# wrote matches the tree it ran on.
+assert_eq "AC-2 setup: the covers line is in the committed project.conf" 1 \
+  "$(git -C "$FIX" show HEAD:.claude/harness/project.conf | grep -cx 'covers | unit | docs/wiki/game/tuning.md')"
+assert_eq "AC-2 setup: and the covered doc is in the commit too" 1 \
+  "$(git -C "$FIX" ls-tree --name-only HEAD docs/wiki/game/tuning.md | grep -cx 'docs/wiki/game/tuning.md')"
+run_boundaries
+assert_contains "AC-2 setup: a record made with the covers line matches the tree it ran on" \
+  "ok    gate record matches the working tree" "$out"
+rec_tree_d="$(rec_tree_of_fixture)"
+printf '| roundSeconds | 91 |\n' > "$FIX/docs/wiki/game/tuning.md"
+commit_all "only a covered doc changed after the gates ran"
+now_tree_d="$(fix_tree_hash)"
+run_boundaries
+refused "AC-2: a covered doc changing after the run breaks the stamp" "gates were recorded against tree"
+assert_sha40 "AC-2: the record before the doc edit is a real hash" "$rec_tree_d"
+assert_sha40 "AC-2: and the tree after the doc edit is too" "$now_tree_d"
+assert_differ "AC-2 control: the covered doc moving changes the tree hash" \
+  "$rec_tree_d" "$now_tree_d"
+refused "AC-2: the doc refusal names the RECORDED tree by value" "$rec_tree_d"
+refused "AC-2: and the CURRENT tree by value" "$now_tree_d"
+
+# The control: a fresh record, then a doc no covers line names. The needle is
+# the whole `ok` line with the recorded hash by value, because a bare
+# `gate record matches` also floats over a message naming a different tree.
+printf '%s\n' "$GATE_STORY_NOTE" | story_blocked_with_docs REVIEW
+rec_tree_u="$(rec_tree_of_fixture)"
+assert_sha40 "AC-2 control: the fresh record is a real hash" "$rec_tree_u"
+printf '# architecture, reworded\n' > "$FIX/docs/wiki/architecture.md"
+commit_all "only an uncovered doc changed after the gates ran"
+now_tree_u="$(fix_tree_hash)"
+assert_eq "AC-2 control: an uncovered doc moving leaves the tree hash where the record put it" \
+  "$rec_tree_u" "$now_tree_u"
+run_boundaries
+assert_contains "AC-2 control: the record still matches, by value" \
+  "ok    gate record matches the working tree (tree $rec_tree_u)" "$out"
+case "$out" in
+  *"gates were recorded against tree"*)
+    _bad "AC-2 control: and no stale-record refusal is printed" "refused: $out" ;;
+  *) _ok "AC-2 control: and no stale-record refusal is printed" ;;
+esac
+assert_eq "AC-2 control: and the PR is not refused at all" 0 "$rc"
 
 # ---------------------------------------------------------------------------
 describe "production code arrives with tests, or with an inventory"

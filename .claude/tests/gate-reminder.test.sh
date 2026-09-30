@@ -276,6 +276,32 @@ stamp_run pass
 printf 'gate | unit | required | . | true\n' > "$FIX/.claude/harness/project.conf"
 assert_warns "the gate manifest is still code" ".claude/harness/project.conf"
 
+# --- a doc a gate reads --------------------------------------------------------
+describe "a doc a covers line names is code the gates judge (HARNESS-021, AC-5)"
+
+# docs/wiki/game/tuning.md is read by `lune run test`, and project.conf says so
+# with `covers | unit | docs/wiki/game/tuning.md`. The hook's answer has to be
+# the hash's answer: code_changed_since used to prune the whole of docs/ before
+# it walked, so even with gated_stdin fixed it would never have seen this file.
+# The control is a doc no covers line names, which stays silent - the fix is
+# not "docs are code now".
+mkdir -p "$FIX/docs/wiki/game"
+printf '| roundSeconds | 90 |\n' > "$FIX/docs/wiki/game/tuning.md"
+printf '# architecture\n'       > "$FIX/docs/wiki/architecture.md"
+printf 'gate   | unit | required | . | true\ncovers | unit | docs/wiki/game/tuning.md\n' \
+  > "$FIX/.claude/harness/project.conf"
+set_phase "$FIX" GREEN
+stamp_run pass
+assert_silent "AC-5 baseline: the covered doc, untouched since the run"
+
+stamp_run pass
+printf '| roundSeconds | 91 |\n' > "$FIX/docs/wiki/game/tuning.md"
+assert_warns "AC-5: a doc a covers line names, edited after the run" "docs/wiki/game/tuning.md"
+
+stamp_run pass
+printf '# architecture, reworded\n' > "$FIX/docs/wiki/architecture.md"
+assert_silent "AC-5 control: a doc no covers line names, edited after the run"
+
 # --- the loop guard ----------------------------------------------------------
 describe "the hook never loops on itself"
 
