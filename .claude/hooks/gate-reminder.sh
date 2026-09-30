@@ -25,7 +25,9 @@
 #
 # "The code the gates judge", for the warning about changed code, is what
 # gated_stdin in lib.sh keeps: source, test, config and the harness's scripts and
-# manifests - never docs, prompts, vendor, or anything .gitignore covers.
+# manifests - never docs no gate covers, prompts, vendor, or anything
+# .gitignore covers. A doc named by a `covers` line in project.conf is a gate
+# input (a test reads it), so editing it after the run does warn.
 # Counting generated output would make the hook fire on its own exhaust.
 
 set -uo pipefail

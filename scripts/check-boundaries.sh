@@ -371,7 +371,7 @@ case "$ph:$story_type" in
       if [ -n "$rec" ] && [ "$rec" = "$now" ]; then
         ok "gate record matches $where (tree $rec)"
       else
-        problem "story $sid: gates were recorded against tree '${rec:-none}' but $where is '$now'. Source, test or config changed after the last full gate run; run 'bash scripts/gates.sh' again and commit the result."
+        problem "story $sid: gates were recorded against tree '${rec:-none}' but $where is '$now'. Source, test, config or a doc a gate covers changed after the last full gate run; run 'bash scripts/gates.sh' again and commit the result."
       fi
 
       # A gate the story escalated must appear in the record as having passed.

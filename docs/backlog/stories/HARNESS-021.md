@@ -5,7 +5,7 @@ slug: a-gate-record-goes-stale-when-a-doc-the
 epic: 
 type: fix
 status: in-review
-phase: RED
+phase: GREEN
 branch: story/HARNESS-021-a-gate-record-goes-stale-when-a-doc-the
 depends_on: [HARNESS-020]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
