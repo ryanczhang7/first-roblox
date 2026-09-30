@@ -24,7 +24,7 @@
 	way the call is actually written, which is the failure this story is about.
 ]]
 
-local fs = require("@lune/fs")
+local fs = require("./GatedFs")
 local process = require("@lune/process")
 
 local SourceScan = {}
@@ -238,7 +238,7 @@ end
 	the wrong `assert` cap) reads the same lexing as every guard over code,
 	rather than a second copy of it.
 ]]
-local function walk(text: string, want: "code" | "comments"): string
+local function walk(text: string, want: "code" | "comments", literals: { string }?): string
 	local out: { string } = {}
 	local n = #text
 	local i = 1
@@ -247,6 +247,27 @@ local function walk(text: string, want: "code" | "comments"): string
 	local level = 0
 	local braceDepth = 0
 	local interpStack: { number } = {}
+
+	-- HARNESS-022: the contents of each string literal, delimiters excluded,
+	-- collected only when a caller passes `literals`. `codeOnly` and
+	-- `commentsOnly` pass nothing, so their output is untouched by this - the
+	-- collector is a third reader of the same lexing, not a change to it. A
+	-- backtick string contributes its literal pieces with the holes cut out;
+	-- an unterminated literal contributes nothing.
+	local buf: { string } = {}
+
+	local function lit(ch: string)
+		if literals ~= nil then
+			table.insert(buf, ch)
+		end
+	end
+
+	local function flush()
+		if literals ~= nil then
+			table.insert(literals, table.concat(buf))
+			buf = {}
+		end
+	end
 
 	local function keep(ch: string)
 		table.insert(out, if want == "code" or ch == "\n" then ch else " ")
@@ -330,27 +351,33 @@ local function walk(text: string, want: "code" | "comments"): string
 			i += 1
 		elseif mode == "short" then
 			if ch == "\\" then
+				lit(string.sub(text, i, i + 1))
 				dropRange(i, i + 1)
 				i += 2
 			elseif ch == quote then
 				mode = "code"
+				flush()
 				drop(ch)
 				i += 1
 			elseif ch == "\n" then
 				-- Unterminated literal. Recover rather than swallow the file.
 				mode = "code"
+				buf = {}
 				keep("\n")
 				i += 1
 			else
+				lit(ch)
 				drop(ch)
 				i += 1
 			end
 		elseif mode == "interp" then
 			if ch == "\\" then
+				lit(string.sub(text, i, i + 1))
 				dropRange(i, i + 1)
 				i += 2
 			elseif ch == "`" then
 				mode = "code"
+				flush()
 				drop(ch)
 				i += 1
 			elseif ch == "{" then
@@ -360,16 +387,23 @@ local function walk(text: string, want: "code" | "comments"): string
 				drop(ch)
 				i += 1
 			else
+				lit(ch)
 				drop(ch)
 				i += 1
 			end
 		else
 			local closeAt = longBracketCloseAt(text, i, level)
 			if closeAt ~= nil then
+				if mode == "longString" then
+					flush()
+				end
 				mode = "code"
 				dropRange(i, (closeAt :: number) - 1)
 				i = closeAt :: number
 			else
+				if mode == "longString" then
+					lit(ch)
+				end
 				drop(ch)
 				i += 1
 			end
@@ -403,6 +437,24 @@ end
 -- literals are spaces, newlines kept. The complement of `codeOnly`.
 function SourceScan.commentsOnly(text: string): string
 	return walk(text, "comments")
+end
+
+--[[
+	The CONTENTS of every string literal in `text`, in source order, delimiters
+	excluded and comments ignored. HARNESS-022 AC-7's guard needs a literal whose
+	whole content is `@lune/fs`, and neither sibling can give it: `codeOnly`
+	blanks literal contents and `commentsOnly` blanks everything but comments.
+	Same lexer, third reader - so a literal inside a comment is not a literal
+	here, exactly as it is not code there.
+
+	Escape sequences are returned as written (`\"` stays two characters), a
+	backtick string contributes its literal pieces with the interpolation holes
+	cut out, and an unterminated literal contributes nothing.
+]]
+function SourceScan.stringLiteralsIn(text: string): { string }
+	local literals: { string } = {}
+	walk(text, "code", literals)
+	return literals
 end
 
 --[[

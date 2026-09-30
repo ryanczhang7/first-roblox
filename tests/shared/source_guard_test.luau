@@ -15,7 +15,7 @@
 	to mean anything by the scan finding nothing.
 ]]
 
-local fs = require("@lune/fs")
+local fs = require("../helpers/GatedFs")
 local SourceScan = require("../helpers/SourceScan")
 
 local PROBE = "src/shared/__probe_clock_leak.luau"

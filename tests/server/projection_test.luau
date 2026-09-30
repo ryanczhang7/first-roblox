@@ -160,7 +160,7 @@ return {
 				.. `{SEATS}, and {PROJECTION} is not among them: {table.concat(files, ", ")}`
 		)
 
-		local fs = require("@lune/fs")
+		local fs = require("../helpers/GatedFs")
 		local text = fs.readFile(PROJECTION)
 		local requires = SourceScan.scanFor({ PROJECTION }, { "require" })
 		local ringRequires = select(2, string.gsub(text, 'require%(%s*"%./Ring"%s*%)', ""))
