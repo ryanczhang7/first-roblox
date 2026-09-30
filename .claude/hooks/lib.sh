@@ -564,9 +564,11 @@ classify_stdin() {
 # for. Observed in the field, twice.
 #
 # The set that matters is already defined: it is the one gate_tree_hash covers
-# - see gated_stdin - never docs, vendor or ignored. So the question this asks
-# is precisely "would the recorded gate hash still match", and the two answers
-# cannot drift apart.
+# - see gated_stdin - never vendor or ignored, and never a doc unless a covers
+# line in project.conf names it. So the question this asks is precisely "would
+# the recorded gate hash still match", and the two answers cannot drift apart.
+# That is why docs/ is walked rather than pruned: pruning it would hide a
+# covered doc from the hook while the hash still counted it (HARNESS-021).
 #
 # Ignored TOP-LEVEL directories are pruned before the walk rather than filtered
 # after it, because `src-tauri/target` holds six figures of files and a Stop
@@ -578,12 +580,11 @@ code_changed_since() {
   set -- "$HARNESS_ROOT" \
     -path "$HARNESS_ROOT/.git" -prune -o \
     -path "$HARNESS_ROOT/.claude/state" -prune -o \
-    -path "$HARNESS_ROOT/node_modules" -prune -o \
-    -path "$HARNESS_ROOT/docs" -prune -o
+    -path "$HARNESS_ROOT/node_modules" -prune -o
   for d in "$HARNESS_ROOT"/*/ "$HARNESS_ROOT"/.*/; do
     [ -d "$d" ] || continue
     rel="${d%/}"; rel="${rel##*/}"
-    case "$rel" in .|..|.git|.claude|docs|node_modules) continue ;; esac
+    case "$rel" in .|..|.git|.claude|node_modules) continue ;; esac
     is_ignored "$rel" || continue
     set -- "$@" -path "$HARNESS_ROOT/$rel" -prune -o
   done
@@ -618,20 +619,59 @@ code_changed_since() {
 # Three readers of one predicate cannot disagree; three predicates would.
 #
 # Kept: source, test, config, tooling - the hooks and the scripts - and
-# harness - the gate manifest, the CI workflow, the harness's tests. Dropped: docs (the story file that records the
-# hash cannot be part of it), vendor, ignored, harness runtime state, and
-# harness MARKDOWN. That last one is deliberate. A command file, an agent
-# spec, a skill and CLAUDE.md classify as harness because they live under
-# .claude/, but they are prompts: no lint, no test and no build reads them.
-# Counting them meant rewording /advance-story cost a full gate run while
-# editing a wiki page one directory over cost nothing, and it meant a
-# recorded gate hash went stale on a change the gates could not have judged.
+# harness - the gate manifest, the CI workflow, the harness's tests. Dropped:
+# vendor, ignored, harness runtime state, harness MARKDOWN, and docs - except
+# a doc some gate reads (below). The markdown exclusion is deliberate. A
+# command file, an agent spec, a skill and CLAUDE.md classify as harness
+# because they live under .claude/, but they are prompts: no lint, no test and
+# no build reads them. Counting them meant rewording /advance-story cost a full
+# gate run while editing a wiki page one directory over cost nothing, and it
+# meant a recorded gate hash went stale on a change the gates could not have
+# judged.
+#
+# The covers arm (HARNESS-021). Some docs ARE gate inputs - a test that reads
+# a spec table out of docs/wiki/ at run time - and editing one after a gate run
+# changes what that gate would report. So a `docs` path is also kept when it
+# matches the glob of a `covers | <gate> | <glob>` line in project.conf: the
+# file that already says what each gate reads. Three limits:
+#   - only `docs`. vendor, ignored and harness markdown never enter this way,
+#     so a broad glob such as `**` reopens none of them;
+#   - never docs/backlog/: the story file records the hash and cannot be an
+#     input to it, or every record would be stale the moment it was written;
+#   - the gate id is not consulted (gates.sh --audit already fails an unknown
+#     one), and an optional gate's covers lines count as well.
+# No project.conf, or no covers lines, means the arm keeps nothing.
+#
+# So "is it gated?" is answered HERE, not by the classifier: a covered doc
+# still classifies as `docs`, and the phase lock treats it exactly as before.
+# The glob dialect is the paths.conf one (_G2R_AWK); ENVIRON rather than -v for
+# the conf path, because -v interprets backslashes.
 gated_stdin() {
-  awk -F'\t' '
+  PROJECT_CONF="$HARNESS_DIR/project.conf" awk -F'\t' "$_G2R_AWK"'
+    BEGIN {
+      n = 0; conf = ENVIRON["PROJECT_CONF"]
+      while ((getline line < conf) > 0) {
+        sub(/\r$/, "", line)
+        if (line ~ /^[[:space:]]*(#|$)/) continue
+        if (index(line, "|") == 0) continue
+        kind = line; sub(/\|.*/, "", kind); gsub(/[[:space:]]/, "", kind)
+        if (kind != "covers") continue
+        # Field 3 onwards, as gates.sh reads it: skip the kind and the gate id.
+        glob = line; sub(/^[^|]*\|[^|]*\|?/, "", glob)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", glob)
+        if (glob == "") continue
+        n++; cr[n] = "^" tolower(g2r(glob)) "$"
+      }
+      close(conf)
+    }
     ($1 == "source" || $1 == "test" || $1 == "config" || $1 == "harness" \
       || $1 == "tooling") \
       && !($1 == "harness" && $2 ~ /\.md$/) \
-      && index($2, ".claude/state/") != 1 { print }'
+      && index($2, ".claude/state/") != 1 { print; next }
+    $1 == "docs" && n > 0 && index(tolower($2), "docs/backlog/") != 1 {
+      lp = tolower($2)
+      for (i = 1; i <= n; i++) if (lp ~ cr[i]) { print; next }
+    }'
 }
 
 # --- Gate tree hash ---------------------------------------------------------

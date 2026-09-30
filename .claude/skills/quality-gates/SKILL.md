@@ -295,6 +295,19 @@ required gate that would fail if its artifact broke - see `story-authoring` -
 because the check catches the case at GREEN, and RED is where promoting a gate
 is a decision rather than a scramble.
 
+A `covers` glob over a **doc** does a second job: it puts that doc in the gate
+hash. Docs are normally outside "the code the gates ran against", but a test
+that reads a spec table out of `docs/wiki/` at run time makes that file a gate
+input, and without the line an edit to it leaves a green record standing over a
+red suite. So `covers | unit | docs/wiki/game/tuning.md` makes `gates.sh`
+record it, `check-boundaries.sh` refuse a PR that changed it after the run, and
+the Stop hook warn - while the file still classifies as `docs` and the phase
+lock treats it exactly as before. Only `docs` paths enter this way (never
+vendor, ignored output or harness prompts, however broad the glob), and never
+anything under `docs/backlog/`: the story file records the hash and cannot be
+an input to it. Name each doc a test actually reads, not `docs/**`, or every
+wiki edit stales the record.
+
 ## WARN must mean something changed
 
 Optional gates report rather than block, which is not the same as ignorable -

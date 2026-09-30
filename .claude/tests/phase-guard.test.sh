@@ -977,4 +977,46 @@ assert_blocked "$FIX" "sed -i 's/a/b/' src/main.ts"    src/main.ts 'plain sed -i
 assert_blocked "$FIX" "sed -i -e 's/a/b/' src/main.ts" src/main.ts 'sed -i -e onto source'
 assert_blocked "$FIX" "sed -i.bak -e 's/a/b/' src/main.ts" src/main.ts 'sed -i.bak -e onto source'
 
+# ---------------------------------------------------------------------------
+describe "a doc a covers line names is still docs, writable in every phase (HARNESS-021, AC-6)"
+
+# The gate hash now keeps docs/wiki/game/tuning.md because project.conf says a
+# gate reads it. That is a fact about the GATES, and it must not leak into the
+# lock: `docs` is in all eight phases.conf rows, the Game Designer and the Lead
+# PO write this file in PLANNED, and a category answers "who may write this, in
+# which phase", not "does a gate read it". This passes on arrival - the fix
+# changes no category - and is earned by mutating phases.conf's RED row to drop
+# `docs,` and watching the RED case here go red (see the story's ## Handoff).
+mkdir -p "$FIX/docs/wiki/game"
+printf '| roundSeconds | 90 |\n' > "$FIX/docs/wiki/game/tuning.md"
+write_conf "$FIX" <<'CONF'
+gate   | unit | required | . | true
+covers | unit | docs/wiki/game/tuning.md
+CONF
+
+# assert_doc_writable <PHASE|""> <label>   One set_phase, then the two shapes the
+# criterion names: the Write tool and a shell redirect, each its own assertion.
+assert_doc_writable() {
+  local r
+  set_phase "$FIX" "$1"
+  r="$(guard "$FIX" Write file_path docs/wiki/game/tuning.md)"
+  if [ -z "$r" ]; then _ok "AC-6: $2 allows Write to docs/wiki/game/tuning.md"
+  else _bad "AC-6: $2 allows Write to docs/wiki/game/tuning.md" "blocked with: $r"; fi
+  assert_allowed "$FIX" 'echo "| roundSeconds | 91 |" > docs/wiki/game/tuning.md' \
+    "AC-6: $2 allows a redirect into docs/wiki/game/tuning.md"
+}
+assert_doc_writable ""       IDLE
+assert_doc_writable PLANNED  PLANNED
+assert_doc_writable RED      RED
+assert_doc_writable GREEN    GREEN
+assert_doc_writable GATES    GATES
+assert_doc_writable REVIEW   REVIEW
+assert_doc_writable SCAFFOLD SCAFFOLD
+assert_doc_writable DONE     DONE
+# The instrument: the same fixture state still refuses a real source write in
+# RED, so "allowed" above is the lock's verdict on the category and not the
+# lock being off.
+set_phase "$FIX" RED
+assert_blocked "$FIX" 'echo x > src/main.ts' src/main.ts 'AC-6 control: RED still blocks a source write in the same fixture'
+
 summary "phase-guard"
