@@ -1,7 +1,7 @@
 ---
 id: EPIC-04
 title: Every round is a new facility that a plain group can always finish in time
-status: todo
+status: done
 stories: [TUNE-001, GEN-001, GEN-002, GEN-003, GEN-004]
 ---
 
