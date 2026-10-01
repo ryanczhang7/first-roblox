@@ -4,8 +4,8 @@ title: Instance, channel and actuation constants match their specification
 slug: instance-channel-and-actuation-constants
 epic: EPIC-04
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/TUNE-001-instance-channel-and-actuation-constants
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -823,3 +823,14 @@ And `680b1da` and `85c8b38` were never pushed.
    - `bash scripts/gates.sh`: `All required gates passed (6 ran, 3 unconfigured,
      0 known)`, recorded under `## Gate results`.
    - `frozen: OK — 102 path(s) unchanged since the snapshot for TUNE-001`.
+
+### REVIEW → DONE (2026-10-01)
+
+- PR [ryanczhang7/first-roblox#42](https://github.com/ryanczhang7/first-roblox/pull/42) was merged at 2026-10-01T04:35:22Z as `d49e1fd`.
+- CI `boundaries` passed in 6 s:
+  https://github.com/ryanczhang7/first-roblox/actions/runs/36815157920
+- CI `gates` passed in 2m52s against the job's 45-minute limit:
+  https://github.com/ryanczhang7/first-roblox/actions/runs/36815157967
+  - format 0 s, lint 0 s, typecheck 3 s, build 0 s, harness 14 s.
+  - unit 5 s, observed 507 against a floor of 507.
+  - No gate came within 10 % of a limit.
