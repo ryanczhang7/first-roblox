@@ -602,8 +602,11 @@ still win) and the structural arm cannot occur while quorum holds
 
 ### 9.3 The facility generator
 
-    Generator.generate(assignment: Assignment, seed: number, tuning) -> GenerateResult
-    -- { kind = "facility", facility, attempt } | { kind = "failed", failures }
+    Generator.generate(assignment: Assignment, seed: number, tuning,
+                       predicateOverride?, stagesOverride?) -> GenerateResult
+    -- { kind = "facility", facility } | { kind = "failed", failures = { { attempt, invariant } } }
+    -- facility = { layout, placement, steps, spawnRoom, par, attempt }   (GEN-004 Contract C-1)
+    -- the two overrides are test seams (GEN-004 AC-3, AC-4); production passes nil
 
 - **Generated after seats (D12)**, because `INV_finale` needs ring adjacency: the
   finale's two key classes must not be neighbours on σ when n ≥ 4.
