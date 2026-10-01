@@ -5,7 +5,7 @@ slug: instance-channel-and-actuation-constants
 epic: EPIC-04
 type: feature
 status: in-progress
-phase: GREEN
+phase: RED
 branch: story/TUNE-001-instance-channel-and-actuation-constants
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -143,6 +143,37 @@ exist. Owner: GATES.
 **D-2. A removed key is caught.** Use `scripts/mutate.sh` to delete the
 `turn_rate_limit_seconds` line. AC-2 **must** then fail, naming it. Owner: GATES.
 
+**Result, run by the orchestrator at GATES on 2026-09-30 (`680b1da` plus docs),
+before `gates.sh`.** Each one went through `scripts/mutate.sh`, which restored
+the file and verified it byte-for-byte.
+
+- **D-1 — CONFIRMED.** Mutated `lens_read_range_studs = 12,` → `13,`
+  (`src/shared/MechanicsTuning.luau:145`).
+
+    FAIL  tests/shared/mechanics_tuning_spec_test.luau :: AC-2: every constant row of tuning.md §2-§4 is in MechanicsTuning with its specified value, and no rule row is
+    ping_range_studs (docs/wiki/game/tuning.md:171 §3 -> MechanicsTuning.channel): spec = `lens_read_range_studs`, module 12 but MechanicsTuning.instance.lens_read_range_studs is 13
+    lens_read_range_studs (docs/wiki/game/tuning.md:93 §2 -> MechanicsTuning.instance): spec 12, module 13
+    506 passed, 1 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against …/src_shared_MechanicsTuning.luau.20261001T034751Z.1621472.bak) ===
+
+- **D-2 — CONFIRMED.** Deleted the `turn_rate_limit_seconds = 1,` line (`:207`).
+
+    FAIL  tests/shared/mechanics_tuning_spec_test.luau :: AC-2: every constant row of tuning.md §2-§4 is in MechanicsTuning with its specified value, and no rule row is
+    turn_rate_limit_seconds (docs/wiki/game/tuning.md:201 §4 -> MechanicsTuning.actuation): spec 1, absent from the module
+    506 passed, 1 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against …/src_shared_MechanicsTuning.luau.20261001T034846Z.1623375.bak) ===
+
+- **D-3 (added at GATES): a wrong boolean is caught.** D-1 is a wrong number;
+  this is the same check on the other value kind. Mutated
+  `hud_shows_instability = true,` → `false,` (`:213`).
+
+    FAIL  tests/shared/mechanics_tuning_spec_test.luau :: AC-2: every constant row of tuning.md §2-§4 is in MechanicsTuning with its specified value, and no rule row is
+    hud_shows_instability (docs/wiki/game/tuning.md:214 §4 -> MechanicsTuning.actuation): spec true, module false
+    506 passed, 1 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against …/src_shared_MechanicsTuning.luau.20261001T035050Z.1629342.bak) ===
+
+- After all three: `lune run test` → `507 passed, 0 failed`.
+
 ## Out of scope
 
 - Any consumer of these constants. Each arrives with its mechanic.
@@ -189,6 +220,9 @@ from an upstream story or spike (as noted above), amend it and re-run
 - RED - `test-developer` - `claude-fable-5-1` (Fable 5.1, as the agent reported
   of itself). Planned `fable`; dispatched with an explicit `model: fable`, which
   beat the definition's `model: opus`. 2026-09-30.
+- GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5). Planned `opus`;
+  dispatched with an explicit `model: opus`. 2026-09-30.
+- GATES - `lead-po` (no dispatch: nothing failed) - `claude-opus-5-5`. 2026-09-30.
 
 ## Test plan
 
@@ -478,41 +512,107 @@ dispatch's override won over the agent definition, consistent with the planned
 
 ## Regressions
 
-<!-- REQUIRED if this story ever returned to RED after GREEN or GATES; omit
-     otherwise. A test that is wrong is never edited into passing, and the
-     return is not a footnote - it is the story failing to be one clean cycle,
-     and the next person needs to know why. One block per return:
-       * which test, what it asserted, and what was wrong with it
-       * how the defect was found
-       * what it asserts now
-       * what earns it, since "watched it fail" cannot apply once the
-         implementation exists - the corrected assertion passes on its first
-         run and every run after, whether or not it asserts anything: either a
-         PROBE (mutate the specific behaviour the test pins, paste the red,
-         confirm the revert) or, where the defect was cost rather than
-         correctness, a BEFORE/AFTER measurement taken under the gate command -
-         not the plain test command, which is the faster one.
-         PASTE THE OUTPUT. check-boundaries.sh refuses a PR whose Regressions
-         or Gate probes section describes a failure without showing one
-       * whether GREEN was a no-op, and the command output proving the source
-         was untouched and still passes -->
+### R-1. `project-counters.test.sh` baselines were written in GREEN (2026-09-30, from REVIEW)
+
+**Which test, and what was wrong.** `.claude/tests/project-counters.test.sh`
+pins how many files each gate reports (`BASE_FORMAT`, `BASE_LINT`,
+`BASE_TYPECHECK`, the three `NARROW_*`). RED set them to 96/96/17, narrow
+17/17/7, the tree with four new test files and no module. Once GREEN added
+`src/shared/MechanicsTuning.luau` the real counts became 97/97/18, narrow
+18/18/8, so ten of the suite's assertions were wrong. The assertions were sound;
+the expected values were out of date.
+
+**How it was found, and what went wrong in the process.** The orchestrator's
+GREEN dispatch told the feature-developer to update the baselines, and it did,
+in commit `680b1da` (story `phase: GREEN`). That is a test written outside RED,
+which law 2 forbids. The lock allowed it because `.claude/**` classifies as
+`harness`. `check-boundaries.sh` refused it at REVIEW:
+
+    FAIL  story TUNE-001: commit 680b1da changed '.claude/tests/project-counters.test.sh' while the story was in GREEN, which may not write tests. A harness suite is a test, and law 2 freezes tests outside RED; the lock cannot see this because the path classifies as harness. Return to RED ('bash scripts/phase.sh set TUNE-001 RED'), make the change there, and record why in ## Regressions.
+
+The orchestrator's error, not the developer's. The branch had not been pushed,
+and the user chose the fix: rewrite the local GREEN commit to carry only `src/`
+and the story (it is now `311fa18`), then return to RED and make the change
+there. The old commits are `680b1da` (GREEN) and `85c8b38` (REVIEW), both
+unpublished.
+
+**The defect, shown: the suite at RED's baselines against the committed module**
+(`phase.sh set TUNE-001 RED`, then
+`bash .claude/tests/project-counters.test.sh`; first of ten failures shown):
+
+    FAIL format reports 92 files on the unmodified tree
+         expected count: 96
+         actual count:   97
+    FAIL typecheck reports 17 files on the unmodified tree
+         expected count: 17
+         actual count:   18
+    FAIL narrowing the typecheck target to src/shared reports 5, not 9
+         expected count: 7
+         actual count:   8
+
+**What it asserts now.** 97/97/18, narrow 18/18/8. These are the values GREEN
+measured and RED's handoff predicted. With them the suite reports
+`project-counters: 40 passed, 0 failed`.
+
+**What earns it.** The values were corrected while the module exists, so the
+suite passes on its first run, and that alone proves nothing. Two pieces of
+evidence. First, the run above: the same assertions go red at the old values
+against the same tree, so they discriminate on these counts. Second, a probe of
+one of them through `scripts/mutate.sh`, setting `NARROW_TYPECHECK` back to 7:
+
+    === mutate: .claude/tests/project-counters.test.sh (1 line(s) changed by s/^NARROW_TYPECHECK=8 /NARROW_TYPECHECK=7 /) ===
+        FAIL narrowing the typecheck target to src/shared reports 5, not 9
+             expected count: 7
+             actual count:   8
+    project-counters: 39 passed, 1 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against …/.claude_tests_project-counters.test.sh.20261001T041111Z.1685164.bak) ===
+
+**GREEN after this return is a no-op.** The source is unchanged from `311fa18`.
+The orchestrator verifies that, does not dispatch, and records it below.
+
+**Lesson for the next orchestrator.** When a story adds a source file, the
+`project-counters` baselines move. Put the predicted values in RED, where the
+suite is meant to be red, and have GREEN confirm them. Never tell GREEN to write
+them.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-01T04:00:29Z
+    commit: 680b1da (working tree had uncommitted changes)
+    tree:   bd5cab28985b0ddc08cd35f66033dee5b318ae53
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 97)
+    PASS         lint (0s, observed 97, floor 1)
+    PASS         typecheck (3s, observed 18)
+    PASS         unit (56s, observed 507, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (1s, observed 62841)
+    PASS         harness (15s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
-<!-- REQUIRED if this story adds or changes a gate, its command, or its
-     evidence line. Omit the section entirely otherwise.
-     A gate that has never been observed to fail is not a gate: break the thing
-     it guards, run the gate, paste the failure, revert. One block per gate:
-       * what was broken, and where
-       * the gate output proving it failed
-       * confirmation the probe was reverted -->
+**`floor | unit` raised 443 → 507** (`.claude/harness/project.conf`), by the
+orchestrator at GATES as the contract directs. The floor is part of the gate,
+so it was observed to fire: `scripts/mutate.sh` set it to 508 (one above the
+real count) and ran `bash scripts/gates.sh --gate unit`:
+
+    lune run test
+    507 passed, 0 failed
+
+    --- gate summary ---
+    FAIL         unit (79s, did 507 units of work, below the floor of 508 in project.conf) -> .claude/state/gate-logs/unit.log
+    1 required gate(s) failed.
+
+    === mutate: command exited 1; restored (verified byte-for-byte against …/.claude_harness_project.conf.20261001T035214Z.1634877.bak) ===
+
+Reverted by `mutate.sh`; the committed value is 507, the count this story
+lands with.
+
 
 ## Scaffold inventory
 
@@ -681,3 +781,18 @@ contract allows exactly two comment changes (plus the dispatch's
    `harness` FAIL on the uncommitted-tree precondition only
    (`project-counters: 39 passed, 1 failed`). GREEN is committed, as RED was,
    and `harness` is re-run on that commit below.
+   On the GREEN commit `680b1da`: `gates.sh --gate harness` gives `PASS harness (23s, observed 40)`. GREEN is finished.
+
+### The orchestrator's GATES record (2026-09-30)
+
+1. `phase.sh set TUNE-001 GATES`, then `frozen.sh snapshot` of the same 80
+   paths. At the end: `frozen: OK — 80 path(s) unchanged since the snapshot for
+   TUNE-001`.
+2. **Before `gates.sh`:** D-1 and D-2 run and CONFIRMED, plus D-3 (a wrong
+   boolean); output under `## Deferred verifications`.
+3. **`floor | unit` 443 → 507** in `project.conf`, observed to fire at 508; see
+   `## Gate probes`.
+4. **`bash scripts/gates.sh`:** `All required gates passed (6 ran, 3
+   unconfigured, 0 known)`, recorded by the script under `## Gate results`. Unit
+   56 s at 507/507 — the floor now equals the count, as intended. No feature-
+   developer dispatch was needed: nothing failed.
