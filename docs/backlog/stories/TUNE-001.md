@@ -5,7 +5,7 @@ slug: instance-channel-and-actuation-constants
 epic: EPIC-04
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/TUNE-001-instance-channel-and-actuation-constants
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -559,3 +559,125 @@ dispatch's override won over the agent definition, consistent with the planned
    files" only (`project-counters: 39 passed, 1 failed`), because RED was
    uncommitted. Admissible. RED is committed, as ROUND-006 did, and `harness` is
    re-run on that commit below.
+5. **On the RED commit `5964b8d`:** `gates.sh --gate harness` gives `PASS
+   harness`. RED is finished.
+
+### GREEN report (feature-developer, 2026-10-01)
+
+**Dispatch model.** `claude-opus-5-5` (Opus 5.5, from the session's own model
+identification). Matches the agent definition's `model: opus` and the planned
+row; no override was reported in the dispatch.
+
+**Started from the failure.** `lune run test` before any write: `502 passed,
+5 failed`, the five `mechanics_tuning_spec_test.luau` cases, line 42,
+`could not resolve child component "MechanicsTuning"` - as the handoff says.
+
+**Files changed.**
+
+- `src/shared/MechanicsTuning.luau` (new, source): `instance` (§2 incl. "The
+  layout"), `channel` (§3), `actuation` (§4 incl. "What the HUD shows of the
+  round"); a named record type per table under `--!strict`; each value
+  commented with its document label; the six §2 reference rows and §3's
+  `ping_range_studs` written as values with a comment naming the referent; the
+  seven `RULE_ROWS` absent (listed in the header); all four tables
+  `table.freeze`d. Counted by hand from `tuning.md` and by the guard:
+  **40 / 14 / 19 keys, 73 total.**
+- `src/shared/Tuning.luau`: comments only, no value. Line 15 "the signal
+  channel" -> "the channel"; `players_max` -> "placeholder: tuning.md §1,
+  replace via playtest P-N"; the header's `per_operation_seconds` paragraph
+  now says the relation is a test (TUNE-001 AC-4) instead of promising one.
+- `.claude/tests/project-counters.test.sh` (harness): baselines moved to the
+  MEASURED values and the LAST MEASURED entry updated.
+
+**Measured counter baselines** (`bash .claude/tests/project-counters.test.sh`
+run directly on the uncommitted tree, read from its own failure lines):
+format/lint `expected 96 / actual 97`, typecheck `17 / 18`, narrowed src
+format/lint `17 / 18`, narrowed src/shared typecheck `7 / 8`, untracked-file
+cases `97 / 98` and `18 / 19`. So 96/96/17 -> **97/97/18**, narrow 17 ->
+**18**, `NARROW_TYPECHECK` 7 -> **8** - RED's prediction held exactly. After
+the move: `project-counters: 39 passed, 1 failed`, the one failure being the
+"no stray .luau files" precondition (`M src/shared/Tuning.luau`, `??
+src/shared/MechanicsTuning.luau`), which clears on commit.
+
+**Negative controls, confirmed against the shipped module.** A Lune script
+outside the tree (scratchpad) required `MechanicsTuningSpec`, `Tuning` and the
+real `MechanicsTuning`, and applied each control's defect to an unfrozen copy
+of the **real module** rather than to the fake. Every value matches RED's:
+
+| Control | RED measured | GREEN measured (real module) |
+|---|---|---|
+| Parse baseline | §2 31/3/6 +3 rule, §3 9/4/1 +2, §4 11/8/0 +2, 0 problems | identical; module keys 40/14/19 |
+| AC-2 baseline (real module) | - | `missingOrMismatched` 0, `unspecified` 0 |
+| `dial_settings` 5 | doc 4; names `spec 4`, `module 5` | doc 4, module 4; s->m: `dial_settings (...tuning.md:88 §2 -> MechanicsTuning.instance): spec 4, module 5`; m->s 0 |
+| extra `vocabulary_size` | raised, names table and §3 | m->s names `vocabulary_size (MechanicsTuning.channel) ... §3`; s->m 0 |
+| missing `ping_display_seconds` | doc 15 | doc 15, module 15; `spec 15, absent from the module` |
+| reference disagrees | referent 12, module 13 | `lens_read_range_studs` 12 in module, `ping_range_studs` 12; at 13: `module 13 but MechanicsTuning.instance.lens_read_range_studs is 12` |
+| referent moved alone (D-1 shape) | exactly `{lens_read_range_studs, ping_range_studs}` | exactly those two, messages as D-1 predicts (spec 12 module 13; module 12 but referent is 13) |
+| D-2 shape (`turn_rate_limit_seconds` removed) | predicted `spec 1, absent` | `spec 1, absent from the module` (shape only; D-2 itself is GATES' `mutate.sh` run) |
+| rule row `spawn_room` present | both directions | both directions name `spawn_room` |
+| wrong type `blackout_permanent` 1 | `spec true (boolean), module 1 (number)` | identical |
+| missing `channel` table | `MechanicsTuning.channel is nil` | identical (1 finding) |
+| AC-4 baseline | 0 findings, 6 relations | **0** on real module + `Tuning`; `RELATION_COUNT` 6 |
+| AC-4 `procedure_length` 9 | 4 findings; lhs 45, rhs 40 | `actuator_count, machines_per_class_max, per_operation_seconds, steps_per_track`; `45 vs 40` |
+| AC-4 `preset_count` at ceiling | ceiling 12, 13 > 12, 1 finding | ceiling 12 in module; exactly `presets_plus_pings_max`, `13 vs 12` |
+| AC-4 missing operand | "cannot be computed" | the four relations using `procedure_length`, each "cannot be computed - MechanicsTuning.instance.procedure_length is nil" |
+| AC-5 frozen / unfrozen | 0 / 80 | real module **0**; unfrozen copy of it **80** |
+| AC-5 root-only | 76, none at root | **76**, 0 at root |
+| AC-5 channel unfrozen | 15 | **15**, all `MechanicsTuning.channel.*` |
+| AC-5 swallowing `__newindex` | 1 | **1** (`instance.__probe_key = 1 succeeded`), proxy over the real `instance` |
+
+No divergence. D-1 and D-2 proper (via `scripts/mutate.sh` on the module) were
+not run here: they are GATES' per `## Deferred verifications`.
+
+**Results.**
+
+- `lune run test`: **507 passed, 0 failed**.
+- `stylua --check` and `selene` on both changed source files: clean.
+- `bash scripts/gates.sh --fast` (3m40s): format PASS (97), lint PASS (97),
+  typecheck PASS (18), unit PASS (507, 53 s, floor 443), build PASS, coverage
+  UNCONFIGURED; **harness FAIL** on the "no stray .luau files" precondition
+  only (`project-counters: 39 passed, 1 failed`), as RED's was before its
+  commit. "2 changed source path(s), all exercised by a required gate."
+- The full `bash scripts/gates.sh` was **not** run: per the dispatch, nothing
+  is committed in GREEN, and the harness gate cannot pass on an uncommitted
+  tree, so a full run now would only record a known failure.
+
+**Doubt for review.** `Tuning.luau`'s SCOPE paragraph (lines 14-19) still
+says §2-§4 "land with the mechanics that read them". That is now half-stale -
+the constants landed here in `MechanicsTuning`, the consumers have not. The
+contract allows exactly two comment changes (plus the dispatch's
+`per_operation_seconds` note), so I left it; a one-line pointer to
+`MechanicsTuning` would be the fix if the orchestrator wants it.
+
+### The orchestrator's GREEN acceptance (2026-09-30)
+
+1. **Resolved model:** GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5),
+   as the agent reported. Planned `opus`; dispatched with an explicit `model: opus`.
+2. **Freeze:** `frozen: OK — 80 path(s) unchanged since the snapshot for TUNE-001`
+   (every tracked file under `tests/`, `tuning.md` and `architecture.md`, taken
+   right after `phase.sh set TUNE-001 GREEN`).
+3. **Diff:** new `src/shared/MechanicsTuning.luau` (40/14/19 keys, five
+   `table.freeze` calls of which four are on tables); `src/shared/Tuning.luau`
+   comments only - the two the contract names, plus the `per_operation_seconds`
+   paragraph, which now points at AC-4 instead of promising it (invited in the
+   dispatch). The SCOPE paragraph's "land with the mechanics that read them" is
+   left as is; it is about consumers, which have still not arrived.
+   `project-counters.test.sh` baselines moved to the measured 97/97/18, narrow
+   18, `NARROW_TYPECHECK` 8 - RED's prediction exactly.
+4. **Suite:** `lune run test` → `507 passed, 0 failed`.
+5. **Discrimination, two mutations via `scripts/mutate.sh`, each predicted to
+   catch on a single assertion:**
+   - `dial_settings = 4` → `5`: `506 passed, 1 failed`, the one failure
+     `AC-2: every constant row of tuning.md §2-§4 is in MechanicsTuning with its
+     specified value, and no rule row is`. Restored, verified byte-for-byte.
+   - `channel`'s `table.freeze(` removed (line 175): `506 passed, 1 failed`, the
+     one failure `AC-5: assigning to MechanicsTuning, to any of its three
+     tables, or to any nested value raises and changes nothing`. Restored,
+     verified byte-for-byte.
+   - After both: `507 passed, 0 failed`.
+6. **`gates.sh --fast`:** format PASS (97), lint PASS (97), typecheck PASS (18),
+   unit PASS (507, 55 s, floor 443), build PASS, coverage UNCONFIGURED;
+   `changes: 2 changed source path(s), all exercised by a required gate`.
+   `harness` FAIL on the uncommitted-tree precondition only
+   (`project-counters: 39 passed, 1 failed`). GREEN is committed, as RED was,
+   and `harness` is re-run on that commit below.
