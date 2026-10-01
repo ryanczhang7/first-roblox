@@ -4,8 +4,8 @@ title: A turn commits a live step on the right setting and says why it failed ot
 slug: a-turn-commits-a-live-step-on-the-right
 epic: EPIC-05
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/PROC-001-a-turn-commits-a-live-step-on-the-right
 depends_on: [GEN-004]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -746,3 +746,17 @@ D-1 and D-2 not run (owner GATES). Full `gates.sh` not run (GATES).
   and unconfigured repo-wide; `unit` is the one this story names, and it ran
   690 tests (floor 507) in 148 s. This story adds no gate, so there is no
   `## Gate probes` entry.
+
+**PO (2026-10-01, DONE). Merged.** PR https://github.com/ryanczhang7/first-roblox/pull/47
+was merged at 2026-10-01T23:54:29Z as `1a7c9d2`. Both CI checks passed.
+`boundaries` took 6 s. `gates` took 4m08s against `timeout-minutes: 45`
+(https://github.com/ryanczhang7/first-roblox/actions/runs/36938342854). The CI
+gate timings were format 1s, lint 0s, typecheck 3s, unit 63s (690 passed),
+build 0s and harness 15s. Nothing is near a limit, and no gate was pending CI.
+**Trend:** CI unit went from 40 s (GEN-004) to 63 s. PROC-001's 33 tests run on
+hand-built fixtures with no sweeps, so they are unlikely to account for 23 s.
+Local unit times varied between 123 s and 183 s over identical trees this
+session, which points to runner variance. Watch it on PROC-002 rather than act
+on one sample. EPIC-05's done-when #1 and #2 are delivered for ordinary steps.
+The armed refusal, phase legality and the rate limit remain with PROC-002 and
+PROC-005, as planned.
