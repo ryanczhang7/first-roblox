@@ -4,8 +4,8 @@ title: Instance, channel and actuation constants match their specification
 slug: instance-channel-and-actuation-constants
 epic: EPIC-04
 type: feature
-status: in-progress
-phase: RED
+status: in-review
+phase: REVIEW
 branch: story/TUNE-001-instance-channel-and-actuation-constants
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -579,18 +579,18 @@ them.
 
 <!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
 
-    run:    2026-10-01T04:00:29Z
-    commit: 680b1da (working tree had uncommitted changes)
+    run:    2026-10-01T04:22:49Z
+    commit: 2917454 (working tree had uncommitted changes)
     tree:   bd5cab28985b0ddc08cd35f66033dee5b318ae53
     result: pass (6 ran, 3 unconfigured, 0 known)
 
-    PASS         format (0s, observed 97)
-    PASS         lint (0s, observed 97, floor 1)
-    PASS         typecheck (3s, observed 18)
-    PASS         unit (56s, observed 507, floor 507)
+    PASS         format (1s, observed 97)
+    PASS         lint (1s, observed 97, floor 1)
+    PASS         typecheck (2s, observed 18)
+    PASS         unit (44s, observed 507, floor 507)
     UNCONFIGURED coverage
     UNCONFIGURED integration
-    PASS         build (1s, observed 62841)
+    PASS         build (0s, observed 62841)
     PASS         harness (15s, observed 40)
     UNCONFIGURED mutation
 
@@ -796,3 +796,30 @@ contract allows exactly two comment changes (plus the dispatch's
    unconfigured, 0 known)`, recorded by the script under `## Gate results`. Unit
    56 s at 507/507 — the floor now equals the count, as intended. No feature-
    developer dispatch was needed: nothing failed.
+
+### The second pass, after R-1 (2026-09-30)
+
+The GREEN and GATES records above describe the first pass. Read them with three
+corrections. The GREEN commit is now `311fa18`, not `680b1da`. The counter
+baselines landed in RED (`2917454`), not in GREEN; see `## Regressions` R-1.
+And `680b1da` and `85c8b38` were never pushed.
+
+1. **RED (return):** the defect was shown, the corrected baselines were probed,
+   and both outputs are in R-1. Then `gates.sh --gate harness` on `2917454`:
+   `PASS harness (16s, observed 40)`.
+2. **GREEN: a no-op, verified, with no dispatch.**
+   - `frozen.sh snapshot` of 102 paths: every tracked file under `tests/` and
+     `.claude/tests/`, plus `tuning.md` and `architecture.md`.
+   - `git diff --stat 311fa18 HEAD -- src` was empty.
+   - `lune run test` gave `507 passed, 0 failed`.
+   - `gates.sh --fast`: `All required gates passed (6 ran, 1 unconfigured, 0 known)`.
+   - `frozen: OK — 102 path(s) unchanged since the snapshot for TUNE-001`.
+3. **GATES.**
+   - A fresh 102-path snapshot.
+   - `src/` is byte-identical to `680b1da` (`git diff --quiet 680b1da HEAD -- src`),
+     the tree D-1 to D-3 ran against, so those results stand as recorded.
+   - The `project.conf` floor change was restored byte-for-byte from the first
+     pass (443 → 507). That is the content the `## Gate probes` probe ran on.
+   - `bash scripts/gates.sh`: `All required gates passed (6 ran, 3 unconfigured,
+     0 known)`, recorded under `## Gate results`.
+   - `frozen: OK — 102 path(s) unchanged since the snapshot for TUNE-001`.
