@@ -70,7 +70,23 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # Read the number out of each command's own evidence line; do not count files
 # yourself, for the same reason the suite does not.
 #
-# LAST MEASURED: GEN-002 (RED), which added four test files
+# LAST MEASURED: GEN-003 (RED), which added four test files
+# (tests/helpers/ProcedureContract.luau, ProcedureStubs.luau,
+# tests/server/steps_test.luau, steps_controls_test.luau) and no source:
+# 107/107/20 -> 111/111/20, narrow format/lint unchanged at 20, NARROW_TYPECHECK
+# unchanged at 8. Read from this suite's own failure lines, run directly with
+# `bash .claude/tests/project-counters.test.sh` on the uncommitted tree:
+# `expected count: 107 / actual count: 111` for format and lint, `108 / 112`
+# for the untracked-file cases, with typecheck and the narrow cases not
+# failing, which is the measurement that src did not move. GREEN adds one
+# source file, src/server/facility/Steps.luau, and will move these again:
+# 111/111/20 -> 112/112/21, narrow 20 -> 21, NARROW_TYPECHECK unchanged at 8
+# (src/server, not src/shared). THE BASELINES BELOW ARE SET TO THOSE PREDICTED
+# GREEN VALUES NOW, IN RED, as GEN-001 and GEN-002 did and for the same reason:
+# check-boundaries refuses a .claude/tests/** change from any other phase
+# (TUNE-001 R-1). This suite is red until GREEN adds the file; GREEN confirms,
+# never edits.
+# BEFORE THAT: GEN-002 (RED), which added four test files
 # (tests/helpers/PlacementContract.luau, PlacementStubs.luau,
 # tests/server/machines_test.luau, machines_controls_test.luau) and no source:
 # 102/102/19 -> 106/106/19, narrow format/lint unchanged at 19, NARROW_TYPECHECK
@@ -213,11 +229,11 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-BASE_FORMAT=107    # stylua  over src tests lune   (107 = 20 src + 87 tests/lune; PREDICTED for GEN-002 GREEN)
-BASE_LINT=107      # selene  over src tests lune
-BASE_TYPECHECK=20  # analyze over src (NET-001 probe included; src/net/ is five modules from TEL-003)
-NARROW_FORMAT=20   # stylua  over src alone
-NARROW_LINT=20     # selene  over src alone
+BASE_FORMAT=112    # stylua  over src tests lune   (112 = 21 src + 91 tests/lune; PREDICTED for GEN-003 GREEN)
+BASE_LINT=112      # selene  over src tests lune
+BASE_TYPECHECK=21  # analyze over src (NET-001 probe included; src/net/ is five modules from TEL-003)
+NARROW_FORMAT=21   # stylua  over src alone
+NARROW_LINT=21     # selene  over src alone
 NARROW_TYPECHECK=8 # analyze over src/shared alone (moved by TUNE-001's MechanicsTuning)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`
