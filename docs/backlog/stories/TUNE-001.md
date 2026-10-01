@@ -4,8 +4,8 @@ title: Instance, channel and actuation constants match their specification
 slug: instance-channel-and-actuation-constants
 epic: EPIC-04
 type: feature
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/TUNE-001-instance-channel-and-actuation-constants
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -186,11 +186,68 @@ from an upstream story or spike (as noted above), amend it and re-run
 
 - PLANNED - `lead-po` - `claude-opus-5-5` (Opus 5.5, from the session's own model
   identification; the /plan-product dispatch reported no override). 2026-09-30.
+- RED - `test-developer` - `claude-fable-5-1` (Fable 5.1, as the agent reported
+  of itself). Planned `fable`; dispatched with an explicit `model: fable`, which
+  beat the definition's `model: opus`. 2026-09-30.
 
 ## Test plan
 
-<!-- Filled by the Test Developer during RED: which tests, at which level,
-     and which AC each one covers. -->
+All unit level, under the repository's Lune runner (`lune run test`). Three
+files, the ROUND-002 shape: a helper of check objects, a file that applies them
+to the real module, and a controls file that requires **no production code** so
+its assertions run in RED.
+
+**`tests/helpers/MechanicsTuningSpec.luau`** - the guard. Parses `tuning.md`
+through `GatedFs`, selects §2/§3/§4 by `## N.` heading (a `###` line does not
+change the section), takes rows whose first cell is exactly one backticked name,
+drops `INV_*`, classifies every remaining row as exactly one of number / boolean
+/ reference / rule (`RULE_ROWS`, the contract's seven names), and reports
+anything else as a parse problem. Check objects: `assertNoParseProblems` (AC-1),
+`assertEverySectionHasRows` (AC-3), `missingOrMismatched` + `unspecified`
+(AC-2, both directions; rule rows must be absent; a reference row must equal
+the module's own value for its referent), `relationFindings` (AC-4, the six
+relations, every operand read from a module-shaped table),
+`freezeFindings` (AC-5, one attempted write per root table, per key and per
+"new key", must raise AND leave the value unchanged). No number from the
+document appears in it.
+
+**`tests/helpers/MechanicsTuningFakes.luau`** - the baseline fake, built from
+the parsed real rows (references resolved to their referent's value), plus
+`with(table, key, value)`, `frozen()`, `frozenRootOnly()`, `frozenExcept(t)`,
+`empty()`. Not a specification of the module.
+
+**`tests/shared/mechanics_tuning_spec_test.luau`** - against the real module
+(7 tests):
+
+| Test | AC | Status in RED |
+|---|---|---|
+| every backticked row of §2-§4 is exactly one of the four kinds | AC-1 | **passes on arrival** (document exists) - earned by the fixture controls and by probe A below |
+| at least one row from each of §2, §3, §4 | AC-3 | **passes on arrival** - earned by the fixture controls and by probe B below |
+| every constant row is in `MechanicsTuning` with its value; no rule row is | AC-2 | fails: module absent |
+| every key `MechanicsTuning` exposes is named by a constant row | AC-2 | fails: module absent |
+| `MechanicsTuning` exposes exactly `instance`, `channel`, `actuation` | AC-2 (contract shape) | fails: module absent |
+| every derived relation holds between `MechanicsTuning` and `Tuning` values | AC-4 | fails: module absent |
+| assigning to the module, any table, or any nested value raises and changes nothing | AC-5 | fails: module absent |
+
+**`tests/shared/mechanics_tuning_controls_test.luau`** - 24 controls, all
+green in RED, none requiring `src/`. Two baselines; AC-1 x4 (the `5 s` row,
+`spawn_room` given a number and a boolean, fixture collection incl. `###`
+sub-tables / INV_ / §1 / §5 / §9 / struck-through exclusion, a 16-case cell
+classifier table); AC-3 x2 (zero rows compare CLEAN then the floor fires; a §3
+heading that no longer matches names §3 only); AC-2 x8 (`dial_settings` 5,
+extra `vocabulary_size`, missing `ping_display_seconds`, a reference row that
+disagrees with its referent, a referent moved alone naming both rows - D-1's
+shape on the fake -, a rule row carried as a value, a boolean carried as a
+number, a missing table); AC-4 x4 (baseline: every relation holds on the
+document's own values; `procedure_length` 9; `preset_count` at the ceiling; a
+missing operand); AC-5 x4 (frozen passes / unfrozen fails everywhere,
+root-only freeze fails on nested writes only, one unfrozen table blamed alone,
+a swallowing `__newindex` counts as a write that succeeded).
+
+**Cost.** The whole suite runs in ~38 s locally (507 cases) with the new files
+adding well under a second of that; the only I/O is one `GatedFs` read of
+`tuning.md` per file, memoised, and no test spawns anything else. No per-test
+timeouts exist in this runner, so there is nothing to budget.
 
 ## Handoff: RED -> GREEN
 
@@ -211,6 +268,213 @@ from an upstream story or spike (as noted above), amend it and re-run
          suite fails at import, so no assertion in it has run - the controls
          are claims until GREEN confirms them against the shipped module
        * anything discovered that changes the approach -->
+
+**Command.** From the repository root:
+
+    lune run test
+
+The runner has no file filter; it walks `tests/` and prints one line per case.
+The lines that matter are the ones for `tests/shared/mechanics_tuning_*`.
+Fast gates: `bash scripts/gates.sh --fast`.
+
+**Failure output, verbatim (RED, 2026-10-01, local run, 507 cases).** The five
+failing cases all fail at the same line, for the right reason - the module does
+not exist. The two parse-only cases pass; see "passed on arrival" below.
+
+      pass  tests/shared/mechanics_tuning_spec_test.luau :: AC-1: every backticked row of tuning.md §2-§4 is exactly one of number, boolean, reference or rule
+      FAIL  tests/shared/mechanics_tuning_spec_test.luau :: AC-2: MechanicsTuning exposes exactly the tables instance, channel and actuation
+            C:\Users\ryanc\Projects\first-roblox\tests\shared\mechanics_tuning_spec_test:42: src/shared/MechanicsTuning.luau did not load: error requiring module "../../src/shared/MechanicsTuning": could not resolve child component "MechanicsTuning"
+      FAIL  tests/shared/mechanics_tuning_spec_test.luau :: AC-2: every constant row of tuning.md §2-§4 is in MechanicsTuning with its specified value, and no rule row is
+            C:\Users\ryanc\Projects\first-roblox\tests\shared\mechanics_tuning_spec_test:42: src/shared/MechanicsTuning.luau did not load: error requiring module "../../src/shared/MechanicsTuning": could not resolve child component "MechanicsTuning"
+      FAIL  tests/shared/mechanics_tuning_spec_test.luau :: AC-2: every key MechanicsTuning exposes is named by a constant row of tuning.md §2-§4
+            C:\Users\ryanc\Projects\first-roblox\tests\shared\mechanics_tuning_spec_test:42: src/shared/MechanicsTuning.luau did not load: error requiring module "../../src/shared/MechanicsTuning": could not resolve child component "MechanicsTuning"
+      pass  tests/shared/mechanics_tuning_spec_test.luau :: AC-3: the guard parses at least one row from each of tuning.md §2, §3 and §4
+      FAIL  tests/shared/mechanics_tuning_spec_test.luau :: AC-4: every derived relation tuning.md states holds between MechanicsTuning and Tuning values
+            C:\Users\ryanc\Projects\first-roblox\tests\shared\mechanics_tuning_spec_test:42: src/shared/MechanicsTuning.luau did not load: error requiring module "../../src/shared/MechanicsTuning": could not resolve child component "MechanicsTuning"
+      FAIL  tests/shared/mechanics_tuning_spec_test.luau :: AC-5: assigning to MechanicsTuning, to any of its three tables, or to any nested value raises and changes nothing
+            C:\Users\ryanc\Projects\first-roblox\tests\shared\mechanics_tuning_spec_test:42: src/shared/MechanicsTuning.luau did not load: error requiring module "../../src/shared/MechanicsTuning": could not resolve child component "MechanicsTuning"
+    502 passed, 5 failed
+
+The module is loaded through `pcall(require, ...)` so that the five criteria
+fail by name rather than as one `LOAD FAIL`. All 24 cases in
+`mechanics_tuning_controls_test.luau` pass; that file requires nothing under
+`src/`, by design, so its assertions genuinely executed in RED.
+
+**Files touched (all new, all `test` under `paths.conf`; nothing under `src/`,
+no manifest, no config):**
+
+- `tests/helpers/MechanicsTuningSpec.luau` - the guard (AC-1..AC-5 check objects)
+- `tests/helpers/MechanicsTuningFakes.luau` - baseline and wrong fakes for the controls
+- `tests/shared/mechanics_tuning_spec_test.luau` - real-module tests (AC mapping in `## Test plan`)
+- `tests/shared/mechanics_tuning_controls_test.luau` - the controls (AC mapping in `## Test plan`)
+- `.claude/tests/project-counters.test.sh` (`harness`, writable every phase):
+  `BASE_FORMAT`/`BASE_LINT` 92 → 96 and the LAST MEASURED entry, read from the
+  suite's own failure lines under `gates.sh --fast`, as HARNESS-022's RED did.
+  **GREEN moves them again** when `src/shared/MechanicsTuning.luau` lands:
+  96/96/17 → 97/97/18, narrow 17 → 18, `NARROW_TYPECHECK` 7 → 8.
+- this story file: `## Test plan`, this section
+
+**`bash scripts/gates.sh --fast` shape (2026-10-01, local).** `format` PASS
+(96 files), `lint` PASS (96), `typecheck` PASS (17 - no src change),
+`build` PASS; `unit` FAIL with exactly the five assertions above (`502 passed,
+5 failed`, 64 s under the gate); `harness` FAIL on one precondition only -
+"the working tree carries no stray .luau files" - because the four new files
+are untracked until committed (`project-counters: 39 passed, 1 failed` after
+the baseline move; 33/7 before it). No timeout, config or lint failure touches
+the new files, so they are admissible to the gates that will judge them. The
+`unit` floor (443) is below the count this story lands with (507 cases); the
+contract has the orchestrator raise it at GATES.
+
+**The export shape the tests already pin** (a test imports it; a different
+guess is a failing test, not a style choice):
+
+- Module path: `src/shared/MechanicsTuning.luau`, required as
+  `require("../../src/shared/MechanicsTuning")` from `tests/shared/`. It must
+  return a **table**.
+- Its keys are exactly `instance`, `channel`, `actuation` - no more, no fewer
+  (the "exposes exactly the tables" test sorts and compares the key list). Each
+  is a table.
+- `instance` carries every §2 constant row (31 numbers, 3 booleans, 6
+  references = **40 keys**), `channel` every §3 row (9 + 4 + 1 = **14 keys**),
+  `actuation` every §4 row (11 + 8 + 0 = **19 keys**), with the keys being the
+  document's snake_case names verbatim. The `###` sub-tables ("The layout" in
+  §2, "What the HUD shows" in §4) are included. **73 keys in total.**
+- Values: a number row's value is a Luau `number` equal to the document's; a
+  boolean row's is a Luau `boolean` (`typeof(actual) == row.kind` is checked,
+  so `1` for `true` fails). A reference row (e.g. `ping_range_studs` = `` =
+  `lens_read_range_studs` ``) is stored as a **value** equal to the module's
+  own value for the referent; the referent may live in a different table
+  (`channel.ping_range_studs` == `instance.lens_read_range_studs`). Chains
+  resolve: `tag_alphabet_size` = `machines_per_class_max`, both numbers.
+- The seven `RULE_ROWS` names (`key_classes`, `actuators_per_class`,
+  `spawn_room`, `channel_limiter_consumed_by`, `ping_budget_per_player`,
+  `blackout_selection`, `hud_round_clock_form`) must be **absent** from every
+  table; a module carrying one fails AC-2 in both directions.
+- AC-4 reads `MechanicsTuning.instance.{actuator_count, procedure_length,
+  actuator_redundancy, steps_per_track, procedure_tracks,
+  machine_spacing_min_studs, turn_range_studs, machines_per_class_max}`,
+  `MechanicsTuning.channel.{preset_count, ping_kinds, presets_plus_pings_max}`
+  and `Tuning.session.players_min`, `Tuning.round.{per_operation_seconds,
+  round_seconds, traversal_reserve_seconds}` as numbers. `Tuning` is required
+  directly (it exists); no change to its exports is pinned or expected.
+- AC-5: a write to the module table (replace a sub-table, add a key), to each
+  sub-table (overwrite **every** existing key, add a key) must **raise** and
+  leave the value unchanged. `table.freeze` on all four tables satisfies it, as
+  `Tuning.luau` does. A `__newindex` that raises also satisfies it; one that
+  swallows silently does not.
+
+**What the tests do NOT constrain:** key order; whether each table has a precise
+record type or the contract's loose map type; comments (including the referent
+comment on a reference row); which freezing mechanism; the error text of a
+refused write; the module header. `Tuning.luau`'s two comment edits (contract)
+are invisible to every test.
+
+**Callers of changed signatures: none - checked against the tree.** `grep -rln
+MechanicsTuning src tests` returns only the four new test files; nothing under
+`src/` names it, and `Tuning.luau`'s exports are untouched.
+
+**Tests that passed on arrival, and what earns them.** The two parse-only cases
+in `mechanics_tuning_spec_test.luau` are green because `tuning.md` exists. Each
+has fixture controls in the controls file (AC-1: the `5 s` row, the rule-row
+given a number; AC-3: the zero-row vacuity control and the broken `## 3.`
+heading), and each was probed against the REAL document with
+`scripts/mutate.sh` (restore verified byte-for-byte both times):
+
+*Probe A* - `s/^| \`room_count\` | 6 |/| \`room_count\` | 6 s |/` on
+`docs/wiki/game/tuning.md`:
+
+      FAIL  tests/shared/mechanics_tuning_controls_test.luau :: baseline: the real tuning.md parses with no problems and a row in every section
+      docs/wiki/game/tuning.md:76 §2: "room_count" = "6 s" is none of number, boolean, reference (= `name`) or a RULE_ROWS name
+      FAIL  tests/shared/mechanics_tuning_spec_test.luau :: AC-1: every backticked row of tuning.md §2-§4 is exactly one of number, boolean, reference or rule
+      docs/wiki/game/tuning.md:76 §2: "room_count" = "6 s" is none of number, boolean, reference (= `name`) or a RULE_ROWS name
+    500 passed, 7 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .../docs_wiki_game_tuning.md.20261001T002353Z.1320554.bak) ===
+
+*Probe B* - `s/^## 3\. The channel/## The channel/`:
+
+      FAIL  tests/shared/mechanics_tuning_controls_test.luau :: baseline: the real tuning.md parses with no problems and a row in every section
+      §3 (-> MechanicsTuning.channel): 0 rows parsed
+      FAIL  tests/shared/mechanics_tuning_spec_test.luau :: AC-3: the guard parses at least one row from each of tuning.md §2, §3 and §4
+      §3 (-> MechanicsTuning.channel): 0 rows parsed
+    496 passed, 11 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .../docs_wiki_game_tuning.md.20261001T002439Z.1324344.bak) ===
+
+Probe B also turned four AC-2/AC-4 controls red with "the check passed, so the
+check is vacuous": with §3 unnumbered its rows fall into §2's bucket, and the
+fakes keyed on `channel.*` compare against nothing. That is the vacuous pass
+AC-3 exists to prevent, observed rather than described.
+
+**Negative controls - expected and measured.** The controls file requires no
+production code, so every value below was **measured in RED**, both inside the
+suite (the control passed) and outside it (a plain Lune script calling the
+helpers directly, 2026-10-01). Document values are read out by the parser, not
+typed; the wrong values are the controls' own. GREEN's job is to confirm the
+same numbers against the shipped module (and D-1/D-2 at GATES).
+
+| Control | Threshold / expectation | Wrong input | Measured in RED |
+|---|---|---|---|
+| Real document parses (baseline) | 0 problems; ≥1 row in each of §2, §3, §4 | - | §2 31/3/6 (+3 rule), §3 9/4/1 (+2), §4 11/8/0 (+2); 0 problems; matches the contract's counts |
+| AC-1 `foo_seconds` / `5 s` | exactly 1 problem naming `foo_seconds` and `5 s`; `assertNoParseProblems` raises with `AC-1` | fixture row inside §2 | 1 problem; raised |
+| AC-1 rule row given a value | exactly 1 problem naming `spawn_room`, `RULE_ROWS`, kind | `spawn_room` = `3`, then `true` | 1 problem each (`number`, `boolean`) |
+| AC-1 fixture collection | 10 rows, kinds as listed, nothing from §1/§5/§9/INV_/`~~` | - | exact match |
+| AC-1 cell classifier | 16 cells → expected kinds | `**4**`, `4 s`, `~4`, `True`, `= other`, `= \`a\`..\`b\``, prose, `none`, `""` → none | 16/16 |
+| AC-3 zero rows | comparison over 0 rows returns **0 findings** against a drifted fake; floor raises naming `§2 (`, `§3 (`, `§4 (` | `{rows = {}}` | 0 findings; raised |
+| AC-3 §3 heading broken | total row count unchanged; floor names `§3 (-> MechanicsTuning.channel): 0 rows parsed` and not §2/§4 | fixture | as expected |
+| AC-2 `dial_settings` 5 | passes module→spec; fails spec→module naming `dial_settings`, `spec 4`, `module 5` | 5 | document value read = **4**; raised with both |
+| AC-2 extra key | passes spec→module; fails module→spec naming `vocabulary_size`, `MechanicsTuning.channel`, `§3` | `channel.vocabulary_size = 16` | raised |
+| AC-2 missing key | passes module→spec; fails spec→module naming `ping_display_seconds`, `spec 15`, `absent from the module` | `channel.ping_display_seconds = nil` | document value read = 15; raised |
+| AC-2 reference disagrees | names `ping_range_studs`, `spec = \`lens_read_range_studs\``, `module 13`, `MechanicsTuning.instance.lens_read_range_studs is 12` | referent + 1 | referent read = **12**; raised |
+| AC-2 referent moved alone (D-1's shape) | findings exactly `{lens_read_range_studs, ping_range_studs}` | `instance.lens_read_range_studs` = 13 | exactly those two |
+| AC-2 rule row present | both directions name `spawn_room`; spec→module says "a rule row, not a constant" | `instance.spawn_room = 1` | raised, both |
+| AC-2 wrong type | names `blackout_permanent`, `spec true (boolean)`, `module 1 (number)` | 1 | raised |
+| AC-2 missing table | names `MechanicsTuning.channel is nil` | `channel = nil` | raised |
+| AC-4 baseline | 0 findings on document values; 6 relations | - | **0 findings**; `RELATION_COUNT` = 6 |
+| AC-4 `procedure_length` 9 | `per_operation_seconds` fails; `machine_spacing_min_studs` and `presets_plus_pings_max` do not; message shows `45 vs 40` and `procedure_length = 9` | 9 | findings = `actuator_count, steps_per_track, machines_per_class_max, per_operation_seconds`; lhs **45**, rhs **40** |
+| AC-4 `preset_count` at ceiling | exactly `presets_plus_pings_max` fails | `preset_count` = 12 (read ceiling) | 12 + 1 = 13 > 12; exactly one finding |
+| AC-4 missing operand | "cannot be computed", names `MechanicsTuning.instance.procedure_length is nil` | `procedure_length = nil` | raised |
+| AC-5 frozen / unfrozen | frozen → 0 findings; unfrozen → one per attempted write = 4 + (40+1) + (14+1) + (19+1) | `table.freeze` ×4 vs none | **0** and **80** |
+| AC-5 root-only freeze | >0 findings, all `MechanicsTuning.<table>.<key>`; none blaming the root | `table.freeze` on root only | **76** (= 80 − 4), none at root |
+| AC-5 one table unfrozen | every finding starts `MechanicsTuning.channel.` | `frozenExcept("channel")` | **15** (14 keys + 1 new) |
+| AC-5 swallowing `__newindex` | ≥1 finding "succeeded; the write must raise" on `instance.*` | `instance` replaced by an empty proxy with `__index` to the real table and an empty `__newindex` | **1** (the `__probe_key` write; the proxy has no raw keys, so `freezeFindings` iterates none - a reminder that the check enumerates the module's *raw* keys, which the real module's plain tables satisfy) |
+
+**Deferred verifications.** D-1 and D-2 are owned by GATES and **RED declines
+them in those words: they cannot be run here, because the module they mutate
+does not exist.** What RED can say is that the same checks fire on fakes with
+exactly those defects (rows "referent moved alone" and "missing key" above),
+so when GATES runs `scripts/mutate.sh` on the shipped module the expected
+output is: D-1 → AC-2 spec→module fails naming `lens_read_range_studs` (spec
+12, module 13) and `ping_range_studs` (module 12 but
+`MechanicsTuning.instance.lens_read_range_studs is 13`); D-2 → AC-2 fails
+naming `turn_rate_limit_seconds` (spec 1, absent from the module).
+
+**Discoveries that bear on the implementation.**
+
+- The contract's counts re-measured exactly (awk independently of the guard,
+  then the guard itself). No document inconsistency found; all six AC-4
+  relations hold on today's values, so nothing goes to the Game Designer.
+- The guard treats a `RULE_ROWS` name whose cell is a **reference** as a parse
+  problem too, not only a number or boolean: AC-1 says "exactly one of four
+  kinds", and a rule row that is also a reference is two. Today no row is
+  affected. Noted in case the document grows one; the fix would be a `RULE_ROWS`
+  edit, not a guard edit.
+- Referents are resolved against the **module** (all three tables), not the
+  document, which is what AC-2's wording asks and what makes D-1 fire twice.
+  A reference to a §1/§5 constant (none today) would be reported as "the
+  module has no `x` under instance, channel or actuation" - the right outcome,
+  since `MechanicsTuning` should not shadow `Tuning`.
+- `--!strict` note for GREEN: the contract's loose `{ [string]: number |
+  boolean }` type is only the guard's view. Named-field record types per table
+  are compatible with every assertion here (the tests index with `[]` through
+  `any`).
+- The contract counts were not hard-coded as assertions. The per-section floor
+  is ≥1, and the module→spec direction supplies the rest: once the module has
+  73 keys, a parser that dropped any row reports that key as unspecified.
+
+**Dispatch model.** `.claude/agents/test-developer.md` declares `model: opus`;
+this session reports itself as **Fable 5.1 (`claude-fable-5-1`)**, so the
+dispatch's override won over the agent definition, consistent with the planned
+`fable` row. The orchestrator records what resolved, by name, under
+`## Model guidance` → Resolved.
 
 ## Regressions
 
@@ -264,3 +528,34 @@ from an upstream story or spike (as noted above), amend it and re-run
 
 ## Notes
 
+**PLANNED → RED checks (lead-po, 2026-09-30).**
+
+- **Gate.** `unit` is `required` and `covers` both `src/shared/**` and
+  `docs/wiki/game/tuning.md`; no `required_gates` entry is needed.
+- **Callers of changed signatures.** None: the contract changes no existing
+  export (`Tuning.luau` changes two comments only). `MechanicsTuning` is new, so
+  it has no callers. RED's handoff confirms this against the tree.
+- **Epic done-when.** EPIC-04 done-when 1 is exactly AC-1..AC-3 plus AC-2's
+  "a changed value on either side fails, naming it". Done-when 2..6 belong to
+  GEN-001..GEN-004. No gap, so no PO decision.
+- **Contract re-measured independently** (awk over `tuning.md`, not the
+  guard): §2 31/3/6, §3 9/4/1, §4 11/8/0 number/boolean/reference rows, and the
+  seven non-classifiable rows are exactly `RULE_ROWS`. All six AC-4 relations
+  hold on today's values; AC-4's control (`procedure_length` 9) gives 40 ≠ 45.
+
+### The orchestrator's RED acceptance (2026-09-30)
+
+1. **Resolved model:** recorded under `## Model guidance`.
+2. **Tests read and run by the orchestrator:** `lune run test` → `502 passed,
+   5 failed`. All five failures are in `mechanics_tuning_spec_test.luau`, line 42,
+   `could not resolve child component "MechanicsTuning"`: the right reason. The
+   24 controls in `mechanics_tuning_controls_test.luau` require nothing under
+   `src/` and pass, so their measured values are evidence, not claims.
+3. **`tuning.md` untouched by the probes:** `git status` lists only the story,
+   `.claude/tests/project-counters.test.sh` and the four new test files.
+4. **`gates.sh --fast`:** format PASS (96), lint PASS (96), typecheck PASS (17),
+   build PASS; `unit` FAIL with exactly the five demand failures (57 s);
+   `harness` FAIL on the precondition "the working tree carries no stray .luau
+   files" only (`project-counters: 39 passed, 1 failed`), because RED was
+   uncommitted. Admissible. RED is committed, as ROUND-006 did, and `harness` is
+   re-run on that commit below.

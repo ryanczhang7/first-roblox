@@ -70,7 +70,20 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # Read the number out of each command's own evidence line; do not count files
 # yourself, for the same reason the suite does not.
 #
-# LAST MEASURED: HARNESS-022 (RED), which added two test files
+# LAST MEASURED: TUNE-001 (RED), which added four test files
+# (tests/helpers/MechanicsTuningSpec.luau, MechanicsTuningFakes.luau,
+# tests/shared/mechanics_tuning_spec_test.luau,
+# mechanics_tuning_controls_test.luau) and no source: 92/92/17 -> 96/96/17,
+# narrow format/lint unchanged at 17, NARROW_TYPECHECK unchanged at 7. Read
+# from this suite's own failure lines under `gates.sh --fast`
+# (.claude/state/gate-logs/harness.log) - `expected count: 92 / actual count:
+# 96` for format and lint against `stylua over 96 files` and `selene over 96
+# files`, `expected count: 93 / actual count: 97` for the untracked-file
+# cases - with typecheck and the narrow cases not failing, which is the
+# measurement that src did not move. GREEN adds one source file,
+# src/shared/MechanicsTuning.luau, and will move these again: 96/96/17 ->
+# 97/97/18, narrow 17 -> 18, NARROW_TYPECHECK 7 -> 8 (src/shared).
+# BEFORE THAT: HARNESS-022 (RED), which added two test files
 # (tests/helpers/GatedFs.luau, tests/shared/gated_fs_test.luau) and no
 # source: 90/90/17 -> 92/92/17, narrow format/lint unchanged at 17,
 # NARROW_TYPECHECK unchanged at 7. Read from this suite's own failure lines
@@ -161,8 +174,8 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-BASE_FORMAT=92     # stylua  over src tests lune   (92 = 17 src + 75 tests/lune)
-BASE_LINT=92       # selene  over src tests lune
+BASE_FORMAT=96     # stylua  over src tests lune   (96 = 17 src + 79 tests/lune)
+BASE_LINT=96       # selene  over src tests lune
 BASE_TYPECHECK=17  # analyze over src (NET-001 probe included; src/net/ is five modules from TEL-003)
 NARROW_FORMAT=17   # stylua  over src alone
 NARROW_LINT=17     # selene  over src alone
