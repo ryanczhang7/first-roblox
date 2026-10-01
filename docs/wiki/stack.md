@@ -613,18 +613,41 @@ Studio install. On CI it is never invoked.
 
 ---
 
-## 8. What this file does not cover
+## 8. M3 adds no tool
 
-**Scope of this planning pass is M0–M2 only** (see `docs/wiki/architecture.md`
-§0). Consequently this file says nothing about:
+Checked at the M3 `/plan-product` pass, 2026-09-30. M3 (the vertical slice,
+`architecture.md` §9) needs **nothing that is not already pinned above**:
+
+- **No Wally package.** The client UI is built from plain Roblox Instances
+  (`architecture.md` D20), the generator and the Procedure are pure Luau, and the
+  Roblox APIs M3 touches — `RemoteEvent`, `TextService:FilterStringAsync`,
+  `TextChatService`, `workspace:Raycast` — are engine services, not packages.
+  Adding a package would be an operator decision (B1 #5); none is proposed.
+- **No new gate and no new command.** Client view models are tested by the same
+  `lune run test` under `tests/client/`, which the runner already walks
+  (`lune/test.luau` recurses `tests/`). `project.conf` gains a `covers | unit |
+  src/client/**` line and a `discovery | client` line with the first story that
+  puts a model there (`SLICE-004`), because a `discovery` line added before
+  `tests/client/` exists would fail on an empty match.
+- **Studio** (the operator's install) becomes necessary for M3's Studio checks
+  and its definition of done. It is not a gate and not in `rokit.toml`; nothing
+  on CI needs it.
+- **One `.luaurc` alias** (`"net": "src/net"`, `architecture.md` D21) — a config
+  line, not a tool.
+
+So `/setup-environment` has nothing new to install for M3. Re-run it only if
+`bash scripts/doctor.sh` reports a missing tool.
+
+## 9. What this file does not cover
+
+**Scope: M0–M3** (see `docs/wiki/architecture.md` §0). Consequently this file
+says nothing about:
 
 - Open Cloud deployment scripting (M6, operator-gated per B1 #5).
-- Any Wally package. M0–M2 needs none: the phase machine, the seat ring, the
-  validation wrappers and the telemetry envelope are all pure Luau. The first
-  real dependency question arrives with M3, and B1 #5 makes it an operator
-  decision.
-- Client-side anything. M0–M2 builds no UI, so no rendering, no state management
-  and no asset pipeline is chosen here.
+- Any Wally package. M0–M3 needs none (§8); B1 #5 makes the first one an
+  operator decision.
+- Client-side anything beyond §8: no asset pipeline, and no Creator Store asset
+  (an open operator question, `architecture.md` §10).
 - Persistence (DataStore request budgets, ordered stores, throttling). Telemetry
   in M2 emits through an **injected sink**; what that sink is on a live server is
   an M5 decision, and the architecture document says why the interface is drawn

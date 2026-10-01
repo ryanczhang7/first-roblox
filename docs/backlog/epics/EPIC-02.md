@@ -1,7 +1,7 @@
 ---
 id: EPIC-02
 title: The server is the only source of truth, and it says so out loud
-status: todo
+status: done
 stories: [TEL-001, NET-001, NET-002, NET-003, SEAT-001, SEAT-002, SEAT-003, TEL-002, TEL-003]
 ---
 

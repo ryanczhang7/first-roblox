@@ -12,7 +12,7 @@
 	to disagree.
 
 	SCOPE is `tuning.md` §1 (session and lobby) and §5 (round timing) only.
-	§2-§4 and §6 - the instance, the signal channel, actuation and instability,
+	§2-§4 and §6 - the instance, the channel, actuation and instability,
 	difficulty bands - are M3 and land with the mechanics that read them, so that
 	a placeholder is not frozen into source a year before anything uses it. §7
 	records constants this design deliberately does not have; nothing here may
@@ -23,9 +23,8 @@
 
 	`per_operation_seconds` is `(round_seconds - traversal_reserve_seconds) /
 	procedure_length` in the specification: (420 - 60) / 8 = 45. It is carried
-	here as a SPECIFIED VALUE rather than computed, because `procedure_length` is
-	an M3 constant that does not exist yet; when it arrives the relation becomes
-	a test.
+	here as a SPECIFIED VALUE rather than computed. `procedure_length` lives in
+	`MechanicsTuning.instance`, and the relation is a test: TUNE-001 AC-4.
 
 	AMENDMENT 12 IS RESOLVED. It recorded that `lobby_seconds` 60 +
 	`round_seconds` 480 = 540 exceeded `first_round_within_seconds` 480, so A5's
@@ -68,7 +67,7 @@ export type Tuning = {
 -- `tuning.md` §1. Session and lobby.
 local session: SessionTuning = table.freeze({
 	players_min = 4, -- derived: product-brief §0b amendment 1
-	players_max = 6, -- derived: channel contention. Supersedes A4's cap of 16.
+	players_max = 6, -- placeholder: tuning.md §1, replace via playtest P-N
 	min_players_to_continue = 3, -- derived: a 3-cycle ring is still a ring
 	lobby_seconds = 60, -- taste: UX pacing, the Lead Designer owns it
 	post_round_seconds = 45, -- placeholder: the post-round trace is four items of reading

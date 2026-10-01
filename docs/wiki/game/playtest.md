@@ -96,8 +96,13 @@ people the operator usually plays with.
                 reading or memory?
     Not working the child needs an adult to explain what to do more than once
                 after the first minute; OR they cannot say, afterwards, what
-                their helper does for them; OR they turn their dial to pings that
-                are not their helper's; OR they arrive at a pinged machine after
+                their helper does for them; OR they walk to, wait at, or answer
+                pings and Help beacons that are not their helper's or partner's
+                (re-aimed 2026-09-30, Q-G5: the dial pre-selects the helper's
+                ping, so "turns to a ping that is not their helper's" can now
+                only happen by overriding it; count overrides, and a child who
+                overrides it toward another player's ping is this reading);
+                OR they arrive at a pinged machine after
                 the ping has expired and are stuck (the memory reading, formerly
                 P-M); OR they never use the preset wheel because they cannot
                 read it; OR they are frightened by the dark or the failure tone
@@ -119,6 +124,9 @@ people the operator usually plays with.
                 actuation_failure_is_diagnostic (T13: a child who cannot tell
                 "wrong" from "not yet" is the T13 answer), turn_cue_lookahead,
                 dial_settings (can a child distinguish the settings in the dark),
+                the dial's helper-ping pre-selection (mechanics.md §5, Q-G5:
+                if children confirm it without looking, even when the helper's
+                ping was an unread guess, it is doing the thinking for them),
                 blackout_permanent (T15), first_session_win_rate_target (T18),
                 progress_bar_marks_finale and the bar's presentation (the
                 bar-as-timer reading is a Lead Designer finding, not a reason
@@ -387,6 +395,29 @@ serial token stream to saturate.
 
 Low priority until lobby fill is a real question, but cheap to ride along with
 any session that happens to have five or six people.
+
+---
+
+## P-H — Does the visible clock help or panic?
+
+Added 2026-09-30 for T21 (`loop.md` §5b). Informs `hud_round_clock_form`; the
+decision is the operator's.
+
+    Question    with the provisional numeric countdown, do players use the clock
+                to pace themselves, or does it make them rush and guess?
+    Not working a young player's guess rate (P-G's count) rises sharply in the
+                last 60 s compared with the rest of the round and they describe
+                the number as scary; OR adults plan the whole round against the
+                number ("we need 50 s a step") and one of them runs it (P-Q);
+                OR nobody ever mentions or glances at it, so it adds nothing
+    Working     players refer to the clock to choose between waiting and
+                guessing ("20 s left, just guess"), and a young player can say
+                what happens when it runs out without being upset by it
+    Sessions    3, at least one with a player at the T19 floor age. Compare the
+                last-60-s guess rate with the whole-round rate from the logs
+    Falsifies   hud_round_clock_form (T21); if the rush reading holds, the
+                last-60-s form (b) is the first alternative to try
+    Result      not yet run
 
 ---
 
