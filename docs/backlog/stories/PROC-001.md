@@ -4,8 +4,8 @@ title: A turn commits a live step on the right setting and says why it failed ot
 slug: a-turn-commits-a-live-step-on-the-right
 epic: EPIC-05
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/PROC-001-a-turn-commits-a-live-step-on-the-right
 depends_on: [GEN-004]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -190,9 +190,46 @@ facility fixture is hand-built, and no test depends on a generator sample.
 point on the `out_of_reach` path. AC-4 **must** then fail, and AC-3 **must**
 still pass. RED cannot run this. Owner: GATES.
 
+*Result (GATES, 2026-10-01, lead-po): HOLDS.* The refused-turn return was
+mutated to hand back a copy charged one point when the reason is
+`out_of_reach`. Three AC-4/AC-6 tests went red, **no AC-3 test did**, and the
+file was restored byte-for-byte. Matches the handoff's D-1 stand-in (3 checks).
+
+    === mutate: src/server/procedure/Procedure.luau (1 line(s) changed by s#return state, { kind = "refused", machineId = machineId, reason = reason }#local c = copy(state); if reason == "out_of_reach" then c.instability += 1 end; return c, { kind = "refused", machineId = machineId, reason = reason }#) ===
+      228 - 		return state, { kind = "refused", machineId = machineId, reason = reason }
+      228 + 		local c = copy(state); if reason == "out_of_reach" then c.instability += 1 end; return c, { kind = "refused", machineId = machineId, reason = reason }
+
+    === mutate: running sh -c lune run test 2>&1 | grep -E "^  FAIL |passed, [0-9]+ failed" ===
+      FAIL  tests/server/procedure_test.luau :: AC-4/P-4: the holder just past turn_range_studs horizontally, or with no accepted position, is refused / out_of_reach
+      FAIL  tests/server/procedure_test.luau :: AC-4: the refusal checks run unknown_machine, not_key_holder, out_of_reach, committed, resetting in that order and the first failure wins
+      FAIL  tests/server/procedure_test.luau :: AC-6/P-10: the log holds one { playerId, machineId, setting, at, result } per evaluated turn, in call order, and none for a refused one
+    687 passed, 3 failed
+
+    === mutate: command exited 0; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/src_server_procedure_Procedure.luau.20261001T224324Z.3034020.bak) ===
+      228: 		return state, { kind = "refused", machineId = machineId, reason = reason }
+
 **D-2. Liveness is per track, not global.** Use `scripts/mutate.sh` to make
 `isLive` return true only for track 1's head. AC-1 **must** then fail. Owner:
 GATES.
+
+*Result (GATES, 2026-10-01, lead-po): HOLDS.* `isLive`'s track loop was cut
+to track 1 alone. All three AC-1 tests went red, plus AC-5, whose supplier
+commits a track-2 head. The file was restored byte-for-byte. Matches the
+handoff's D-2 stand-in (4 checks).
+
+    === mutate: src/server/procedure/Procedure.luau (1 line(s) changed by s#for _, track in state.facility.steps.tracks do#for _, track in { state.facility.steps.tracks[1] } do#) ===
+      98 - 	for _, track in state.facility.steps.tracks do
+      98 + 	for _, track in { state.facility.steps.tracks[1] } do
+
+    === mutate: running sh -c lune run test 2>&1 | grep -E "^  FAIL |passed, [0-9]+ failed" ===
+      FAIL  tests/server/procedure_test.luau :: AC-1: after the first step of track 1 commits, the second step of track 1 is live and track 2's head is unchanged
+      FAIL  tests/server/procedure_test.luau :: AC-1: at start exactly the first step of each track is live - not the finale steps, not a decoy, not an unknown id (P-3)
+      FAIL  tests/server/procedure_test.luau :: AC-1: tracks advance independently and a finale step is never live in this story, even with every ordinary step committed (finale_live_together)
+      FAIL  tests/server/procedure_test.luau :: AC-5: after Ring.withdraw moves the leaver's class to their supplier, the supplier is judged the key holder of that class - and was not before, and the leaver no longer is
+    686 passed, 4 failed
+
+    === mutate: command exited 0; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/src_server_procedure_Procedure.luau.20261001T224555Z.3041846.bak) ===
+      98: 	for _, track in state.facility.steps.tracks do
 
 ## Out of scope
 
@@ -525,10 +562,22 @@ RED to make exactly that commit).
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-01T22:56:06Z
+    commit: 507de3a
+    tree:   a47983b2bc792f7b1b6e65ba814b51d4e42da651
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 123)
+    PASS         lint (1s, observed 123, floor 1)
+    PASS         typecheck (3s, observed 24)
+    PASS         unit (148s, observed 690, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (1s, observed 86200)
+    PASS         harness (33s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -684,3 +733,16 @@ D-1 and D-2 not run (owner GATES). Full `gates.sh` not run (GATES).
   build PASS, harness PASS (`project-counters: 40 passed, 0 failed`). `All
   required gates passed (6 ran, 1 unconfigured, 0 known).`
 - D-1 and D-2 not yet run: owner GATES.
+
+**PO record of GATES, 2026-10-01 (lead-po).**
+
+- Freeze snapshot retaken right after `phase.sh set PROC-001 GATES` (same four
+  paths). After D-1, D-2 and the full run: `frozen: OK — 4 path(s) unchanged since the snapshot for PROC-001`.
+- D-1 and D-2 run before `gates.sh`, both HOLD; output pasted under
+  `## Deferred verifications`.
+- Full `bash scripts/gates.sh`: `All required gates passed (6 ran, 3
+  unconfigured, 0 known)`, recorded by the script under `## Gate results`.
+  The three UNCONFIGURED gates (coverage, integration, mutation) are optional
+  and unconfigured repo-wide; `unit` is the one this story names, and it ran
+  690 tests (floor 507) in 148 s. This story adds no gate, so there is no
+  `## Gate probes` entry.
