@@ -6,7 +6,7 @@
 **Audience for this document:** an agentic coding agent operating inside a general-purpose
 development harness, plus the human operator supervising it.
 
-**Status:** Greenfield. No code exists yet.
+**Status:** M0–M2 built (2026-09-30); M3 planned, not started. (Was: "Greenfield. No code exists yet.")
 
 ---
 
@@ -287,7 +287,33 @@ T10 c, rest default".
   allowlist, the remote pipeline and telemetry all survive. The only other drift is
   stale comments (`Projection.luau`, `RateLimiter.luau:37`, `Tuning.luau`), and
   `architecture.md` §0's M3 list, which describes the superseded channel.
-  **`/plan-product` must be re-run for M3.**
+  ~~**`/plan-product` must be re-run for M3.**~~ **Done 2026-09-30**. See the next
+  section.
+
+### M3 planned (`/plan-product`, 2026-09-30)
+
+M3 is planned against the third pass and the Game Designer's gap closure of the
+same day (`mechanics.md` G1–G12). Its architecture is `architecture.md` §9, its
+screens are `docs/wiki/design/` (first design pass), and its backlog is
+`EPIC-03` to `EPIC-10` in `docs/backlog/`. Three Lead PO decisions taken in
+that pass carry the same authority as §0c:
+
+| # | Decision | Status |
+|---|---|---|
+| R6 | **M3's map is generated blockout only**. No Creator Store assets in M3: an asset is a dependency (B1 #5) and its value is aesthetic (M4). The operator may overrule this; see the open questions in `architecture.md` §10 | Decided; accepted by the operator 2026-09-30 |
+| R7 | **No lobby ready-up in M3.** The phase machine has no ready state; `Ready` is an intent preset | Decided |
+| R8 | **Which player holds which key class is not a secret** (`architecture.md` D23, on the Game Designer's ruling). The game's secrets are required settings and turn cues | Decided |
+
+~~Still open with the operator after this pass~~ **Closed by the operator on
+2026-09-30 ("take the defaults")**:
+
+| # | Question | Decision |
+|---|---|---|
+| T21 | How the round clock is shown (`loop.md` §5b) | (a) a numeric countdown, always visible |
+| Q-O1 | Icon production | Unicode or emoji placeholders in M3; uploaded image assets in M4 |
+| Q-O2 | An in-game reduced-motion toggle | Not in M3. It needs saved settings, so it is reconsidered with M5 |
+| R6 | Blockout-only map in M3 | Accepted: no Creator Store assets until M4 |
+| — | What counts as "four humans" for M3's definition of done | Four people, each on their own client (SLICE-007 D-1). A Studio local server or a Team Test are both acceptable; one person driving four clients is not |
 
 ---
 

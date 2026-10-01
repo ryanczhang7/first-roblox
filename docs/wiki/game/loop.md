@@ -628,6 +628,30 @@ slow code.
   false. `playtest.md: P-S` watches for the behaviour this guards against, and
   a confirmed "not working" there reopens T20.
 
+### 5b. Open — raised by M3 planning, 2026-09-30
+
+**T21 — How is the round clock shown?** `tuning.md: hud_round_clock_form`,
+**taste-pending**. That the clock is perceivable is derived (pressure you cannot
+perceive is not pressure, §3); its form is not. Whatever is chosen, the clock
+never combines with the progress bar into a pace or forecast (`mechanics.md`
+§3.3), and instability is shown as pips with the blackout thresholds marked
+(derived, not part of this question).
+- **(a) A numeric mm:ss countdown, always visible**, each penalty flashing −20
+  (provisional). Most legible: a group can reason "90 s, two steps, one of them
+  far", which is the ceiling skill of pacing. Costs: the likeliest to make a
+  7-year-old panic, and a number invites adults to plan the whole round against
+  it.
+- **(b) Shown only in the last 60 s**, with an ambient cue before that. Calm for
+  most of the round and urgent at the end. Costs: pacing across the middle of the
+  round becomes guesswork, and the −20 penalty is invisible until late, which
+  weakens what a wrong turn teaches (T13's reason).
+- **(c) Ambient only, no number**: the facility's hum rises and its lights
+  shift as time runs down. The most atmospheric and the gentlest. Costs: the
+  least learnable, and "we lost to the clock" arrives with no warning a child
+  can read.
+- The Lead Designer is designing the HUD in parallel and should build (a) until
+  this is answered. `playtest.md: P-H` is the observation that informs it.
+
 ### Still not mine to answer — for the Lead PO
 
 - **Compliance assumptions** CA-2 to CA-8 in `mechanics.md` §4.6. They are
@@ -636,9 +660,14 @@ slow code.
   took the stricter reading on rate: `ping_rate_limit_seconds` = 10. CA-3 is
   supported by the guideline's own allowed examples. CA-6 now includes the
   reported `TextChatService` system-message route for engineering to confirm.
-- **Two red tests on the day `tuning.md` lands** (see `tuning.md` header). The
-  specification moved under frozen criteria, and the drift guards are doing
-  their job. That needs stories, not edits.
+- ~~**Two red tests on the day `tuning.md` lands**~~ **Closed** by ROUND-006
+  (DONE 2026-09-30, PR #41): `Tuning.luau` at 420 / 60, ROUND-002 amendment A-1,
+  and `RateLimitSpec` re-pointed at the preset and ping rows.
+- **Where the channel's send limiter is consumed** (`tuning.md:
+  channel_limiter_consumed_by`, G9). The design rule is settled: a ping or preset
+  the server refuses is not a send and does not start the 10 s cooldown. The net
+  wrapper consumes its rate stage before the handler validates a target, so
+  honouring the rule is an architecture change, and it is yours.
 - **`/plan-product` must be re-run for M3.** The central mechanic changed, and
   `architecture.md` §0's M3 list (signal channel, budget, reserve, ephemerality,
   order fragments, I1–I3) describes a design that no longer exists.
