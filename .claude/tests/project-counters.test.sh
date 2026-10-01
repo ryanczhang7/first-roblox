@@ -70,7 +70,24 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # Read the number out of each command's own evidence line; do not count files
 # yourself, for the same reason the suite does not.
 #
-# LAST MEASURED: GEN-004 (RED), which added five test files
+# LAST MEASURED: PROC-001 (RED), which added three test files
+# (tests/helpers/TurnContract.luau, tests/server/procedure_test.luau,
+# procedure_controls_test.luau) and no source: 119/119/23 -> 122/122/23,
+# narrow format/lint unchanged at 23, NARROW_TYPECHECK unchanged at 8. GEN-004's
+# predicted GREEN values (119/119/23) were confirmed on the tree before this
+# story's files were added: `git ls-files` over src tests lune counted 119
+# .luau files and src alone 23. GREEN adds ONE source file,
+# src/server/procedure/Procedure.luau, and will move these again:
+# 122/122/23 -> 123/123/24, narrow 23 -> 24, NARROW_TYPECHECK unchanged at 8
+# (src/server, not src/shared). THE BASELINES BELOW ARE SET TO THOSE PREDICTED
+# GREEN VALUES NOW, IN RED, as GEN-001..GEN-004 did and for the same reason:
+# check-boundaries refuses a .claude/tests/** change from any other phase
+# (TUNE-001 R-1). This suite is red until GREEN adds the file; GREEN confirms,
+# never edits. Expected red under `bash scripts/gates.sh --fast` on RED's tree:
+# `expected count: 123 / actual count: 122` for format and lint, `24 / 23` for
+# typecheck, `124 / 123` and `25 / 24` for the untracked-file cases, and the
+# narrow cases `24 / 23`.
+# BEFORE THAT: GEN-004 (RED), which added five test files
 # (tests/helpers/FacilityContract.luau, FacilityStubs.luau,
 # tests/server/par_test.luau, generator_test.luau, facility_controls_test.luau)
 # and no source: 112/112/21 -> 117/117/21, narrow format/lint unchanged at
@@ -247,11 +264,11 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-BASE_FORMAT=119    # stylua  over src tests lune   (119 = 23 src + 96 tests/lune; PREDICTED for GEN-004 GREEN)
-BASE_LINT=119      # selene  over src tests lune
-BASE_TYPECHECK=23  # analyze over src (NET-001 probe included; src/net/ is five modules from TEL-003)
-NARROW_FORMAT=23   # stylua  over src alone
-NARROW_LINT=23     # selene  over src alone
+BASE_FORMAT=123    # stylua  over src tests lune   (123 = 24 src + 99 tests/lune; PREDICTED for PROC-001 GREEN)
+BASE_LINT=123      # selene  over src tests lune
+BASE_TYPECHECK=24  # analyze over src (NET-001 probe included; src/server/procedure/ is PROC-001's one module)
+NARROW_FORMAT=24   # stylua  over src alone
+NARROW_LINT=24     # selene  over src alone
 NARROW_TYPECHECK=8 # analyze over src/shared alone (moved by TUNE-001's MechanicsTuning)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`

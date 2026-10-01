@@ -4,8 +4,8 @@ title: A turn commits a live step on the right setting and says why it failed ot
 slug: a-turn-commits-a-live-step-on-the-right
 epic: EPIC-05
 type: feature
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/PROC-001-a-turn-commits-a-live-step-on-the-right
 depends_on: [GEN-004]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -117,6 +117,69 @@ instability *does* is `PROC-003`.
   behaviour under `finale_live_together`, not a stub.
 - State is replaced, never mutated (D3). Every call returns a new state.
 
+**Pinned semantics (PO, at PLANNED → RED, 2026-10-01).** RED may amend any block
+below in place, with a dated reason next to it; GREEN builds what the amended
+block says.
+
+- **P-1. Tuning lives in the state.** `tuning` is `MechanicsTuning.MechanicsTuning`
+  (`src/shared/MechanicsTuning.luau`). `start` stores it as
+  `ProcedureState.tuning`, and `turn` and `dial` read every constant from there:
+  `instance.turn_range_studs`, `instance.dial_settings`,
+  `actuation.actuation_reset_seconds`, `actuation.instability_per_wrong_value`,
+  `actuation.instability_per_out_of_order`. Tests pass a tuning built from
+  `MechanicsTuning`'s defaults with values *overridden* where a test needs to
+  tell two constants apart (e.g. `instability_per_wrong_value = 1`,
+  `instability_per_out_of_order = 2`) — the shipped values are both 1, and a
+  test that cannot tell which one was charged pins nothing.
+- **P-2. Tracks.** An **ordinary** step is `facility.steps.tracks[t][i]` for
+  `i < #tracks[t]`; the last entry of each track is its finale step
+  (`facility.steps.finale`). A machine in `facility.placement.machines` that is
+  in no track is a **decoy**. A machine is found by its `id` field, not by its
+  index in `machines`.
+- **P-3. Liveness.** `isLive(state, id)` is true iff `id` is
+  `tracks[t][k]` where `k` is the smallest index in track `t` whose machine is
+  not committed, **and** `k < #tracks[t]`. Finale steps, decoys, committed
+  machines and unknown ids are never live in this story.
+- **P-4. Reach, inclusive.** In reach iff `positions[playerId]` exists and
+  `sqrt((p.x-m.x)^2 + (p.z-m.z)^2) <= turn_range_studs`, where
+  `m = Machines.positionOf(facility.layout, machine, tuning)`. `y` is ignored.
+- **P-5. Key holder.** `machine.keyClass` is in `assignment.keyClasses[playerId]`.
+  A player absent from `keyClasses` is `not_key_holder`.
+- **P-6. The reset window, half-open.** A rejection at `now` stores
+  `dials[id] = { setting = setting, rejectedUntil = now + actuation_reset_seconds }`.
+  At time `t`: `t < rejectedUntil` → `dial` is `{ setting = setting, state =
+  "rejected" }` and a turn is `refused / resetting`; `t >= rejectedUntil` →
+  `{ setting = nil, state = "unset" }` and a turn is evaluated. (The phase
+  machine's convention: the boundary instant is *after*.)
+- **P-7. Dial views.** Never turned: `{ setting = nil, state = "unset" }`.
+  Committed: `{ setting = <the committing setting>, state = "committed" }`.
+- **P-8. Which constant a rejection charges.** `wrong_setting` adds
+  `instability_per_wrong_value`; `not_live` adds `instability_per_out_of_order`.
+  `not_live` wins when both are true (a waiting step or decoy, any setting).
+- **P-9. Results.** `committed`/`rejected`/`refused` all carry `machineId` =
+  the id that was passed, `unknown_machine` included. A refused turn returns a
+  state deep-equal to the one passed.
+- **P-10. Log.** Appended in call order. `at = now`; `result` is `"committed"`,
+  `"wrong_setting"` or `"not_live"`.
+- **P-11. Non-mutation.** The `state`, `assignment` and `positions` passed to
+  any function are deep-equal before and after the call.
+
+**Test files.** `tests/server/procedure_test.luau` (settled and mechanical ACs)
+and `tests/server/procedure_controls_test.luau` (the AC-1 and AC-4 controls),
+following the repo's `<module>_test` / `<module>_controls_test` convention.
+
+**Callers of changed signatures.** None. `Procedure` is a new module, and no
+existing export's signature changes: `Generator.Facility`, `Ring.Assignment`,
+`Ring.withdraw` and `Machines.positionOf` are consumed as they stand on `main`
+at `a50ee46`. Checked with `ls src/server/procedure` (absent) and the
+signatures read from `src/server/facility/{Generator,Machines,Steps}.luau` and
+`src/server/seats/Ring.luau`.
+
+**Epic check (PO, 2026-10-01).** EPIC-05 done-when #1 and #2 are this story's,
+with three exceptions owned elsewhere and already written into those stories:
+the `armed` refusal (`PROC-002` AC-5), phase legality and the rate limit
+(`PROC-005`). No gap.
+
 **Oracle partition.** AC-1 to AC-5 are **settled** by `mechanics.md` §3.2 and §5
 (G12). Name each test after the rule it pins. AC-6 is **mechanical**. Every
 facility fixture is hand-built, and no test depends on a generator sample.
@@ -171,31 +234,271 @@ from an upstream story or spike (as noted above), amend it and re-run
 
 - PLANNED - `lead-po` - `claude-opus-5-5` (Opus 5.5, from the session's own model
   identification; the /plan-product dispatch reported no override). 2026-09-30.
+- PLANNED -> RED orchestration - `lead-po` - `claude-opus-5-5` (this /advance-story
+  session). 2026-10-01.
+- RED - `test-developer` - `claude-fable-5-1` (dispatched with `model: fable` explicitly,
+  per the dispatch note; the agent reported the resolved id). 2026-10-01.
 
 ## Test plan
 
-<!-- Filled by the Test Developer during RED: which tests, at which level,
-     and which AC each one covers. -->
+All unit level: `Procedure` is pure, so every criterion is falsifiable by calling
+it on a hand-built facility. Nothing is mocked; `Machines.positionOf` and
+`Ring.withdraw` are the real modules.
+
+**Layout.** The checks live once in `tests/helpers/TurnContract.luau` (the
+house `<Module>Contract` pattern; `ProcedureContract.luau` was already taken by
+GEN-003's Steps helper, hence the name), applied to the real module by
+`tests/server/procedure_test.luau` and to a reference stand-in plus six
+one-defect stand-ins by `tests/server/procedure_controls_test.luau`. The
+stand-ins are inside the controls file, as the brief asked.
+
+**Fixture** (`TurnContract.facility()`, `.assignment()`, `.tuning()`), all
+hand-built, no generator, no seed:
+
+- four rooms on a 2 x 2 block (ids 1..4), doors in a square, `spawnRoom = 1`;
+- nine machines with ids 11..19 in a list order where `machines[i].id ~= i` for
+  every `i` (P-2: found by `id`); each carries `id, room, slot, keyClass, tag,
+  requiredSetting`;
+- `tracks = { {11, 12, 13}, {14, 15, 16, 17} }`, `finale = {13, 17}` - two
+  tracks of UNEQUAL length; decoys 18 (class 3) and 19 (class 1). `Steps.check`
+  would reject this; `Procedure` must not care;
+- ring kim -> zed -> amy -> bob -> kim, class `i` at seat `i`, lens `k(σ(p))`;
+  kim's supplier is bob (AC-5);
+- tuning = shipped `MechanicsTuning` with `turn_range_studs 10 -> 7`,
+  `actuation_reset_seconds 3 -> 5`, `instability_per_out_of_order 1 -> 2`
+  (`instability_per_wrong_value` stays 1), so a constant read from the module
+  instead of `state.tuning` (P-1) or two charges that cannot be told apart (P-8)
+  fail. A fixtures test asserts each override still differs from the shipped
+  value it exists to be told apart from.
+
+**Tests, by criterion** (names are the rules they pin; see the handoff table):
+
+| AC | Tests |
+|---|---|
+| Contract | export shape; `start` returns `{facility, committed = {}, dials = {}, instability = 0, log = {}, tuning}`; `turn` returns `(state, result)` |
+| AC-1 | live set at start is exactly `{11, 14}` over all ids + unknown; after 11 commits it is `{12, 14}`; after 11, 12 it is `{14}` (finale 13 waiting); after 14, 15, 16 too it is `{}` |
+| AC-2 | holder in reach on the required setting -> `committed`, `committed[11] == true`, `dial` = `{setting, "committed"}` now and 1000 s later, 12 live, instability 0; reach inclusive at exactly 7 along x and -z, and with y +/-1000 |
+| AC-3 | live + wrong -> `rejected/wrong_setting` +1, `dials[11] = {setting, rejectedUntil = now + 5}`, dial rejected, live set unchanged; waiting step (12) on the right AND wrong setting -> `not_live` +2; finale 13 -> `not_live` +2 both before and after its own track's ordinary steps commit; decoys 18, 19 -> `not_live` +2; 1 + 2 accumulate to 3; dial at now, now + 2.5, now + 4.999 rejected, at now + 5 and now + 105 unset; turn at now + 4.999 `refused/resetting`, at now + 5 `committed` |
+| AC-4 | `unknown_machine` (id 99, echoed); `not_key_holder` for zed, for a stranger absent from `keyClasses`, and on a wrong setting; `out_of_reach` at 7.001 along x, (7, 7) diagonal, (0.5, 7), no position, only others positioned, rooms away; `committed` on right and wrong setting; `resetting` at +0, +2.5, +4.999; ordering: unknown > not_key_holder > out_of_reach over six two- and three-way conflicts. Every refusal: result exact, state deep-equal to the one passed, instability, log length and dial view unchanged |
+| AC-5 | bob refused before `Ring.withdraw(kim)`; after it (`keyClasses.bob == {4, 1}`) bob commits 11; kim refused; bob still commits his own 14 |
+| AC-6 | eight-call sequence (3 evaluated, 5 refused, interleaved) -> log deep-equals exactly three `{playerId, machineId, setting, at, result}` entries in call order; `start` log is `{}`; final instability 3 |
+| P-11 | `start`, `isLive`, `dial`, and every turn kind leave state, assignment, positions, facility deep-equal to their snapshots; a turn on a new state does not write through to the old |
+
+**Controls** (`procedure_controls_test.luau`): the reference stand-in passes all
+20 checks; six one-defect stand-ins each fire an EXACT, measured set of checks
+(table in the handoff). Plus four fixture-assumption tests.
+
+**Not pinned, deliberately:** the key set of `ProcedureState` beyond the six
+Contract fields (PROC-002/003 add fields); `dials[id]` after a COMMIT (only the
+`dial` view); `dial` on an unknown id; `committed`-before-`resetting` ordering
+(no correct module can hold a commit inside a reset window, so no test can
+observe it); error text.
 
 ## Handoff: RED -> GREEN
 
-<!-- Filled by the Test Developer at the end of RED. This is the ONLY channel
-     to the Feature Developer, whose context is fresh. Must contain:
-       * the exact command that runs the new tests
-       * the failure output, and why it is the RIGHT failure
-       * every file touched, and which AC each test covers
-       * the EXPORT SHAPE the tests already pin: every module they import, the
-         exact exported names and signatures, and the types the assertions
-         destructure. Not a suggestion - a test already imports them, so a
-         wrong guess is a compile error. Say what the tests do NOT constrain
-         too, so it stays the implementer's choice.
-       * any test that passed on arrival, and the probe or negative control
-         that earns it
-       * the EXPECTED VALUE of every negative control, as a table: threshold,
-         candidate range, and the number the control measured. In RED the
-         suite fails at import, so no assertion in it has run - the controls
-         are claims until GREEN confirms them against the shipped module
-       * anything discovered that changes the approach -->
+**RED run on `fable` (the planned row).** The dispatch passed `model: fable`
+explicitly; this agent identifies as `claude-fable-5-1`. 2026-10-01.
+
+### The command
+
+    lune run test                      # the `unit` gate, whole suite
+    lune run test -- --list            # 690 tests; 33 under tests/server/procedure*
+
+There is no per-file filter in the runner; the new tests are the only red ones,
+so `lune run test 2>&1 | grep -E "procedure|passed, .* failed"` is the quick view.
+
+### The failure, verbatim (2026-10-01, local)
+
+    FAIL  tests/server/procedure_test.luau :: AC-1: at start exactly the first step of each track is live - not the finale steps, not a decoy, not an unknown id (P-3)
+          C:\Users\ryanc\Projects\first-roblox\tests\server\procedure_test:38: src/server/procedure/Procedure.luau did not load: error requiring module "../../src/server/procedure/Procedure": could not resolve child component "procedure"
+    ... (the same line under each of the 22 tests in procedure_test.luau) ...
+    668 passed, 22 failed
+
+**Why it is the right failure.** The story's first requirement is the module
+`src/server/procedure/Procedure.luau`, which does not exist; every one of the 22
+tests in `procedure_test.luau` fails at that `require` and nothing else in the
+suite moved (657 pre-existing tests still pass; the 11 new controls pass). The
+`pcall(require)` pattern gives one red line per criterion rather than one LOAD
+FAIL for the file. Because the module is missing, **no assertion in
+`procedure_test.luau` has executed** - which is why the controls file exists and
+why its numbers below are the evidence that the checks discriminate.
+
+### `bash scripts/gates.sh --fast` (2026-10-01, local)
+
+See `## Notes` for the pasted summary. Shape: `format`, `lint`, `typecheck` and
+`build` green; `unit` red with the 22 load failures above; `harness` red on the
+counter baselines pre-set to GREEN's predicted values (see "Counters" below).
+
+### Files touched
+
+| File | What |
+|---|---|
+| `tests/helpers/TurnContract.luau` | NEW. The fixture and all 20 checks, each `(P) -> ()` raising via `Contract.fail` with the AC in the message. `TurnContract.CHECKS` lists them; `TurnContract.failures(P)` runs them all |
+| `tests/server/procedure_test.luau` | NEW. 22 tests applying the checks to the real module |
+| `tests/server/procedure_controls_test.luau` | NEW. 11 tests: baseline, 4 fixture-assumption tests, 6 one-defect controls. Contains the reference stand-in |
+| `.claude/tests/project-counters.test.sh` | baselines moved to GREEN's predicted values (below) |
+| `docs/backlog/stories/PROC-001.md` | this section and `## Test plan` |
+
+No `src/**` file was touched. No manifest change. `.gitignore` untouched.
+
+### One row per test (procedure_test.luau)
+
+| Test | Asserts | Covers |
+|---|---|---|
+| Contract: exports start, isLive, dial, turn | all four are functions | Contract |
+| Contract: start returns the ProcedureState | `facility` deep-equals input, `committed = {}`, `dials = {}`, `instability = 0`, `log = {}`, `tuning` deep-equals the tuning passed | Contract, P-1 |
+| Contract: turn returns two values | first a table, second a table with a string `kind` | Contract |
+| AC-1: at start exactly the track heads are live | live set over 11..19 and 99 is exactly `{11, 14}` | AC-1, P-3 |
+| AC-1: after track 1's head commits its second step is live | live set is `{12, 14}` after kim commits 11 | AC-1 |
+| AC-1: tracks advance independently, finale stays waiting | after 11, 12: `{14}`; after 14, 15, 16 too: `{}` | AC-1, P-3, G12 |
+| AC-2: holder in reach on the required setting commits | result `{kind="committed", machineId=11}`; `committed[11]==true`; `dial` = `{setting=2, state="committed"}` at now and now+1000; 11 not live, 12 live; instability 0 | AC-2, P-7, P-9 |
+| AC-2/P-4: reach inclusive, ignores y | commits at offsets (7,0,0), (0,0,-7), (0,1000,0), (7,-1000,0) with the fixture's range 7 | AC-2, P-4, P-1 |
+| AC-3: wrong setting on a live step | `rejected/wrong_setting`; +1 (`instability_per_wrong_value`); `dials[11] = {setting, rejectedUntil = now+5}`; dial `{setting, "rejected"}`; not committed; live set unchanged | AC-3, P-6, P-8 |
+| AC-3: waiting step is not_live whatever the setting | 12 on right and wrong setting, 13 before and after track 1's ordinary steps commit: `rejected/not_live`, +2 each | AC-3, P-8 |
+| AC-3: decoy is not_live whatever the setting | 18 on right, 19 on wrong: `not_live`, +2 | AC-3, P-8 |
+| AC-3/P-1: charges accumulate by reason | wrong (1) then decoy (2) = 3 | AC-3, P-1, P-8 |
+| AC-3/P-6: half-open reset window | dial rejected at +0, +2.5, +4.999; unset at +5, +105; turn at +4.999 `refused/resetting` with state deep-equal; turn at +5 `committed` | AC-3, AC-4, P-6 |
+| AC-4: unknown_machine | id 99 -> `refused/unknown_machine`, `machineId = 99`, state deep-equal | AC-4, P-9 |
+| AC-4/P-5: not_key_holder | zed on 11, stranger on 11, zed on wrong setting: refused, state deep-equal, no charge, no log entry, dial unchanged | AC-4, P-5 |
+| AC-4/P-4: out_of_reach | six cases: 7.001 along x; (7,7); (0.5,7); no position; only zed positioned; at machine 17 | AC-4, P-4 |
+| AC-4: committed | right and wrong setting on committed 11 -> `refused/committed` | AC-4 |
+| AC-4: resetting | +0, +2.5, +4.999 after rejection -> `refused/resetting` | AC-4, P-6 |
+| AC-4: order, first failure wins | 6 conflicts (see Test plan) | AC-4 |
+| AC-5: supplier judged holder after withdraw | bob refused before; `Ring.withdraw(kim)` -> bob commits 11; kim refused; bob commits 14 | AC-5 |
+| AC-6/P-10: the log | 8-call sequence -> exactly 3 entries, exact fields and order; `start` log `{}`; instability 3 | AC-6, P-10 |
+| P-11: no call mutates its arguments | start/isLive/dial/every turn kind; downstream turn does not write through | P-11 |
+
+### The export shape the tests pin
+
+Nothing below is a suggestion. Each name and signature is already called by a
+test, so getting it wrong is a red test rather than a debate.
+
+    src/server/procedure/Procedure.luau          -- required as "../../src/server/procedure/Procedure"
+                                                 -- from tests/server; returns a table
+
+    Procedure.start(facility, now: number, tuning) -> ProcedureState
+        -- facility: a Generator.Facility-shaped table { layout, placement, steps, spawnRoom, par, attempt }
+        -- tuning:   MechanicsTuning.MechanicsTuning (the test passes a frozen deep copy with overrides)
+        -- returns { facility = <the same, deep-equal>, committed = {}, dials = {}, instability = 0,
+        --           log = {}, tuning = <the tuning passed> }   -- extra fields are NOT forbidden
+    Procedure.isLive(state, machineId: number) -> boolean   -- a real boolean; truthy is not enough
+    Procedure.dial(state, machineId: number, now: number) -> { setting: number?, state: "unset" | "committed" | "rejected" }
+        -- deep-equal is used: no other keys. unset => setting nil (absent)
+    Procedure.turn(state, assignment, playerId: string, machineId: number, setting: number,
+                   now: number, positions: { [string]: { x, y, z } }) -> (ProcedureState, TurnResult)
+
+    TurnResult, compared with Deep.equal, so EXACTLY these keys:
+        { kind = "committed", machineId = id }
+        { kind = "rejected",  machineId = id, reason = "wrong_setting" | "not_live" }
+        { kind = "refused",   machineId = id, reason = "unknown_machine" | "not_key_holder"
+                                                     | "out_of_reach" | "committed" | "resetting" }
+        -- machineId is ALWAYS the id passed, unknown_machine included (P-9)
+
+    ProcedureState fields the tests read:
+        state.committed[id] == true after a commit; not truthy otherwise
+        state.dials[id] == { setting = <setting>, rejectedUntil = now + actuation_reset_seconds }
+                           immediately after a rejection (P-6; deep-equal, so no extra keys THERE)
+        state.instability: number
+        state.log: { { playerId, machineId, setting, at = now, result = "committed" | "wrong_setting" | "not_live" } }
+                   deep-equal, so exactly those five keys per entry
+        state.tuning: the tuning passed to start; turn/dial read
+                   tuning.instance.turn_range_studs, tuning.actuation.actuation_reset_seconds,
+                   tuning.actuation.instability_per_wrong_value, tuning.actuation.instability_per_out_of_order
+                   FROM HERE (the fixture overrides them; the shipped values fail P-1/P-4/P-6/P-8 tests)
+
+    Dependencies the tests imply: Machines.positionOf(facility.layout, machine, tuning) for reach
+    (the tests compute positions with it, offsets included), and assignment.keyClasses[playerId]
+    as a LIST searched for machine.keyClass (Ring.Assignment as it stands; AC-5 uses the real
+    Ring.withdraw). A refused turn must return a state deep-equal to the one passed - returning
+    the same table is fine.
+
+**Not constrained** (implementer's choice): how a new state is copied (sharing
+the immutable `facility` is fine; the P-11 test checks that a turn on a new
+state does not write through to the old `committed`/`dials`/`log`); what
+`dials[id]` holds after a COMMIT (only `dial()`'s view is pinned); `dial()` on
+an unknown id; any `committed`-before-`resetting` ordering; extra state fields;
+error messages; whether `isLive` is used internally by `turn`.
+
+### Tests that passed on arrival
+
+None in `procedure_test.luau` (all 22 red at `require`). The 11 tests in
+`procedure_controls_test.luau` are green by design: they run the checks against
+stand-ins and are the negative controls themselves. What earns them is the table
+below - six defective stand-ins each fire a measured, exactly-pinned set of
+checks, and the reference fires none.
+
+### Negative controls - expected and measured (RED, 2026-10-01, local, `lune run test`)
+
+Every value below was MEASURED in RED by running the checks in
+`TurnContract.luau` against the stand-ins in the controls file (no production
+module involved). The controls file asserts these sets EXACTLY; confirming that
+the same checks accept the shipped module is GREEN's job (all 22 tests green),
+and D-1/D-2 below are GATES's.
+
+| Control (stand-in with one defect) | Must fail | Checks that fired (measured) | Checks that stayed green |
+|---|---|---|---|
+| reference (no defect) | nothing | **0 of 20** | all 20 |
+| AC-1's named control: `isLive` true for every step of track 1 | AC-1 | 5: `liveSetAtStartIsExactlyTheTrackHeads`, `committingTheHeadOfTrackOneMakesItsSecondStepLive`, `tracksAdvanceIndependentlyAndFinaleStepsStayWaiting`, `holderInReachOnTheRequiredSettingCommits` (11 still live after its commit), `waitingStepIsNotLiveWhateverTheSetting` (12 commits instead of not_live) | 15 |
+| D-2's shape: liveness global - only track 1's head, never track 2's | AC-1 | 4: the three AC-1 checks, `supplierIsJudgedKeyHolderAfterWithdraw` (bob's own 14 heads track 2 and read not_live) | 16 |
+| AC-4's named control: the key-holder check skipped, non-holders evaluated | AC-4 | 4: `nonHolderIsRefusedAndNotCharged`, `refusalChecksRunInOrderAndTheFirstFailureWins`, `supplierIsJudgedKeyHolderAfterWithdraw` (bob commits BEFORE the transfer), `logHoldsOneEntryPerEvaluatedTurnInCallOrderAndNoneForRefusals` (amy's "refused" turn commits 12) | 16 - AC-3 all green |
+| D-1's shape: `out_of_reach` refusal adds 1 instability | AC-4, AC-3 green | 3: `holderOutOfHorizontalReachOrWithoutAPositionIsRefused`, `refusalChecksRunInOrderAndTheFirstFailureWins`, `logHolds...` (instability 4, not 3) | 17 - **AC-3 all green, as D-1 requires** |
+| P-8: `not_live` charged `instability_per_wrong_value` | AC-3 | 4: `waitingStepIsNotLiveWhateverTheSetting`, `decoyIsNotLiveWhateverTheSetting`, `chargesAccumulateByReason`, `logHolds...` | 16 |
+| P-6: closed window (`t <= rejectedUntil` still resetting) | AC-3 boundary | 1: `rejectedDialShowsTheSettingUntilTheResetBoundaryThenUnset` | 19 |
+
+The one correction made while measuring: the reference's first draft returned
+early from track 1 and never looked at track 2 (fired the two AC-1 live-set
+checks and two downstream). Fixed in the stand-in, not in a check; the checks
+were right.
+
+### Deferred verifications - declined here
+
+- **D-1** (mutate the real `out_of_reach` path to add a point; AC-4 must fail,
+  AC-3 must pass) - **not run; cannot be run in RED**: the module does not
+  exist. Owner GATES. The D-1-shaped stand-in above shows the checks WOULD see
+  it with AC-3 green, which is evidence about the tests, not about the module.
+- **D-2** (mutate the real `isLive` to track 1's head only; AC-1 must fail) -
+  **not run; cannot be run in RED**. Owner GATES. Same remark.
+
+### Callers of changed signatures
+
+Checked against the tree at `a50ee46` + this branch: `src/server/procedure/`
+does not exist (the runner's own error says so: "could not resolve child
+component procedure"); `Generator.Facility`, `Ring.Assignment`, `Ring.withdraw`
+and `Machines.positionOf` are consumed unchanged. The Contract's "None" stands.
+
+### Counters (`.claude/tests/project-counters.test.sh`)
+
+RED added three `.luau` files under `tests/` (119 -> 122). GREEN adds exactly
+one under `src/` (`src/server/procedure/Procedure.luau`). The baselines are set
+NOW to GREEN's predicted values, per the memory rule and GEN-001..GEN-004's
+practice: `BASE_FORMAT=123 BASE_LINT=123 BASE_TYPECHECK=24 NARROW_FORMAT=24
+NARROW_LINT=24 NARROW_TYPECHECK=8`. The `harness` gate is red in RED by design
+(`expected 123 / actual 122`, `24 / 23`) and must go green in GREEN without any
+edit to that file - `.claude/tests/**` is frozen for GREEN by
+`check-boundaries.sh` 3j. **The RED commit must carry the counters file and the
+three test files with the story at `phase: RED`** (GEN-001 needed a return to
+RED to make exactly that commit).
+
+### Notes for the implementer
+
+- Read every constant from `state.tuning`, never from `MechanicsTuning` at
+  module load. The fixture's range is 7 and reset is 5; the shipped 10 and 3
+  fail four tests.
+- Find the machine by its `id` field. The fixture's list order is scrambled so
+  that `machines[id]` is nil or the wrong machine.
+- An ordinary step is `tracks[t][i]` for `i < #tracks[t]`, per track; the
+  fixture's tracks are 3 and 4 long. Do not read `steps_per_track`.
+- The refusal order is tested where two checks fail at once: unknown >
+  not_key_holder > out_of_reach > committed/resetting. Evaluate reach as
+  `sqrt(dx^2 + dz^2) <= turn_range_studs` with `y` ignored; the inclusive case
+  is tested at exactly the range along one axis.
+- The boundary is half-open: `now < rejectedUntil` is resetting; `now >=
+  rejectedUntil` is evaluated.
+- `dial` for a committed machine shows the committing setting regardless of
+  `now`.
+- The log entry has exactly five keys. `at = now`.
+- No `## Contract` block was amended. Nothing in P-1..P-11 contradicted what was
+  measured.
 
 ## Regressions
 
@@ -249,3 +552,55 @@ from an upstream story or spike (as noted above), amend it and re-run
 
 ## Notes
 
+**RED `bash scripts/gates.sh --fast`, 2026-10-01, local (not a recorded run;
+pasted here by the Test Developer for the shape of the failure only).**
+
+    --- gate summary ---
+    PASS         format (0s, observed 122)
+    PASS         lint (0s, observed 122, floor 1)
+    PASS         typecheck (4s, observed 23)
+    FAIL         unit (123s, exit 1) -> .claude/state/gate-logs/unit.log
+    UNCONFIGURED coverage
+    PASS         build (0s, observed 82855)
+    FAIL         harness (26s, exit 1) -> .claude/state/gate-logs/harness.log
+
+    --fast skipped: integration mutation
+
+- `unit`: `668 passed, 22 failed` - the 22 are every test in
+  `tests/server/procedure_test.luau`, each at the missing `require`. The right
+  failure. The unit gate took 123 s locally; the new tests add well under a
+  second of that (the Steps/Facility sweeps are the cost).
+- `harness`: `project-counters: 28 passed, 12 failed` - 11 are the counter
+  baselines pre-set to GREEN's predicted values (`expected 123 / actual 122`,
+  `24 / 23`, and the untracked/ignored/narrow variants), and 1 is the
+  "no stray .luau files" precondition, which the RED commit of the three test
+  files clears. Both are the design working (see the handoff's "Counters");
+  neither is to be fixed by editing the suite in GREEN.
+- `format`, `lint`, `typecheck`, `build` green: the three new test files are
+  stylua-clean and selene-clean (0 errors, 0 warnings). The typecheck gate
+  analyses `src` only and did not read them.
+
+
+**PO verification of RED, 2026-10-01 (lead-po, independent of the Test
+Developer's own runs).**
+
+- Read `tests/server/procedure_test.luau` in full and
+  `TurnContract.refusalChecksRunInOrderAndTheFirstFailureWins`: six two-way
+  ordering cases, each pitting an earlier check against a later one, on a
+  resetting state created at `NOW` and turned at `NOW + 1` (inside the fixture's
+  5 s window). The 22 tests map one-to-one onto AC-1..AC-6, P-4, P-6, P-8, P-11.
+- `lune run test`: `668 passed, 22 failed`. Every one of the 22 failures, grouped
+  by message:
+  `22 src/server/procedure/Procedure.luau did not load: error requiring module
+  "../../src/server/procedure/Procedure": could not resolve child component
+  "procedure"`. The right failure, and every pre-existing test passes.
+- `bash scripts/gates.sh --fast`: format PASS (observed 122), lint PASS (122),
+  typecheck PASS (23), build PASS, unit FAIL (the 22 above), harness FAIL (the
+  `expected count: 123/24/124/25` lines only — the baselines pre-set to GREEN's
+  predicted values). Admissible.
+- The extra helper `tests/helpers/TurnContract.luau` is accepted: it is the house
+  pattern (`ProcedureContract.luau`, `FacilityContract.luau`), and it is what lets
+  the controls run the identical checks.
+- RED commit made with the story at `phase: RED`, carrying the tests and the
+  counter baselines, so check-boundaries 3j sees the `.claude/tests/**` change in
+  a RED commit (memory: counter baselines move in RED).
