@@ -5,7 +5,7 @@ slug: a-turn-commits-a-live-step-on-the-right
 epic: EPIC-05
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/PROC-001-a-turn-commits-a-live-step-on-the-right
 depends_on: [GEN-004]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -238,6 +238,8 @@ from an upstream story or spike (as noted above), amend it and re-run
   session). 2026-10-01.
 - RED - `test-developer` - `claude-fable-5-1` (dispatched with `model: fable` explicitly,
   per the dispatch note; the agent reported the resolved id). 2026-10-01.
+- GREEN - `feature-developer` - `claude-opus-5-5` (dispatched with `model: opus`, the
+  planned row; the agent reported the resolved id). 2026-10-01.
 
 ## Test plan
 
@@ -604,3 +606,81 @@ Developer's own runs).**
 - RED commit made with the story at `phase: RED`, carrying the tests and the
   counter baselines, so check-boundaries 3j sees the `.claude/tests/**` change in
   a RED commit (memory: counter baselines move in RED).
+
+### GREEN notes
+
+Feature Developer, 2026-10-01. Dispatched with no model override; the agent
+definition's `model: opus` applies, and this session identifies as
+`claude-opus-5-5`.
+
+**Files changed.** One new file, `src/server/procedure/Procedure.luau` (pure,
+`table.freeze`d, no module state). No config change: `default.project.json`
+maps `src/server` recursively, so rojo picks up `src/server/procedure/` on its
+own, and the typecheck gate regenerates `sourcemap.json` (git-ignored) on every
+run. No test file and nothing under `.claude/tests/**` was touched.
+
+**`lune run test`:** `690 passed, 0 failed` - all 22 in
+`tests/server/procedure_test.luau` and all 11 in
+`tests/server/procedure_controls_test.luau` pass.
+
+**`bash scripts/gates.sh --fast`** (not a recorded run):
+
+    PASS         format (1s, observed 123)
+    PASS         lint (1s, observed 123, floor 1)
+    PASS         typecheck (4s, observed 24)
+    PASS         unit (165s, observed 690, floor 507)
+    UNCONFIGURED coverage
+    PASS         build (1s, observed 86200)
+    PASS         harness (19s, observed 40)
+    All required gates passed (6 ran, 1 unconfigured, 0 known).
+
+`harness` is `project-counters: 40 passed, 0 failed`: RED's pre-set baselines
+(123 / 24) match with the one new file present, untracked.
+
+**Controls confirmed against the shipped module.** `TurnContract.failures`
+run against the real `Procedure` (from a scratch script outside the repo, no
+test file added): `real Procedure fails 0 of 20 checks` - matches the
+reference row (0 of 20). The six one-defect stand-ins re-measured in this run
+fire exactly the sets RED recorded (5 / 4 / 4 / 3 / 4 / 1); the controls file
+asserts them exactly and passes. No divergence.
+
+**Contract findings.** Nothing contradicted. The named mechanisms hold as
+written: `Machines.positionOf(layout, machine, tuning)` exists with that
+signature; `Ring.Assignment.keyClasses[p]` is a list (`Ring.withdraw` appends
+the leaver's classes to the supplier's); every constant P-1 names exists in
+`MechanicsTuning`. Two small notes, neither a change of meaning:
+- The Contract's `ProcedureState` type block lists five fields but P-1 adds
+  `tuning`; the module's exported type carries all six.
+- The first `--fast` run failed `typecheck` (and `harness`, through it):
+  luau-lsp widened a refined `reason ~= nil` local to `string` inside the
+  `refused` result literal. Fixed by annotating the local's singleton union
+  type; no behaviour change, tests re-run green.
+
+D-1 and D-2 not run (owner GATES). Full `gates.sh` not run (GATES).
+
+**PO verification of GREEN, 2026-10-01 (lead-po).**
+
+- Freeze: `bash scripts/frozen.sh snapshot` taken right after `phase.sh set
+  PROC-001 GREEN`, over the three test files and
+  `.claude/tests/project-counters.test.sh`. Before leaving GREEN:
+  `frozen: OK — 4 path(s) unchanged since the snapshot for PROC-001`.
+- Read `src/server/procedure/Procedure.luau` in full against P-1..P-11. One
+  observation, not a defect: a refused turn returns the *same* state table it
+  was handed rather than a copy. P-9 asks only for deep-equality and states are
+  never mutated (D3), so this is within the contract; the Contract's sentence
+  "Every call returns a new state" is to be read as "never a mutated one".
+- The handoff's controls table, checked against the real module by mutation
+  (`scripts/mutate.sh`, full `lune run test` each, restores verified by `cmp`):
+
+  | Mutation | Handoff predicted | Observed |
+  |---|---|---|
+  | P-6 closed window: `now < d.rejectedUntil` -> `now <= d.rejectedUntil` | 1 check: `rejectedDialShowsTheSettingUntilTheResetBoundaryThenUnset` | `689 passed, 1 failed` — exactly `AC-3/P-6: a rejected dial shows the setting as rejected …` |
+  | P-8 flat charge: `not_live` charged `instability_per_wrong_value` | 4: waiting, decoy, accumulate, log | `686 passed, 4 failed` — `AC-3/P-1 charges accumulate…`, `AC-3: a decoy…`, `AC-3: a waiting step…`, `AC-6/P-10: the log…` |
+
+  Both counts match; the table is evidence, not a claim. The file was restored
+  byte-for-byte after each.
+- `bash scripts/gates.sh --fast` on the unmutated tree: format PASS (123), lint
+  PASS (123), typecheck PASS (24), unit PASS (`690 passed, 0 failed`, 183 s),
+  build PASS, harness PASS (`project-counters: 40 passed, 0 failed`). `All
+  required gates passed (6 ran, 1 unconfigured, 0 known).`
+- D-1 and D-2 not yet run: owner GATES.
