@@ -5,7 +5,7 @@ slug: the-session-deals-seats-and-sends-each-p
 epic: EPIC-03
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/SLICE-003-the-session-deals-seats-and-sends-each-p
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -521,6 +521,47 @@ These numbers were measured against stand-ins and my own oracle.
 the 15 real tests must pass and the 33 control tests must still pass
 unchanged.
 
+### GREEN confirmation (2026-10-02, feature-developer)
+
+Measured against the shipped `src/server/session/Session.luau`.
+
+- **The real module against every check:** `SessionContract.failures(Session)`
+  run directly (ignored scratch `.claude/state/red/green_failures.luau`)
+  printed `real Session fails 0 of 15`. Matched: the reference's 0 of 15.
+- **The controls suite**, re-run with the shipped module present: 33 of 33
+  pass, and every `[measured]` fired set is identical to the table above -
+  matched for all 29 rows: `reference` 0 of 15; `fixedSeed` {deal,
+  two-rounds, own-view, withdraw, quorum}; `reusesTheFirstSeed` {two-rounds,
+  own-view}; `skipsSeatsAssigned` the 11 (all but new, ignores, no-withdraw,
+  purity); `broadcastsAllSeatViews` {own-view, order};
+  `sendsEveryViewToFirstPlayer` {own-view, withdraw, quorum, order};
+  `sendsTheAssignment` {own-view, withdraw, quorum}; `sendsTheSuppliersView`
+  {own-view}; `resendsViewsOnEveryTick` {no-withdraw}; `sendsToTheLeaver`
+  {withdraw, quorum, order}; `skipsWithdraw` {withdraw, quorum};
+  `withdrawsInPostToo` {no-withdraw, order}; `keepsTheRingInLobby` {clears,
+  no-withdraw, order}; `sendsOnlyToTheSupplier` {withdraw, quorum, order};
+  `broadcastsOnEveryStep` {when, ignores}; `noRoundViewOnTicks` {when};
+  `floorsSecondsLeft`, `roundTimedFromLobbySeconds`,
+  `secondsLeftInShortLobby`, `absoluteDeadline`, `aliasesPlayers`,
+  `leaksSeedInRoundView` {payload} each; `dropsEmits`, `leaksAssignSeats`,
+  `reversesPassThrough` {pass-through} each; `acceptsOutsideSeatsAssigned`
+  {ignores}; `roundViewFirst` {order}; `mutatesState`, `mutatesEvent`
+  {purity} each; missing `step`/`new` 15/15.
+- **Fixtures:** deals `20261002 -> 279127814`, 6 then 4 players, both rings
+  differ from seed 0's and the first seed's; the lifecycle leave is 5 of 5
+  views changed. Matched.
+- **What this does and does not show.** The one-defect controls are edits of
+  the helper's reference stand-in, not of the shipped module, so their fired
+  sets cannot move with GREEN; their re-run confirms only that nothing
+  regressed. The confirmation that is new in GREEN is the 0 of 15 above. The
+  mutations of the shipped module itself are D-1..D-4, GATES' job.
+- **Contract mechanisms against the real modules:** all held as written. The
+  outside-`SeatsAssigned` early return precedes the machine step; the deal
+  uses the effect's `players`/`seed`; withdrawal is gated on the machine
+  having unseated the leaver; recipients are a field-by-field
+  `PublicSeatView` diff in the new ring's order; the ring is cleared on
+  entering `Lobby`. No divergence.
+
 ### Deferred verifications D-1..D-4: DECLINED in RED
 
 I cannot run D-1, D-2, D-3 or D-4: each mutates a module that does not exist
@@ -722,3 +763,33 @@ measured post-RED count is 844 passing; GREEN's full run should read 859.
    `.claude/tests/project-counters.test.sh` to the predicted post-GREEN counts
    and commits it in a `phase: RED` commit, because check-boundaries 3j freezes
    `.claude/tests/**` outside RED.
+
+**RED verified (2026-10-02, lead-po).**
+
+- The orchestrator read `tests/helpers/SessionContract.luau`'s `run`. Its
+  oracle replays every step through `PhaseMachine.step` (twice on a deal),
+  `Ring.assign(effect.players, Rng.fromSeed(effect.seed))`, `Ring.withdraw` and
+  `Projection.forPlayer`, and reads no expected value off the subject.
+- `lune run test`: `844 passed, 15 failed`. All 15 are
+  `tests/server/session_test.luau`, each failing with `did not load: error
+  requiring module "../../src/server/session/Session": could not resolve child
+  component "session"`.
+- `bash scripts/gates.sh --fast` after the RED commit `068ae60`:
+  - format, lint, typecheck and build pass (140 / 140 / 26);
+  - unit fails on the 15 above;
+  - harness fails `28 passed, 12 failed`, and every count failure is exactly one
+    short of the predicted baseline (for example `expected count: 141` against
+    `stylua over 140 files`), which is the one module GREEN writes.
+
+**GREEN (2026-10-02, lead-po).**
+
+- Freeze: snapshot taken right after `phase.sh set SLICE-003 GREEN`, over the
+  three test files and `.claude/tests/project-counters.test.sh`. Before leaving
+  GREEN: `frozen: OK — 4 path(s) unchanged since the snapshot for SLICE-003`.
+- The orchestrator read `src/server/session/Session.luau` against every
+  `## Contract` pin and found no divergence.
+  - `sameView` compares the six `PublicSeatView` fields explicitly. A story that
+    widens `PublicSeatView` must widen it too, or AC-3's diff goes silently
+    stale; VIEW-003 is the likely one.
+- Model: `feature-developer` dispatched with `model: opus`, and it reported
+  `claude-opus-5-5`. 2026-10-02.
