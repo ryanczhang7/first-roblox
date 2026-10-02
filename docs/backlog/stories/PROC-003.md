@@ -5,7 +5,7 @@ slug: instability-shortens-the-clock-darkens-r
 epic: EPIC-05
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/PROC-003-instability-shortens-the-clock-darkens-r
 depends_on: [PROC-002]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -281,6 +281,8 @@ from an upstream story or spike (as noted above), amend it and re-run
 - PLANNED → RED contract pinning - `lead-po` - `claude-opus-5-5`. 2026-10-02.
 - RED - `test-developer` - `claude-fable-5-1` (Fable 5.1). The dispatch passed
   `model: fable` explicitly; the agent self-reports Fable 5.1. 2026-10-02.
+- GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5). The dispatch passed
+  `model: opus` explicitly; the agent self-reports Opus 5.5. 2026-10-02.
 
 ## Test plan
 
@@ -737,6 +739,65 @@ I-6 step 3's departure from P-9 applies.
 - The `tick` scenarios pass `positions = {}`; `assignment` is the fixture's.
   Neither is read by anything I-1..I-10 names.
 
+### GREEN notes
+
+**Model:** `feature-developer` resolved to Opus 5.5 (`claude-opus-5-5`), the
+`opus` row; the dispatch named no override. 2026-10-02.
+
+**Files changed:** `src/server/procedure/Procedure.luau` only (the new state
+fields, `start`'s two parameters, `deadline`, `isDark`, `blackoutWeights`,
+`drawRoom`, a private `blackoutStream` and `charge`, `settle`, the
+`round_over` refusal, and the win check after a completing commit). No test,
+config, manifest or `.claude/tests/**` touched.
+
+**Seen red first:** the outcome test file alone, before any edit: `0 passed,
+23 failed`, the same 23 as the handoff.
+
+**Built as the Contract says, with no mechanism found wanting.** Every charge
+(`wrong_setting`, `not_live`, expiry) goes through one `charge`: instability,
+then penalty, then crossings `old+1 .. new` below the max (each drawing
+`blackout_rooms_per_threshold` rooms, weights recomputed per draw, `break` on
+nil), then instability `>= max` before `now >= deadline`, read after the
+penalty (PO ruling 2). `turn` checks `outcome` before anything else (ruling 1),
+then expiry and the clock (`settle`), and refuses `round_over` if either
+decided the round. `copy` now clones `dark`; `outcome` tables are always
+fresh, never mutated, so they are shared. The stream is rebuilt per draw and
+advanced by `blackoutDraws` `nextNumber()` calls (I-1).
+
+**Final `lune run test`:** `763 passed, 0 failed`. `selene src tests lune`: 0
+errors, 0 warnings. `stylua --check src tests lune`: clean.
+
+**`bash scripts/gates.sh --fast`** (uncommitted tree, 2026-10-02):
+
+    PASS         format (1s, observed 129)
+    PASS         lint (0s, observed 129, floor 1)
+    PASS         typecheck (3s, observed 24)
+    PASS         unit (111s, observed 763, floor 507)
+    UNCONFIGURED coverage
+    PASS         build (0s, observed 91349)
+    FAIL         harness (16s, exit 1)
+
+`harness` is `project-counters: 39 passed, 1 failed`, the one being "the
+working tree carries no stray .luau files" with `actual: M
+src/server/procedure/Procedure.luau` - the uncommitted-tree precondition,
+which clears at the GREEN commit. The counter baselines (129/129/24) match:
+GREEN added no `.luau` file.
+
+**Controls, measured on the shipped module** (scratch script
+`.claude/state/green/measure3.luau`, ignored):
+
+| Control | RED's number | Measured on the module |
+|---|---|---|
+| AC-3: `heavierRoomFrequency` (`drawRoom({[4]=3,[7]=1})` x 20,000, seed 9001 "blackout") | reference 0.7527 | **0.7527** (exact) |
+| AC-3: uniform control | 0.50355 | **0.50355** - `drawRoom({[4]=1,[7]=1})` on the same stream, i.e. D-1's every-weight-1 mutation, reads the uniform control's number exactly |
+| AC-6: sixth point on a 49 s round at t0+10 | reference `lost / instability` | **`rejected / wrong_setting`**, instability 5 -> 6, deadline 114 -> 107 (clock below 0), outcome **`lost / instability`** |
+| AC-2: dark rooms at the max (threshold 3, 2 per crossing) | reference 2 (control 4) | **2** (rooms 1, 2), `blackoutDraws` 2, outcome `lost / instability` |
+
+The controls file's own `[measured]` lines are unchanged on this run (they
+measure stand-ins, not the module): reference 0 of 21 / 0 of 20 / 0 of 22,
+each one-defect stand-in firing the set the table above names. No divergence
+from RED to report. D-1..D-4 remain GATES's.
+
 ## Regressions
 
 <!-- REQUIRED if this story ever returned to RED after GREEN or GATES; omit
@@ -823,3 +884,30 @@ still running at five points and out after six, so it cannot pass vacuously.
 
 Admissible. The RED commit (tests and counter baselines, `phase: RED`) clears
 the harness precondition.
+
+**PO verification of GREEN (lead-po, 2026-10-02).**
+
+- Freeze: `bash scripts/frozen.sh verify` → `frozen: OK — 12 path(s) unchanged since the snapshot for PROC-003`
+  (OutcomeContract, FinaleContract, TurnContract, Deep, Contract, the six
+  procedure test files, `.claude/tests/project-counters.test.sh`).
+- `lune run test` (independent run): `763 passed, 0 failed`.
+- Discrimination, two mutations of the shipped module via `scripts/mutate.sh`,
+  each restored and verified byte-for-byte, counts predicted by RED's controls
+  table:
+
+  | Mutation | Predicted | Measured |
+  |---|---|---|
+  | crossing guard `v < instability_max` → `v <= instability_max` (blackout at the max) | 2 (`reachingInstabilityMax…`, `tickExpiryCharges…`) | `761 passed, 2 failed` — exactly those two |
+  | blackout stream not advanced by `blackoutDraws` (`for _ = 1, 0 do`) | 1 (`theSameSeedReplays…`) | `762 passed, 1 failed` — `AC-5/I-1: one seed replays four crossings as the same four rooms in the same order…` |
+
+- `bash scripts/gates.sh --fast` on the uncommitted GREEN tree:
+
+      PASS         format (1s, observed 129)
+      PASS         lint (1s, observed 129, floor 1)
+      PASS         typecheck (2s, observed 24)
+      PASS         unit (119s, observed 763, floor 507)
+      UNCONFIGURED coverage
+      PASS         build (0s, observed 91349)
+      FAIL         harness (18s, exit 1)   -- 39/40: "no stray .luau" (Procedure.luau uncommitted)
+
+  The GREEN commit clears that one; re-checked after it below.
