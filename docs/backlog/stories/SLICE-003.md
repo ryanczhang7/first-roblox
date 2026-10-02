@@ -4,8 +4,8 @@ title: The session deals seats and sends each player only their own seat view
 slug: the-session-deals-seats-and-sends-each-p
 epic: EPIC-03
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/SLICE-003-the-session-deals-seats-and-sends-each-p
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -194,21 +194,72 @@ durations are `RoundConfig`'s; read them, do not restate them.
 effect's `playerId` to the first seated player for every view, AC-2 **must**
 fail. RED cannot run this; there is no `Session` yet. Owner: GATES.
 
+*Result (GATES, 2026-10-02, lead-po): HOLDS.* Every dealt view was addressed to
+`dealt.players[1]`. AC-2 and the order pin went red, and the file was restored
+byte-for-byte.
+
+    203 + 			table.insert(sends, seatView(dealt, dealt.players[1]))
+      FAIL  tests/server/session_test.luau :: AC-2: on each dealing step there is exactly one SendTo/SeatView per seated player, addressed to them, payload deep-equal to Projection.forPlayer(assignment, p), nobody else addressed, and no Broadcast on any step carries a seat view by kind or by shape
+      FAIL  tests/server/session_test.luau :: Contract: within a step the effects are ordered pass-through first, then SendTo/SeatView in seat order, then at most one Broadcast last
+    857 passed, 2 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .claude/state/mutations/src_server_session_Session.luau.20261002T203315Z.1344532.bak) ===
+
 **D-2. AC-1 reads the effect's seed.** With `scripts/mutate.sh` making
 `Session` deal from `Rng.fromSeed(0)` (or from any fixed value) in place of the
 effect's seed, AC-1 **must** fail on the two-round case. RED cannot run this.
 Owner: GATES.
+
+*Result (GATES, 2026-10-02, lead-po): HOLDS.* Dealing from `Rng.fromSeed(0)`
+turned both AC-1 tests red, including the two-round case. AC-2 and both AC-3
+deal-dependent tests went red with them. The file was restored byte-for-byte.
+
+    198 + 		local dealt = Ring.assign(deal.players, Rng.fromSeed(0))
+      FAIL  tests/server/session_test.luau :: AC-1: across two consecutive rounds (Round -> Resolution -> Post -> Lobby -> deal) the AssignSeats seeds differ and each deal equals Ring.assign from ITS OWN effect's seed - a fixed-seed session fails
+      FAIL  tests/server/session_test.luau :: AC-1: with players_min joined and the lobby timer elapsed, one Tick reaches Round and state.assignment deep-equals Ring.assign(effect.players, Rng.fromSeed(effect.seed)) for the AssignSeats effect PhaseMachine.step emits
+      FAIL  tests/server/session_test.luau :: AC-2: on each dealing step there is exactly one SendTo/SeatView per seated player, ...
+      FAIL  tests/server/session_test.luau :: AC-3: when a seated player leaves a six-player Round (quorum kept), ...
+      FAIL  tests/server/session_test.luau :: AC-3: with players_min seated, a leave that keeps quorum and then one that drops below it ...
+    854 passed, 5 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .claude/state/mutations/src_server_session_Session.luau.20261002T203734Z.1351940.bak) ===
 
 **D-3. AC-4's ceiling is a ceiling (a wrong value, not a missing field).** With
 `math.ceil` mutated to `math.floor` in the `secondsLeft` computation, AC-4
 **must** fail. Separately, with the `Round` duration read from
 `config.lobbySeconds`, AC-4 **must** fail. RED cannot run this. Owner: GATES.
 
+*Result (GATES, 2026-10-02, lead-po): HOLDS on both.* Both are wrong-value
+mutations. (a) `math.ceil` to `math.floor`, and (b) the `Round` duration read
+from `config.lobbySeconds`. Each turned AC-4's payload test red, alone, and
+each file was restored byte-for-byte. A single-assertion catch in each case is
+expected: only that test reads `secondsLeft`.
+
+    148 + 	return math.floor(duration - (now - round.phaseEnteredAt))
+      FAIL  tests/server/session_test.luau :: AC-4: every RoundView is exactly { phase, secondsLeft, players, playersMin, playersMax } by pairs; secondsLeft = ceil(RoundConfig duration - elapsed) ... - 0.5 s in rounds UP, the dealing step says roundSeconds - ...
+    858 passed, 1 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .claude/state/mutations/src_server_session_Session.luau.20261002T204155Z.1358010.bak) ===
+
+    141 + 		duration = config.lobbySeconds
+      FAIL  tests/server/session_test.luau :: AC-4: every RoundView is exactly { phase, secondsLeft, players, playersMin, playersMax } by pairs; ...
+    858 passed, 1 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .claude/state/mutations/src_server_session_Session.luau.20261002T204619Z.1364217.bak) ===
+
 **D-4. AC-3 never addresses the leaver.** With the withdraw step mutated to
 send a `SeatView` to every player in the **old** ring, so that it addresses the
 leaver, `Projection.forPlayer` raises for the leaver against the new ring.
 Either the step raises or AC-3 **must** fail; the suite must go red either way.
 RED cannot run this. Owner: GATES.
+
+*Result (GATES, 2026-10-02, lead-po): HOLDS, by the "step raises" branch.* The
+withdraw step was mutated to iterate the **old** ring, so it addresses the
+leaver. `Projection.forPlayer(withdrawn, leaver)` raises, `Session.step` raises
+on that leave, and every test whose plan passes through it went red: 14 of 15,
+all but `Session.new`. The file was restored byte-for-byte.
+
+    214 + 		for _, playerId in old.players do
+      FAIL  tests/server/session_test.luau :: AC-3: when a seated player leaves a six-player Round (quorum kept), ... and never to the leaver
+      ... (13 more, every plan-driven test in tests/server/session_test.luau)
+    845 passed, 14 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .claude/state/mutations/src_server_session_Session.luau.20261002T205032Z.1370207.bak) ===
 
 ## Out of scope
 
@@ -702,10 +753,22 @@ measured post-RED count is 844 passing; GREEN's full run should read 859.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-02T21:09:47Z
+    commit: ca8d53a
+    tree:   5c47b6385f097a455522700e0b22ea8c741ed73c
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 141)
+    PASS         lint (1s, observed 141, floor 1)
+    PASS         typecheck (4s, observed 27)
+    PASS         unit (223s, observed 859, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (1s, observed 97283)
+    PASS         harness (64s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -793,3 +856,18 @@ measured post-RED count is 844 passing; GREEN's full run should read 859.
     stale; VIEW-003 is the likely one.
 - Model: `feature-developer` dispatched with `model: opus`, and it reported
   `claude-opus-5-5`. 2026-10-02.
+
+**GATES (2026-10-02, lead-po).**
+
+- Freeze: snapshot retaken right after `phase.sh set SLICE-003 GATES` (the same
+  four paths). After D-1 to D-4 and the full run:
+  `frozen: OK — 4 path(s) unchanged since the snapshot for SLICE-003`.
+- Deferred verifications D-1 to D-4 all hold. Their results are pasted under
+  each block, and each mutation went through `scripts/mutate.sh` with a
+  verified restore.
+- Full `bash scripts/gates.sh` passed: 6 ran, 0 failed, 3 unconfigured, and
+  `## Gate results` was written by the script. No source change was needed in
+  GATES. This story adds or changes no gate, so `## Gate probes` does not apply.
+- Local timing: unit took 223 s and harness 64 s. Both are slower than the
+  PROC-005 runs on this machine (126 s and 16 s), and the 48 new tests do not
+  account for the difference. Compare against CI at REVIEW.
