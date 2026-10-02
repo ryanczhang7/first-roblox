@@ -264,7 +264,19 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-# LAST MEASURED: PROC-003 (RED), which added three test files
+# LAST SET: PROC-005 (RED), which adds six test files (tests/helpers/
+# TurnRemoteContract.luau, tests/helpers/TurnRequestsContract.luau,
+# tests/net/turn_remote_test.luau, tests/net/turn_remote_controls_test.luau,
+# tests/server/turn_requests_test.luau, tests/server/turn_requests_controls_test.luau)
+# and whose GREEN adds TWO source files, src/net/GameRemotes.luau and
+# src/server/procedure/TurnRequests.luau. MEASURED on the uncommitted RED tree:
+# `stylua over 135 files`, `selene over 135 files`, `analyze over 24 files`
+# (129 + 6 tests). PREDICTED post-GREEN, which is what is pinned below:
+# 135 + 2 = 137/137/26, narrow 24/24/8 -> 26/26/8 (both new modules are under
+# src/, neither under src/shared). The suite is red in RED by design - the
+# "no stray .luau files" precondition until the RED commit, and AC-7 by the
+# two source files until GREEN writes them. GREEN confirms, never edits.
+# BEFORE THAT: PROC-003 (RED), which added three test files
 # (tests/helpers/OutcomeContract.luau, tests/server/procedure_outcome_test.luau,
 # tests/server/procedure_outcome_controls_test.luau) and no source: 126/126/24
 # -> 129/129/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
@@ -277,11 +289,11 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=129    # stylua  over src tests lune   (129 = 24 src + 105 tests/lune)
-BASE_LINT=129      # selene  over src tests lune
-BASE_TYPECHECK=24  # analyze over src (NET-001 probe included; src/server/procedure/ is PROC-001's one module)
-NARROW_FORMAT=24   # stylua  over src alone
-NARROW_LINT=24     # selene  over src alone
+BASE_FORMAT=137    # stylua  over src tests lune   (137 = 26 src + 111 tests/lune, post PROC-005 GREEN)
+BASE_LINT=137      # selene  over src tests lune
+BASE_TYPECHECK=26  # analyze over src (NET-001 probe included; + PROC-005's GameRemotes and TurnRequests)
+NARROW_FORMAT=26   # stylua  over src alone
+NARROW_LINT=26     # selene  over src alone
 NARROW_TYPECHECK=8 # analyze over src/shared alone (moved by TUNE-001's MechanicsTuning)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`
