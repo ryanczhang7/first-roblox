@@ -30,6 +30,14 @@
 	(P-6). D-1 and D-2 THEMSELVES are mutations of the real module and stay
 	with GATES; what is measured here is that the checks WOULD see them.
 
+	THE REFERENCE FOLLOWS PROC-002's F-3 FOR LIVENESS (since PROC-002 RED): the
+	finale steps are live once every ordinary step of both tracks is
+	committed. TurnContract's AC-1 check was corrected to say so at the same
+	time, and this reference has to agree with it to stay a positive control.
+	It still has no finale TURN behaviour - arming, the window, the lamps live
+	in `procedure_finale_controls_test.luau`'s stand-in, which also passes
+	every check here.
+
 	WHAT THE REFERENCE IS NOT: `src/server/procedure/Procedure.luau`, or a
 	sketch of one. It is untyped, copies state the slow way, and reads nothing
 	the Contract does not name. GREEN writes the module from the story's
@@ -76,6 +84,22 @@ local function standIn(defects: Defects): Contract.Procedure
 	function P.isLive(state: any, id: number): boolean
 		local tracks = state.facility.steps.tracks
 		if defects.everyTrackOneStepLive and table.find(tracks[1], id) ~= nil then
+			return true
+		end
+		-- PROC-002 F-3 (brought up to date in its RED, 2026-10-02): a finale
+		-- step is live iff every ordinary step of EVERY track is committed and
+		-- it is not itself committed. PROC-001's reference read "never live".
+		if table.find(state.facility.steps.finale, id) ~= nil then
+			if state.committed[id] then
+				return false
+			end
+			for _, track in tracks do
+				for k = 1, #track - 1 do
+					if not state.committed[track[k]] then
+						return false
+					end
+				end
+			end
 			return true
 		end
 		for t, track in tracks do

@@ -4,8 +4,8 @@ title: The finale commits only when both machines are turned inside the window
 slug: the-finale-commits-only-when-both-machin
 epic: EPIC-05
 type: feature
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/PROC-002-the-finale-commits-only-when-both-machin
 depends_on: [PROC-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -97,11 +97,157 @@ is new.
 **Oracle partition.** Every criterion is **settled** by `mechanics.md` §5's exact
 case list. Each test names the case it pins.
 
+**Pinned semantics (PO, at PLANNED → RED, 2026-10-01).** These continue
+`PROC-001`'s P-1..P-11, which all still hold except where F-9 refines P-9. RED
+may amend any block below in place, with a dated reason next to it; GREEN builds
+what the amended block says.
+
+- **F-1. Types.** `ProcedureState.armed: { machineId: number, closesAt: number }?`
+  — absent (nil) from `start` and whenever no window is open. `tick` returns
+  `(ProcedureState, PhaseMachine.Outcome?)`, the type imported from
+  `src/server/round/PhaseMachine.luau`; in this story the second value is
+  **always nil**. `partnerLamps` returns a table with **exactly two keys**, the
+  two ids of `facility.steps.finale`, each a real boolean. `isComplete` returns a
+  real boolean. `TurnResult`, `DialView` and `ActuationLogEntry` are unchanged.
+- **F-2. Constants**, read from `state.tuning` (P-1):
+  `instance.simultaneous_window_seconds`, `instance.partner_lamp_range_studs`
+  (both in `InstanceTuning`, read from `src/shared/MechanicsTuning.luau` at
+  `25d7a74`), `actuation.instability_per_failed_pair`,
+  `actuation.instability_per_wrong_value`, `actuation.actuation_reset_seconds`.
+  Tests override them so every one is **distinct** from every other and from the
+  shipped values — e.g. window 3, lamp range 4 (≠ the fixture's `turn_range_studs`
+  7), failed pair 4, wrong value 1, out of order 2, reset 5 — so a test can tell
+  which constant was read and which was charged. AC-3 and AC-4 are **also** run
+  once under the shipped tuning, where they read out literally (+1, "not 2").
+- **F-3. Liveness (replaces P-3's finale clause).** An ordinary step is live as
+  P-3 says. A finale step is live iff **every ordinary step of every track** is
+  committed and that finale step is not committed. Both finale steps are
+  therefore live, or neither. **An armed machine is still live** (`isLive` is
+  true for it); armed is a separate fact read from `state.armed`. A committed
+  finale machine is not live.
+- **F-4. Arming.** A turn that passes every refusal, on a live finale machine, at
+  its required setting, with `state.armed == nil`: returns
+  `{ kind = "armed", machineId = id }`; sets `armed = { machineId = id, closesAt
+  = now + simultaneous_window_seconds }`; sets `dials[id] = { setting = setting }`;
+  instability unchanged; appends one log entry with `result = "armed"`.
+  `committed` unchanged.
+- **F-5. Completing.** With `armed = { machineId = A, closesAt = c }`, a turn
+  that passes every refusal on the **other** finale machine B, at B's required
+  setting, at `now ≤ c` (inclusive, AC-7): returns `{ kind = "committed",
+  machineId = B }`; sets `committed[A]` and `committed[B]` true; `armed = nil`;
+  `dials[B] = { setting = setting }` (`dials[A]` keeps A's armed setting, so
+  `dial(A)` reads `{ setting = <A's setting>, state = "committed" }`); appends
+  **one** log entry, B's, with `result = "committed"`; instability unchanged.
+  `isComplete` is then true.
+- **F-6. The armed refusal.** A turn on the armed machine itself, any setting,
+  is `refused / armed`, free (P-9). Refusal order becomes `unknown_machine`,
+  `not_key_holder`, `out_of_reach`, `committed`, `resetting`, **`armed`** — first
+  failure wins. (An armed machine can be neither committed nor resetting, so
+  only the first three can pre-empt it.)
+- **F-7. A wrong turn with a window open.** With A armed, a turn on B that passes
+  every refusal at a setting that is not B's required setting: rejected exactly
+  as P-6/P-8 say (`rejected / wrong_setting`, `instability_per_wrong_value`
+  charged once, B's dial `{ setting, rejectedUntil = now + reset }`, one log
+  entry `wrong_setting`) **and** `armed = nil` and `dials[A] = { setting = <A's
+  armed setting>, rejectedUntil = now + actuation_reset_seconds }`.
+  `instability_per_failed_pair` is **not** charged. A wrong turn on a live
+  finale machine with no window open is an ordinary rejection.
+- **F-8. Expiry, by `tick`.** `tick(state, assignment, now, positions)`: if
+  `armed ~= nil` and `now > armed.closesAt` (strictly — the window is inclusive
+  at its end), returns a new state with `armed = nil`, `instability +=
+  instability_per_failed_pair`, and `dials[A] = { setting = <A's armed setting>,
+  rejectedUntil = now + actuation_reset_seconds }` (the tick's `now`, not
+  `closesAt`: a late tick does not shorten the visible rejection). The unturned
+  machine's dial is untouched. **No log entry** — expiry is not a turn.
+  Otherwise `tick` returns a state deep-equal to the one passed. Either way the
+  second value is nil. `assignment` and `positions` are unread in this story.
+- **F-9. A turn applies an expired window first (refines P-9).** `turn` at a
+  `now > armed.closesAt` first applies exactly F-8 as though `tick(state, …,
+  now, …)` had run, then judges the turn against that state. So a correct turn on
+  B arriving after the window costs `instability_per_failed_pair` and then
+  **arms B**; a turn on A then is `refused / resetting`, and the state returned
+  is the **post-expiry** state, not the one passed. P-9's "a refused turn returns
+  a state deep-equal to the one passed" therefore holds whenever no window has
+  expired at `now`, which covers every `PROC-001` case. Derived from §5 "Server
+  events are handled in arrival order" and the edge case "the second turn
+  arrives after the window: both disarm, instability +1": the window's end is an
+  event that precedes the late turn, and a session that forgot to `tick` must not
+  be able to commit a late finale.
+- **F-10. `isComplete`.** True iff every machine in every track of
+  `facility.steps.tracks` is committed. Decoys are irrelevant.
+- **F-11. Partner lamps.** Let the finale be `{ A, B } = facility.steps.finale`.
+  If the finale is not live (F-3: an ordinary step remains, or the finale is
+  committed), both are false. Otherwise A's lamp is true iff **some** player `p`
+  with `B.keyClass ∈ assignment.keyClasses[p]` has a position `positions[p]`
+  within `partner_lamp_range_studs` of `Machines.positionOf(layout, B, tuning)`,
+  horizontally and inclusively (P-4's rule with the lamp's range), and B's lamp
+  the same way round. `armed` does not affect the lamps. A player absent from
+  `positions` is out of range. One player holding both classes is not a special
+  case.
+- **F-12. Non-mutation.** P-11 extends to `tick`, `partnerLamps` and `isComplete`.
+
+**Test files.** `tests/server/procedure_finale_test.luau` (the settled ACs, on the
+real module) and `tests/server/procedure_finale_controls_test.luau` (the AC-1,
+AC-4 and AC-6 controls, observed to fire against wrong stand-ins), with the
+checks and fixture in `tests/helpers/FinaleContract.luau`, following
+`PROC-001`'s `TurnContract` pattern. Reuse `TurnContract`'s fixture (tracks
+`{11,12,13}` and `{14,15,16,17}`, finale `{13,17}`, decoys 18 and 19) rather than
+inventing a second facility.
+
+**A frozen PROC-001 test this story legitimately breaks — RED's to correct.**
+`TurnContract.lua`'s AC-1 check near line 381–408 ("Tracks advance
+independently, and a finale step is never live in this story") commits 11, 12,
+14, 15, 16 and asserts the live set is `{}`. Under F-3 it is `{13, 17}`. That
+assertion pinned PROC-001's interim behaviour, and its own message says so
+("finale steps are waiting in PROC-001 and go live only in PROC-002"). RED
+corrects it to `{13, 17}` — a test change in RED, written against code that does
+**not** yet do this, so it will be red for the right reason and needs no probe.
+RED must also (a) bring `procedure_controls_test.luau`'s reference stand-in up to
+F-3 so the PROC-001 controls stay green against a correct reference, and
+(b) **read every other `TurnContract` check against F-3..F-9** and list in the
+handoff each one it judged unaffected — notably the ones at ~639–694 (finale
+turned while ordinary steps remain: still `not_live`, unchanged) and the
+refusal-order check.
+
+**Callers of changed signatures.** No existing export's signature changes.
+`ProcedureState` gains an optional field and `turn`'s refusal list gains its
+already-declared `armed` member. Checked against the tree on `main` at `25d7a74`:
+
+    rg "Procedure\.(start|turn|dial|isLive|tick)|ProcedureState|\.armed" src tests lune
+    -> src/server/procedure/Procedure.luau      (the module)
+    -> tests/server/procedure_test.luau         (PROC-001)
+    -> tests/server/procedure_controls_test.luau (PROC-001; its reference stand-in)
+    -> tests/helpers/TurnContract.luau          (PROC-001; see above)
+
+No production caller exists yet (`SLICE-005` wires it). RED's handoff states this
+list was re-checked against the tree.
+
+**Epic check (PO, 2026-10-01).** EPIC-05 done-when #3 is this story's whole:
+finale live together (AC-1), both-or-neither inside the window (AC-2, AC-7), one
+point per failed attempt (AC-3, AC-4), the partner lamp (AC-6). Done-when #2's
+`armed` refusal is AC-5. Nothing in done-when #1–#3 falls between `PROC-001` and
+this story. No gap.
+
+**Gate.** `unit` (required) runs `lune run test`, which collects
+`tests/server/*_test.luau`. No optional gate is the only one reading this
+artifact, so `required_gates` stays `[]`.
+
 ## Deferred verifications
 
 **D-1. One failed attempt, one point.** Use `scripts/mutate.sh` to add the
 failed-pair penalty on the wrong-turn-with-window-open path. AC-4 **must** then
-fail with 2. RED cannot run this. Owner: GATES.
+fail with 2 under the shipped tuning (and with `wrong_value + failed_pair`
+under F-2's distinct overrides). RED cannot run this. Owner: GATES.
+
+**D-2. The window's edge is inclusive.** Use `scripts/mutate.sh` to turn the
+expiry comparison from `now > closesAt` to `now >= closesAt` (in whichever of
+`tick`/`turn` holds it — both, in two runs, if both do). AC-7 **must** then
+fail. RED cannot run this. Owner: GATES.
+
+**D-3. The lamp reads the partner's machine.** Use `scripts/mutate.sh` to make
+`partnerLamps` measure the holder's distance to their own lamp's machine rather
+than the partner's. AC-6 **must** then fail on the fixture where B's holder
+stands at A. RED cannot run this. Owner: GATES.
 
 ## Out of scope
 
@@ -143,31 +289,326 @@ from an upstream story or spike (as noted above), amend it and re-run
 
 - PLANNED - `lead-po` - `claude-opus-5-5` (Opus 5.5, from the session's own model
   identification; the /plan-product dispatch reported no override). 2026-09-30.
+- PLANNED → RED contract pinning - `lead-po` - `claude-opus-5-5`. 2026-10-01.
+- RED - `test-developer` - `claude-fable-5-1` (Fable 5.1). The dispatch passed
+  `model: fable` explicitly; the agent self-reports Fable 5.1. 2026-10-02.
 
 ## Test plan
 
-<!-- Filled by the Test Developer during RED: which tests, at which level,
-     and which AC each one covers. -->
+All unit level, on the pure module, through `lune run test`. The checks live
+once in `tests/helpers/FinaleContract.luau` (reusing `TurnContract`'s fixture:
+tracks `{11,12,13}` / `{14,15,16,17}`, finale A = 13 (amy, class 3), B = 17
+(bob, class 4), decoys 18, 19), are applied to the real module in
+`tests/server/procedure_finale_test.luau`, and are observed to fire against
+wrong stand-ins in `tests/server/procedure_finale_controls_test.luau`. Every
+scenario starts from `liveFinale` (11, 12, 14, 15, 16 committed at NOW+1..5)
+and arms at `T_ARM = NOW + 10 = 110`. Tuning per F-2: window 3, lamp range 4,
+turn range 7, reset 5, wrong value 1, out of order 2, failed pair 4; the two
+"shipped" rows use `MechanicsTuning` unmodified (window 5, lamp 10, reset 3,
+all charges 1).
+
+**`procedure_finale_test.luau` — the real module (24 tests)**
+
+| Test (FinaleContract check) | Asserts | AC / F |
+|---|---|---|
+| exports tick, partnerLamps, isComplete (inline) | all seven exports are functions | F-1 |
+| `startHasNoWindowAndTheNewExportsAnswerInShape` | `start().armed == nil`; `isComplete` is the boolean `false`; `tick` with no window returns a deep-equal state and nil; `partnerLamps` has exactly keys `{13, 17}`, real booleans, both false at start | F-1 |
+| tick returns two values (inline) | first a table, second nil | F-1 |
+| `neitherFinaleMachineIsLiveUntilTheLastOrdinaryStepCommitsThenBothAre` | commit 11, 14, 15, 16: live set is exactly `{12}`; commit 12: live set is exactly `{13, 17}` | AC-1, F-3 |
+| `anArmedMachineIsStillLiveAndACommittedFinaleIsNot` | A armed: live set still `{13, 17}`; after B commits: `{}` | AC-1, F-3 |
+| `correctTurnOnALiveFinaleMachineWithNeitherArmedArmsIt` | result `{kind="armed", machineId}`; `armed == {machineId, closesAt = now + 3}`; `dials[id] == {setting}`; instability and `committed` unchanged; log grows by exactly one `armed` entry. Both A-first and B-first | AC-2, F-4 |
+| `correctTurnOnTheOtherMachineInsideTheWindowCommitsBoth` | at t'−t ∈ {0, 1.5, 2.999}: result committed B; `committed[A] == committed[B] == true`; `armed == nil`; `dials[B] == {setting}`; `dial(A)` and `dial(B)` read committed with their settings; one new log entry (B's); instability unchanged; `isComplete == true`. Also B-arms-then-A-completes | AC-2, F-5, F-10 |
+| `turnOnTheOtherMachineAtExactlyTheWindowsEndCommitsBoth` | same at t' = t + 3 exactly | AC-7, F-5 |
+| `tickAtOrBeforeTheWindowsEndChangesNothing` | tick at t, t+1.5, t+3 (= closesAt) returns a deep-equal state and nil | AC-7, F-8 |
+| `tickPastTheWindowDisarmsBothAndChargesExactlyOneFailedPair` | tick at t+3.001 and t+13: `armed == nil`; instability +4 exactly; `dials[A] == {setting, rejectedUntil = tickNow + 5}` (not closesAt-based); `dials[B]`, `committed`, `log` untouched; second return nil; `dial(A)` rejected until `tickNow + 5` then unset; `dial(B)` unset; both live again | AC-3, F-8 |
+| `afterExpiryTheArmedMachineResetsLikeAnyRejectionThenCanArmAgain` | after the expiry tick, A at tick+4.999 is `refused / resetting` with the state returned deep-equal (P-9 holds: no window expired at that now); A at tick+5 is `armed` with `closesAt = tick+5+3` | AC-3, F-8, F-6 |
+| `underTheShippedTuningAnExpiredWindowCostsExactlyOne` | the expiry check under `MechanicsTuning` as shipped; instability is literally 1 | AC-3 |
+| `wrongTurnOnTheOtherMachineInsideTheWindowIsRejectedOnceAndDisarmsBoth` | A armed, B wrong at t+1: `rejected / wrong_setting`; instability +1 exactly (not +5); `armed == nil`; `dials[B] == {wrong, rejectedUntil = now+5}`; `dials[A] == {A's setting, rejectedUntil = now+5}`; `committed` unchanged; one new log entry (`wrong_setting`); both dials read rejected | AC-4, F-7 |
+| `underTheShippedTuningAWrongTurnWithTheWindowOpenCostsOneNotTwo` | the same under shipped tuning; instability is literally 1, not 2 | AC-4 |
+| `wrongTurnOnALiveFinaleMachineWithNoWindowOpenIsAnOrdinaryRejection` | no window: B wrong is an ordinary rejection (+1), `armed` nil, `dials[A]` nil | AC-4, F-7 |
+| `turnOnTheArmedMachineIsRefusedArmedAtNoCost` | A again at t+1 (right setting), t+1 (wrong), t+3 (closesAt): `refused / armed`, state deep-equal, log and dial unchanged | AC-5, F-6 |
+| `armedIsTheLastRefusalChecked` | on armed A: zed with no position → `not_key_holder`; stranger in reach → `not_key_holder`; amy out of reach / no position → `out_of_reach` | AC-5, F-6 |
+| `aCorrectTurnOnTheOtherMachineAfterTheWindowAppliesExpiryThenArmsIt` | B correct at t+4: result `armed` B; nothing committed; instability +4; `armed == {B, closesAt = now+3}`; `dials[A] == {A's setting, rejectedUntil = now+5}`; `dials[B] == {setting}`; one new log entry (B `armed`) | F-9, F-8 |
+| `aTurnAfterTheWindowReturnsThePostExpiryState` | A at t+4: `refused / resetting`, `armed` nil, instability +4, and the whole state deep-equal to `tick(armed, …, t+4)`'s; B WRONG at t+4: `rejected / wrong_setting`, instability +4+1 = +5, `armed` nil | F-9 |
+| `bothLampsAreDarkWhileTheFinaleIsNotLive` | both holders at the partner machines: lamps `{false,false}` at start, with 12 left, and after the finale committed; `{true,true}` the moment it went live | AC-6, F-11 |
+| `aLampIsLitExactlyWhenThePartnersHolderIsWithinLampRangeOfThePartnerMachine` | live finale, neither armed AND A armed, 11 position cases each: bob at B → `{13=true,17=false}`; amy at A → `{false,true}`; nobody → both false; bob at exactly 4 along x / 4 along −z and 1000 up → true; 4.001 → false; (4,4) → false; 7 along x (in turn reach, out of lamp range) → false; bob at A and amy at B → both false; non-holder kim at B → no effect; only kim at B → both false | AC-6, F-11, F-2 |
+| `anyHolderOfThePartnersClassInRangeLightsTheLampAndOnePlayerHoldingBothIsNoSpecialCase` | kim handed class 4 and at B → `{true,false}`; bob holding `{4,3}` at B → `{true,false}`, at A → `{false,true}`, at 11 → both false | AC-6, F-11 |
+| `isCompleteIsTrueExactlyWhenEveryTrackMachineIsCommitted` | false at start, with every ordinary step committed, with A armed; true after both commit with decoys never turned | F-10 |
+| `noFinaleCallMutatesItsArguments` | tick (idle, expiring), partnerLamps (live, armed), isComplete, arming, completing, wrong-with-window, armed refusal, late turn: arguments deep-equal before and after; completing from `armed` then ticking the result leaves `armed` and `live` untouched | F-12 |
+
+**`procedure_finale_controls_test.luau` — stand-ins (14 tests, all green in RED)**
+
+| Test | Stand-in defect | Fires exactly |
+|---|---|---|
+| baseline | none (the reference) | 0 of 22 finale checks |
+| audit | none | 0 of 20 `TurnContract` checks (the mechanical half of the F-3..F-9 audit) |
+| fixtures: overrides distinct | — | every F-2 override ≠ shipped and ≠ each constant it must be told from; shipped failed-pair and wrong-value both 1 |
+| fixtures: A and B far apart | — | d(13, 17) = 64 > max(turn range, lamp range) under both tunings |
+| AC-1 control | finale live when ITS OWN track's ordinary steps are done | `neitherFinaleMachineIsLive…` (live set `{12, 17}`), plus TurnContract's corrected AC-1 check and `waitingStepIsNotLiveWhateverTheSetting` |
+| AC-4 control | charges failed pair AND wrong value on F-7 | scores 2 shipped / 5 overrides; fires the two AC-4 window checks |
+| AC-6 control | lamp measures the partner's holder against ITS OWN machine | lamp-geometry, both-classes, lamps-dark (moment-of-going-live case) |
+| AC-7 control | expiry at `now >= closesAt` | turn-at-edge, tick-at-edge, armed-refusal-at-edge |
+| F-9 control | turn does not apply an expired window first | both F-9 checks |
+| F-3 control | armed machine not live | armed-still-live, lamp-geometry |
+| F-11 control | lamps ignore liveness | F-1 shape, lamps-dark |
+| F-2 control | lamp reads `turn_range_studs` | lamp-geometry |
+| F-8 control | rejection dated from `closesAt` | expiry, shipped expiry, reset-then-rearm, F-9 arm-after-expiry |
+| F-8 control | tick logs the expiry | expiry, shipped expiry, F-9 arm-after-expiry |
+
+**Corrected PROC-001 test.** `TurnContract.tracksAdvanceIndependentlyAndFinaleStepsStayWaiting`'s
+second assertion now expects `{13, 17}` (was `{}`); its `procedure_test.luau`
+name was reworded to match. `procedure_controls_test.luau`'s reference stand-in
+reads F-3 for finale steps so PROC-001's seven controls stay green with the same
+fired sets as before.
 
 ## Handoff: RED -> GREEN
 
-<!-- Filled by the Test Developer at the end of RED. This is the ONLY channel
-     to the Feature Developer, whose context is fresh. Must contain:
-       * the exact command that runs the new tests
-       * the failure output, and why it is the RIGHT failure
-       * every file touched, and which AC each test covers
-       * the EXPORT SHAPE the tests already pin: every module they import, the
-         exact exported names and signatures, and the types the assertions
-         destructure. Not a suggestion - a test already imports them, so a
-         wrong guess is a compile error. Say what the tests do NOT constrain
-         too, so it stays the implementer's choice.
-       * any test that passed on arrival, and the probe or negative control
-         that earns it
-       * the EXPECTED VALUE of every negative control, as a table: threshold,
-         candidate range, and the number the control measured. In RED the
-         suite fails at import, so no assertion in it has run - the controls
-         are claims until GREEN confirms them against the shipped module
-       * anything discovered that changes the approach -->
+**Model this RED resolved to:** Fable 5.1 (`claude-fable-5-1`), the `fable` row
+of `## Model guidance`. The dispatch did not say whether it passed `model:`
+explicitly; the resolved model matches the plan either way. 2026-10-02.
+
+### The command
+
+    lune run test
+
+runs the whole suite (`tests/**/*_test.luau`); there is no per-file switch. The
+unit gate is the same command. Snapshot the test files before GREEN starts:
+
+    bash scripts/frozen.sh snapshot tests/helpers/FinaleContract.luau tests/helpers/TurnContract.luau \
+      tests/server/procedure_finale_test.luau tests/server/procedure_finale_controls_test.luau \
+      tests/server/procedure_test.luau tests/server/procedure_controls_test.luau
+
+### The failure, verbatim (from `bash scripts/gates.sh --fast`, unit gate log, 2026-10-02)
+
+    703 passed, 25 failed
+
+24 of the 25 are `tests/server/procedure_finale_test.luau` (every test in it);
+the 25th is PROC-001's corrected AC-1 check. Nothing else in the suite moved:
+690 passed before this RED; the 14 new control tests all pass. Representative
+blocks:
+
+    FAIL  tests/server/procedure_finale_test.luau :: F-1: Procedure exports tick, partnerLamps and isComplete as plain field functions, alongside start, isLive, dial and turn
+          ...procedure_finale_test:57: the Contract's exports are not all functions: Procedure.tick is nil, Procedure.partnerLamps is nil, Procedure.isComplete is nil
+
+    FAIL  tests/server/procedure_finale_test.luau :: AC-1: with track 2's ordinary steps committed and one ordinary step left in track 1 neither finale machine is live; the moment it commits, both are (finale_live_together, F-3)
+          AC-1: the moment the last ordinary step committed the live set is {  }, expected exactly both finale machines { 1 = 13, 2 = 17 } (finale_live_together)
+
+    FAIL  tests/server/procedure_finale_test.luau :: AC-2/F-4: a correct turn on a live finale machine with neither armed returns armed, opens a window closing at now + simultaneous_window_seconds, sets the dial, charges nothing, commits nothing and logs one armed entry - whichever machine goes first
+          AC-2/F-4: amy turning finale machine 13 correctly first:
+    result is { kind = "rejected", machineId = 13, reason = "not_live" }, expected { kind = "armed", machineId = 13 }
+    state.armed is nil, expected { machineId = 13, closesAt = 110 + simultaneous_window_seconds 3 = 113 }
+    state.dials[13] is { rejectedUntil = 115, setting = 1 }, expected { setting = 1 }
+    instability went 0 -> 2 on an arming turn; arming costs nothing
+    the log went from 5 to 6 entries, last { at = 110, machineId = 13, playerId = "amy", result = "not_live", setting = 1 }; expected exactly one new entry { at = 110, machineId = 13, playerId = "amy", result = "armed", setting = 1 }
+
+    FAIL  tests/server/procedure_finale_test.luau :: AC-3/F-8: tick at t + simultaneous_window_seconds + epsilon with B unturned disarms both, charges exactly instability_per_failed_pair (the fixture's 4), ...
+          F-1: Procedure.tick is nil, expected a function
+
+    FAIL  tests/server/procedure_test.luau :: AC-1: tracks advance independently and the finale steps go live together - only once every ordinary step of BOTH tracks is committed (finale_live_together; corrected in PROC-002 RED to the live set { 13, 17 })
+          AC-1: with every ordinary step of both tracks committed the live set is {  }, expected exactly the two finale steps { 1 = 13, 2 = 17 } - they go live together once every ordinary step of both tracks is committed (finale_live_together, PROC-002 F-3)
+
+**Why it is the right failure.** The module loads (PROC-001 wrote it), so no
+test fails at import. Each fails on its own first assertion against today's
+behaviour, in one of three ways: (a) the export-shape tests and every test that
+needs `tick`/`partnerLamps`/`isComplete` fail on `F-1: Procedure.<name> is nil,
+expected a function` - a `need()` guard in `FinaleContract` that names the
+missing export rather than letting Luau say "attempt to call a nil value"
+(15 tests: F-1 x3, AC-2/F-5, AC-7 x2, AC-3 x3, AC-6 x3, F-10, F-12, the second F-9);
+(b) tests that only use PROC-001's exports fail on liveness - the finale machine
+is `not_live` today, so the live set is `{}` where `{13, 17}` is expected, or
+the scenario's arming turn is `rejected / not_live` instead of `armed`
+(9 tests: AC-1 x2, AC-2/F-4, AC-4 x3, AC-5 x2, the first F-9); (c) PROC-001's corrected check,
+`{}` vs `{13, 17}`. None is a timeout, config or lint error.
+
+**Gate shape (`gates.sh --fast`, 2026-10-02):** format PASS (observed 126),
+lint PASS (126), typecheck PASS (24), unit FAIL (237 s, the 25 above), build
+PASS, harness FAIL - `project-counters: 39 passed, 1 failed`, the one being
+"the working tree carries no stray .luau files", which is the uncommitted-tree
+precondition and goes green at the RED commit (the baselines themselves,
+126/126/24, already match: AC-7 passed). `stylua --check src tests lune` and
+`selene src tests lune` are clean on every file touched. No test in the suite
+owns a timeout; Lune's runner has none, so there is nothing to budget. Timing
+is local (Windows): the whole suite took 237 s under the gate, of which the
+two new files are a few hundred milliseconds in isolation.
+
+### Files touched
+
+| File | Change |
+|---|---|
+| `tests/helpers/FinaleContract.luau` | NEW. Fixture (TurnContract's, plus F-2 overrides), scenario helpers (`liveFinale`, `arm`), the 22 checks, `CHECKS`, `failures` |
+| `tests/server/procedure_finale_test.luau` | NEW. The 24 tests on the real module (`pcall(require)` + per-test re-check) |
+| `tests/server/procedure_finale_controls_test.luau` | NEW. Reference stand-in (F-3..F-12) + ten defective stand-ins + fixture assertions; 14 tests |
+| `tests/helpers/TurnContract.luau` | `tracksAdvanceIndependentlyAndFinaleStepsStayWaiting`: second assertion `{}` -> `TurnContract.FINALE` (`{13, 17}`), comment and message updated |
+| `tests/server/procedure_test.luau` | that test's name reworded to say what it now asserts |
+| `tests/server/procedure_controls_test.luau` | reference stand-in's `isLive` reads F-3 for finale steps; header note |
+| `.claude/tests/project-counters.test.sh` | `BASE_FORMAT`/`BASE_LINT` 123 -> 126 (three new `.luau` files under `tests/`), with the provenance comment; `BASE_TYPECHECK` and the narrow counts unchanged. GREEN adds no `.luau` file, so these are the post-GREEN counts too |
+| `docs/backlog/stories/PROC-002.md` | `## Test plan`, this section |
+
+No manifest, no config, no source. `.claude/state/red/` holds my scratch
+runner and logs; it is ignored and not for commit.
+
+### The export shape the tests pin (facts - a test already imports them)
+
+Module: `src/server/procedure/Procedure.luau`, required as
+`require("../../src/server/procedure/Procedure")` from `tests/server/`. Every
+export is a plain field on the returned table, called with a dot.
+
+- `Procedure.tick(state, assignment, now: number, positions) -> (ProcedureState, nil)`.
+  The second return is asserted `== nil` in this story. `assignment` and
+  `positions` are passed (both finale holders at their machines, or `{}`) and
+  may be ignored.
+- `Procedure.partnerLamps(state, assignment, positions) -> { [number]: boolean }`
+  with **exactly** two keys, `13` and `17` (the ids in `facility.steps.finale`),
+  each a real boolean (`typeof == "boolean"`); compared by `Deep.equal` against
+  `{ [13] = b1, [17] = b2 }`, so no extra key.
+- `Procedure.isComplete(state) -> boolean`, compared with `== true` / `== false`.
+- `state.armed` is `nil` from `start` and whenever no window is open, and
+  otherwise **exactly** `{ machineId = <id>, closesAt = now + simultaneous_window_seconds }`
+  by `Deep.equal` - **no extra field** (a `setting` or `playerId` in there fails
+  AC-2/F-4). `Deep.equal` treats an absent key and `nil` alike, so `start` may
+  omit the key or set it `nil`.
+- `turn` results: `{ kind = "armed", machineId = id }` and
+  `{ kind = "refused", machineId = id, reason = "armed" }` exactly (already in
+  PROC-001's `TurnResult`).
+- `dials[id]` after arming is **exactly** `{ setting = <required> }`; after a
+  disarm (tick expiry, F-7, F-9) **exactly** `{ setting = <the armed setting>, rejectedUntil = now + actuation_reset_seconds }`
+  where `now` is the tick's or the turn's `now`. `dials[B]` is untouched by an
+  expiry (`nil` in the scenarios).
+- Log entry on arming is **exactly** `{ playerId, machineId, setting, at = now, result = "armed" }`;
+  completing appends exactly one entry (B's, `"committed"`); expiry appends none;
+  F-7 appends exactly one (`"wrong_setting"`, B's).
+- Constants are read from `state.tuning`: `instance.simultaneous_window_seconds`,
+  `instance.partner_lamp_range_studs`, `actuation.instability_per_failed_pair`
+  (plus PROC-001's). The fixture makes each distinct, so reading the wrong one
+  or the module-level `MechanicsTuning` fails a named check.
+- Refusal order with `armed` last: a non-holder or out-of-reach holder on the
+  armed machine gets `not_key_holder` / `out_of_reach`, not `armed`.
+- F-9 as written: a `turn` at `now > armed.closesAt` returns the post-expiry
+  state (deep-equal to `tick(state, assignment, now, positions)`'s first return)
+  even when the turn itself is refused. A late correct turn on B arms B; a late
+  wrong turn on B is charged `failed_pair + wrong_value` (4 + 1 = 5 under the
+  overrides) - this last case is **derived** from F-8 + F-9 + F-7's final
+  sentence rather than stated in any AC; flagging it so you can object before
+  building it (see "Doubts").
+
+**Not constrained** (your choice): what `dial(id, now)` answers for an ARMED
+machine (F-4 fixes `dials[id]`, not the view; the existing code would say
+`unset`); how `isLive` walks the tracks; how `tick`, `partnerLamps` and
+`isComplete` are structured internally; whether `tick`'s `positions` or
+`assignment` are read; the text of any error; whether `copy` clones `armed`
+(F-12 only requires the argument to be left deep-equal and the new state to be
+independent); and any field PROC-003 adds.
+
+### Tests that passed on arrival, and what earns them
+
+All 14 tests in `procedure_finale_controls_test.luau` pass in RED by design:
+they run the `FinaleContract` checks against stand-ins, not the module. What
+earns each: the reference stand-in is accepted by all 22 finale checks and all
+20 `TurnContract` checks (positive control), and every defective stand-in was
+**observed** to fire the exact set of checks its test names (the `[measured]`
+lines in the unit log). Nothing in `procedure_finale_test.luau` passes.
+
+The one corrected PROC-001 check (`TurnContract` AC-1) is red against today's
+module, so it needs no probe. The PROC-001 controls reference was brought to
+F-3 and PROC-001's seven controls still fire the same sets they did before
+(`[measured]` lines unchanged from PROC-001's handoff).
+
+### Negative controls: expected values, measured in RED
+
+Unlike an import-failing RED, these controls **did execute**: the stand-ins
+need only merged modules. What remains for GREEN is confirming the real module
+is *accepted* by the same checks (the 24 red tests going green) and that D-1..D-3
+against the shipped module reproduce the rows below.
+
+| Control (one defect on the reference) | Threshold / expected (reference) | Candidate / measured on the control | Checks that fired (exactly) |
+|---|---|---|---|
+| AC-1: finale live when its OWN track's ordinary steps are done | live set `{12}` with 12 left | `{12, 17}` | `neitherFinaleMachineIsLive…`; in TurnContract: corrected AC-1 check + `waitingStepIsNotLiveWhateverTheSetting` |
+| AC-4: charge wrong value AND failed pair on F-7 | instability 1 (shipped), 1 (overrides) | **2** (shipped), **5** (overrides) | the two AC-4 window checks |
+| AC-6: lamp measures partner's holder against its OWN machine | bob at A, amy at B -> `{13=false, 17=false}` | `{13=true, 17=true}` | lamp-geometry, both-classes, lamps-dark |
+| AC-7: expiry at `now >= closesAt` | B at t+3 commits; tick at t+3 no-op; A at t+3 `refused/armed` | B at t+3 `armed` (after +4 expiry); tick at t+3 expires; A at t+3 `refused/resetting` | turn-at-edge, tick-at-edge, armed-refusal |
+| F-9: turn ignores an expired window | late B `armed`, +4 | late B `committed`, +0 | both F-9 checks |
+| F-3: armed machine not live | live set `{13, 17}` with A armed | `{17}` | armed-still-live, lamp-geometry |
+| F-11: lamps ignore liveness | both false at start | `{true, true}` with holders at machines | F-1 shape, lamps-dark |
+| F-2: lamp reads `turn_range_studs` (7) | bob 7 along x from B -> `{false,false}` | `{13=true, 17=false}` | lamp-geometry |
+| F-8: rejection dated from `closesAt` | `rejectedUntil = tickNow + 5` | `closesAt + 5` (118 vs 118.001 / 123) | expiry, shipped expiry, reset-then-rearm, F-9 arm-after-expiry |
+| F-8: tick logs the expiry | log unchanged by tick | log +1 | expiry, shipped expiry, F-9 arm-after-expiry |
+| reference | — | 0 of 22 finale checks, 0 of 20 PROC-001 checks fail | — |
+
+Three predictions were wrong on first run and corrected in the controls file
+*to what was measured*, with the reason beside each: the per-track stand-in's
+lamps still require both machines live, so the lamps-dark check does not fire on
+it; the own-machine lamp also darkens the "moment it went live" case; and when
+tick and turn share the same mis-dated expiry they agree, so the deep-equal F-9
+check cannot see that defect (the four checks that compare against `now` do).
+
+### Deferred verifications I cannot run
+
+D-1, D-2, D-3 all mutate the real implementation, which does not exist in RED.
+**I did not run them.** They stay with GATES. The controls table above says what
+each must show: D-1 -> 2 (shipped) / 5 (overrides); D-2 -> the three AC-7 rows
+go red (`turn` and `tick` separately if the comparison lives in both); D-3 ->
+the lamp-geometry check fails on "bob standing at A and amy standing at B".
+
+### Callers re-checked against the tree (2026-10-02)
+
+    rg "Procedure\.(start|turn|dial|isLive|tick)|ProcedureState|\.armed" src tests lune -l
+    -> src/server/procedure/Procedure.luau
+       tests/helpers/TurnContract.luau
+       tests/helpers/FinaleContract.luau          (new)
+       tests/server/procedure_test.luau
+       tests/server/procedure_finale_test.luau    (new)
+       tests/server/procedure_finale_controls_test.luau (new)
+
+`rg "require\(.*procedure/Procedure"` finds only `procedure_test.luau` and
+`procedure_finale_test.luau`. No production caller exists; the story's list
+holds.
+
+### TurnContract audit against F-3..F-9 (every check, one line each)
+
+Mechanical form: the finale reference stand-in passes all 20 (the `audit:` test).
+By hand:
+
+1. `startReturnsTheContractState` - checks six named fields, not the absence of others; `armed = nil` is fine. Unaffected.
+2. `liveSetAtStartIsExactlyTheTrackHeads` - ordinary steps remain, finale not live under F-3 either. Unaffected.
+3. `committingTheHeadOfTrackOneMakesItsSecondStepLive` - ordinary only. Unaffected.
+4. `tracksAdvanceIndependentlyAndFinaleStepsStayWaiting` - **CORRECTED**: first assertion (`{14}` after 11, 12) still right under F-3; second now `{13, 17}`.
+5. `holderInReachOnTheRequiredSettingCommits` - machine 11. Unaffected.
+6. `reachIsInclusiveAtTurnRangeStudsAndIgnoresY` - machine 11. Unaffected.
+7. `wrongSettingOnALiveStepIsRejectedAndChargesPerWrongValue` - machine 11. Unaffected.
+8. `waitingStepIsNotLiveWhateverTheSetting` (~639-694) - finale 13 at start, and with track 1 done but track 2 not: `not_live` under F-3 too (every track must be done). Unaffected, and it is the PROC-001 check that catches the per-track control (measured).
+9. `decoyIsNotLiveWhateverTheSetting` - decoys. Unaffected.
+10. `chargesAccumulateByReason` - 11 then 18. Unaffected.
+11. `rejectedDialShowsTheSettingUntilTheResetBoundaryThenUnset` - machine 11. Unaffected.
+12. `unknownMachineIsRefused` - Unaffected.
+13. `nonHolderIsRefusedAndNotCharged` - Unaffected.
+14. `holderOutOfHorizontalReachOrWithoutAPositionIsRefused` - Unaffected.
+15. `committedMachineIsRefused` - Unaffected.
+16. `resettingDialIsRefused` - Unaffected.
+17. `refusalChecksRunInOrderAndTheFirstFailureWins` - F-6 appends `armed` LAST; no case here has an armed state, so the order it pins is a prefix of F-6's. Unaffected; `armedIsTheLastRefusalChecked` covers the new member.
+18. `supplierIsJudgedKeyHolderAfterWithdraw` - machines 11 and 14. Unaffected.
+19. `logHoldsOneEntryPerEvaluatedTurnInCallOrderAndNoneForRefusals` - no finale, no window; P-9's deep-equal on refusals holds because F-9 only departs from it when a window has expired. Unaffected.
+20. `noCallMutatesItsArguments` - F-12 extends it. Unaffected.
+
+Also `refusalProblems`' P-9 deep-equal: every TurnContract caller passes a state
+with no window, so F-9's refinement never applies there.
+
+### Doubts and discoveries
+
+- **Derived pin, not an AC:** a WRONG turn on B *after* the window is charged
+  `failed_pair + wrong_value` (F-8 applied first, then F-7's "no window open is
+  an ordinary rejection"). It follows from the F-blocks as written and from
+  §5's "server events are handled in arrival order", but no AC states it. If the
+  PO reads §5's "one failed attempt costs exactly 1" as covering this case too,
+  that is an F-9 amendment and the second half of
+  `aTurnAfterTheWindowReturnsThePostExpiryState` changes - raise it before GREEN
+  builds it.
+- `Deep.equal` on `state.armed` and on `dials[id]` forbids extra fields. That is
+  the Contract's "exactly"; if GREEN wants to carry the armed setting inside
+  `armed` rather than in `dials`, that is a Contract amendment, not a test tweak.
+- The harness gate's one red assertion is the uncommitted-tree precondition;
+  commit the `.claude/tests/project-counters.test.sh` change in the RED commit
+  (check-boundaries 3j freezes `.claude/tests/**` outside RED).
+- No `## Contract` block needed amending.
 
 ## Regressions
 
@@ -220,4 +661,43 @@ from an upstream story or spike (as noted above), amend it and re-run
      named here. -->
 
 ## Notes
+
+**PO rulings on RED's doubts (lead-po, 2026-10-02).**
+
+1. **A wrong turn on B after the window has expired costs `failed_pair +
+   wrong_value` (2 under shipped tuning). Kept.** It is two failed attempts, not
+   one: the window ended unanswered (an event in its own right, §5 "handled in
+   arrival order"), and the late wrong turn is then a fresh wrong turn on a live
+   finale with no window open (F-7's last sentence). §5's "a failed attempt at
+   the finale costs exactly 1" holds per attempt. No ACs touched; F-9 stands as
+   written.
+2. **`armed` and `dials[id]` deep-equal with no extra fields. Kept** — the
+   Contract says "exactly". GREEN keeps the armed setting in `dials[A].setting`
+   (F-4), not inside `armed`.
+3. **`dial()` of an armed machine is unconstrained.** How an armed dial looks is
+   `HUD-002`'s; this story pins state, not view.
+
+**PO verification of RED (lead-po, 2026-10-02).** `lune run test` run
+independently: `703 passed, 25 failed` in 2m37s — 24 in
+`procedure_finale_test.luau` (15 on the missing `tick`/`partnerLamps`/`isComplete`
+guards, 9 on the finale being `not_live` today) and 1 in `procedure_test.luau`
+(the corrected AC-1 check, live set `{}` vs `{13, 17}`). Read the AC-4
+(`wrongWithWindowProblems`) and AC-6 checks: exact deep-equals on result, dials,
+log and lamps, inclusive edges at exactly the lamp range, and the "B's holder
+at A" case asserting both lamps dark.
+
+`bash scripts/gates.sh --fast` on the uncommitted RED tree (lead-po, 2026-10-02):
+
+    PASS         format (0s, observed 126)
+    PASS         lint (1s, observed 126, floor 1)
+    PASS         typecheck (3s, observed 24)
+    FAIL         unit (141s, exit 1)       -- 703 passed, 25 failed: exactly the 25 above
+    PASS         build (1s, observed 86200)
+    FAIL         harness (26s, exit 1)     -- project-counters: 39 passed, 1 failed:
+                 "the working tree carries no stray .luau files" (RED's files uncommitted)
+
+Admissible: the only `unit` failures are the story's assertions, and the one
+`harness` failure is the uncommitted-tree precondition. The RED commit (test
+files + counter baselines, frontmatter `phase: RED`, per check-boundaries 3j)
+clears it; the baselines themselves (126/126/24) already pass.
 
