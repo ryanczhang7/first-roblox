@@ -4,8 +4,8 @@ title: The finale commits only when both machines are turned inside the window
 slug: the-finale-commits-only-when-both-machin
 epic: EPIC-05
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/PROC-002-the-finale-commits-only-when-both-machin
 depends_on: [PROC-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -890,3 +890,13 @@ under `## Deferred verifications`. Then `bash scripts/gates.sh` (full run, recor
 by itself in `## Gate results`): `All required gates passed (6 ran, 3 unconfigured,
 0 known).` No source change was needed in GATES, so no feature-developer dispatch.
 No gate was added or changed, so `## Gate probes` is not required.
+
+**REVIEW → DONE (lead-po, 2026-10-02).** PR
+https://github.com/ryanczhang7/first-roblox/pull/48 merged at
+2026-10-02T03:17:36Z as `f6232d5`. CI on the PR head `f3f36c8`: `boundaries` pass
+(7s), `gates` pass (2m45s,
+https://github.com/ryanczhang7/first-roblox/actions/runs/36958367546). Timings
+read from that log: harness self-test 1m34s, `Run gates` 53s — format 0s, lint
+0s, typecheck 2s, unit 40s (728 tests), build 0s, harness 9s. The job sets no
+`timeout-minutes`, so the runner default applies; nothing is near a limit. No gate
+was pending CI.
