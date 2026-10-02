@@ -744,3 +744,24 @@ claims about the checks, not about the shipped module.
 6. **Gate.** The artifact is `src/server/session/Session.luau`, read by `unit`
    (`covers | unit | src/server/**`), which is `required`. No optional gate is
    the only one exercising it, so `required_gates` stays empty.
+7. **A turn from an unseated caller in `Round` is handled, not ignored** (the
+   test-developer's question 5). C-3 step 3 read literally: `Procedure.turn`
+   refuses it `not_key_holder` and the caller gets that `TurnResult`. The
+   wrapper's phase/identity stages make it unreachable in production anyway;
+   ignoring it would be a second, untested refusal path. No amendment.
+
+### RED admissibility (orchestrator, 2026-10-02)
+
+- `git diff --stat -- src` on the RED tree: empty. No `.bak` under
+  `.claude/state/mutations/`.
+- `bash scripts/gates.sh --fast` on the uncommitted RED tree: format PASS
+  (observed 145), lint PASS (145), typecheck PASS (27), build PASS, **unit FAIL
+  `887 passed, 14 failed`**, all 14 in `tests/server/session_round_test.luau`,
+  each on its own assertion (no LOAD FAIL, no timeout; 265 s); harness FAIL on
+  the counter baselines (expected 141, actual 145) and the stray-file
+  precondition. That is the known RED shape (memory: counter baselines move in
+  RED): baselines set to 145/145/27, narrow 27/27/8 unchanged, and committed in
+  the RED commit `50d971f` with the tests.
+- After the RED commit: `bash scripts/gates.sh --fast --gate harness` →
+  `All required gates passed (1 ran, 0 unconfigured, 0 known).`
+- SLICE-003's `session_test` and `session_controls_test` pass with C-6 in place.
