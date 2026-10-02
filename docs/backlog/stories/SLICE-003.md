@@ -4,8 +4,8 @@ title: The session deals seats and sends each player only their own seat view
 slug: the-session-deals-seats-and-sends-each-p
 epic: EPIC-03
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/SLICE-003-the-session-deals-seats-and-sends-each-p
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -871,3 +871,14 @@ measured post-RED count is 844 passing; GREEN's full run should read 859.
 - Local timing: unit took 223 s and harness 64 s. Both are slower than the
   PROC-005 runs on this machine (126 s and 16 s), and the 48 new tests do not
   account for the difference. Compare against CI at REVIEW.
+
+**REVIEW → DONE (2026-10-02, lead-po).**
+
+- PR [ryanczhang7/first-roblox#51](https://github.com/ryanczhang7/first-roblox/pull/51)
+  merged at 2026-10-02T21:26:04Z as `d38b06c`.
+- CI on the PR: `boundaries` passed (run 37065825591), and `gates` passed in 4m23s
+  against `timeout-minutes: 45` (run 37065825644). Its gate summary was format 1s,
+  lint 0s, typecheck 3s, unit 67s (859 passed), build 0s and harness 16s.
+  Nothing is near a limit.
+- The slow local unit run (223 s) and harness run (64 s) in GATES were the
+  machine: CI's figures match PROC-005's (66 s and 16 s).
