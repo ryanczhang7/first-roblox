@@ -5,7 +5,7 @@ slug: the-finale-commits-only-when-both-machin
 epic: EPIC-05
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/PROC-002-the-finale-commits-only-when-both-machin
 depends_on: [PROC-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -292,6 +292,8 @@ from an upstream story or spike (as noted above), amend it and re-run
 - PLANNED → RED contract pinning - `lead-po` - `claude-opus-5-5`. 2026-10-01.
 - RED - `test-developer` - `claude-fable-5-1` (Fable 5.1). The dispatch passed
   `model: fable` explicitly; the agent self-reports Fable 5.1. 2026-10-02.
+- GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5). The dispatch passed
+  `model: opus` explicitly; the agent self-reports Opus 5.5. 2026-10-02.
 
 ## Test plan
 
@@ -610,6 +612,69 @@ with no window, so F-9's refinement never applies there.
   (check-boundaries 3j freezes `.claude/tests/**` outside RED).
 - No `## Contract` block needed amending.
 
+### GREEN notes
+
+**Model this GREEN resolved to:** Opus 5.5 (`claude-opus-5-5`), the `opus` row;
+the dispatch named no override. 2026-10-02.
+
+**Files changed:** `src/server/procedure/Procedure.luau` only. No test, config,
+manifest or harness file touched; no `.luau` file added, so RED's counter
+baselines (126/126/24) stand.
+
+**What was built.** `ProcedureState.armed`; F-3 liveness (a finale step is live
+iff it is its track's first uncommitted step and every ordinary step of every
+track is committed); `isComplete`; `armed` as the last refusal; arming (F-4) and
+completing (F-5) on a correct finale turn; F-7 as the ordinary `wrong_setting`
+rejection plus a disarm that charges nothing; `tick` = one private `expire`
+(strictly `now > closesAt`, `rejectedUntil` from the tick's `now`, no log);
+`turn` calls the same `expire` first (F-9), so the comparison lives in **one**
+place - D-2 needs one mutation, not two; `partnerLamps` reusing P-4's
+horizontal-distance rule with the lamp range, measured against the PARTNER
+machine. `tick`'s second return is typed `PhaseMachine.Outcome?`;
+`PhaseMachine` requires only `Event`, `Rng` and `RoundConfig`, so the import
+creates no cycle. A wrong-setting turn's disarm is applied to any open window;
+the only machine that can reach that branch with a window open is the partner
+(the armed one is refused `armed`, every ordinary step is committed). A
+`not_live` turn on a decoy leaves the window open - no test or F-block says
+otherwise.
+
+**Unit:** `lune run test` -> `728 passed, 0 failed` (703 + the 25 red).
+`stylua --check src tests lune` clean; `selene src tests lune` 0 errors,
+0 warnings.
+
+**Controls, measured on the shipped module** (scratch script, ignored, under
+`.claude/state/green/`; same fixture, `FinaleContract.world()` /
+`shippedWorld()`):
+
+| Row | RED expected (reference) | Shipped module |
+|---|---|---|
+| AC-4, shipped tuning | instability 1 (control: 2) | `rejected/wrong_setting`, 0 -> **1**, `armed` nil |
+| AC-4, overrides | 1 (control: 5) | 0 -> **1** |
+| AC-7, B at exactly closesAt | commits | shipped: B at 115 `committed 17`, `isComplete` true; overrides: at 113, same |
+| AC-7, tick at closesAt | no-op | `armed` still set (both tunings) |
+| AC-3, tick at closesAt + 0.001 | +failed pair, `rejectedUntil = tickNow + reset` | shipped **+1**, overrides **+4**; `rejectedUntil` 118.001 in both (115.001 + 3, 113.001 + 5) |
+| F-9, late correct B | `armed`, +4, nothing committed (control: committed, +0) | overrides: B at 114 `armed 17`, **+4**, `committed[B]` nil; shipped: at 116, +1, same shape |
+| AC-6, B's holder at A and A's at B | `{13=false, 17=false}` (control: both true) | `{13=false, 17=false}` (both tunings) |
+
+No divergence from RED's numbers. D-1..D-3 (mutations of the shipped module)
+remain GATES' and were not run here.
+
+**`bash scripts/gates.sh --fast` on the uncommitted GREEN tree (2026-10-02):**
+
+    PASS         format (1s, observed 126)
+    PASS         lint (1s, observed 126, floor 1)
+    PASS         typecheck (4s, observed 24)
+    PASS         unit (246s, observed 728, floor 507)
+    UNCONFIGURED coverage
+    PASS         build (0s, observed 88474)
+    FAIL         harness (33s, exit 1)   -- project-counters: 39 passed, 1 failed:
+                 "the working tree carries no stray .luau files" (actual:
+                 ` M src/server/procedure/Procedure.luau`)
+
+The one `harness` failure is the same uncommitted-tree precondition RED met; it
+clears at the GREEN commit. Nothing else in `harness.log` failed. The full
+`gates.sh` run was not made here - it belongs after the commit, in GATES.
+
 ## Regressions
 
 <!-- REQUIRED if this story ever returned to RED after GREEN or GATES; omit
@@ -701,3 +766,42 @@ Admissible: the only `unit` failures are the story's assertions, and the one
 files + counter baselines, frontmatter `phase: RED`, per check-boundaries 3j)
 clears it; the baselines themselves (126/126/24) already pass.
 
+
+**PO verification of GREEN (lead-po, 2026-10-02).**
+
+- Freeze: `bash scripts/frozen.sh verify` → `frozen: OK — 9 path(s) unchanged since the snapshot for PROC-002`
+  (FinaleContract, TurnContract, Deep, Contract, the four procedure test files,
+  `.claude/tests/project-counters.test.sh`).
+- `lune run test` (independent run): `728 passed, 0 failed`.
+- Discrimination, two mutations of the shipped module via `scripts/mutate.sh`,
+  each restored and verified byte-for-byte; counts predicted by RED's controls
+  table:
+
+  | Mutation | Predicted | Measured |
+  |---|---|---|
+  | `partnerLamps` reads `instance.turn_range_studs` instead of `partner_lamp_range_studs` | 1 (lamp-geometry) | `727 passed, 1 failed` — `AC-6/F-11: with the finale live, A's lamp is lit exactly when…` |
+  | `expire` dates the disarm from `armed.closesAt` instead of `now` | 4 (expiry, shipped expiry, reset-then-rearm, F-9 arm-after-expiry) | `724 passed, 4 failed` — exactly those four |
+
+- `bash scripts/gates.sh --fast` on the uncommitted GREEN tree:
+
+      PASS         format (0s, observed 126)
+      PASS         lint (1s, observed 126, floor 1)
+      PASS         typecheck (3s, observed 24)
+      PASS         unit (116s, observed 728, floor 507)
+      UNCONFIGURED coverage
+      PASS         build (2s, observed 88474)
+      FAIL         harness (30s, exit 1)   -- 39 passed, 1 failed: "no stray .luau"
+                                              (the modified Procedure.luau, uncommitted)
+
+  The GREEN commit clears the one harness failure; re-checked after it below.
+
+**PO rulings on GREEN's findings (lead-po, 2026-10-02).**
+
+4. **A `not_live` turn on a decoy (or any non-finale machine) with a window open
+   leaves the window open.** Kept. §5 closes the window on "a wrong turn on
+   either finale machine"; a decoy turn is not an attempt at the finale. It is
+   charged as any `not_live` turn. Unpinned by a test; noted for `PROC-003`.
+5. **F-9 applies expiry before every refusal, `unknown_machine` included.** Kept;
+   F-9 says "a `turn` at `now > armed.closesAt` first applies exactly F-8", with
+   no exception, and the window's end is an event that precedes the turn in
+   arrival order.
