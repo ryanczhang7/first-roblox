@@ -64,7 +64,8 @@ return {
 	["Contract: turn returns two values - a state and a result table with a kind"] = function()
 		local P = Procedure()
 		local w = Contract.world()
-		local state = P.start(w.facility, Contract.NOW, w.tuning)
+		local state =
+			P.start(w.facility, Contract.NOW, w.tuning, Contract.ROUND_SEED, Contract.ROUND_SECONDS)
 		local next_, result = P.turn(
 			state,
 			w.assignment,

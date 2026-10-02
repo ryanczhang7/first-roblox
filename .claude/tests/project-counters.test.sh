@@ -264,14 +264,21 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
+# LAST MEASURED: PROC-003 (RED), which added three test files
+# (tests/helpers/OutcomeContract.luau, tests/server/procedure_outcome_test.luau,
+# tests/server/procedure_outcome_controls_test.luau) and no source: 126/126/24
+# -> 129/129/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
+# so these are also the post-GREEN counts. Read from `stylua over 129 files`
+# and `selene over 129 files` on the uncommitted RED tree (the "no stray .luau
+# files" precondition is the one red line there, and clears at the RED commit).
 # BEFORE THAT: PROC-002 (RED), which added three test files
 # (tests/helpers/FinaleContract.luau, tests/server/procedure_finale_test.luau,
 # tests/server/procedure_finale_controls_test.luau) and no source: 123/123/24
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=126    # stylua  over src tests lune   (126 = 24 src + 102 tests/lune)
-BASE_LINT=126      # selene  over src tests lune
+BASE_FORMAT=129    # stylua  over src tests lune   (129 = 24 src + 105 tests/lune)
+BASE_LINT=129      # selene  over src tests lune
 BASE_TYPECHECK=24  # analyze over src (NET-001 probe included; src/server/procedure/ is PROC-001's one module)
 NARROW_FORMAT=24   # stylua  over src alone
 NARROW_LINT=24     # selene  over src alone
