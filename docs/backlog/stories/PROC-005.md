@@ -4,8 +4,8 @@ title: A turn arrives as a validated remote and is judged against server positio
 slug: a-turn-arrives-as-a-validated-remote-and
 epic: EPIC-05
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/PROC-005-a-turn-arrives-as-a-validated-remote-and
 depends_on: [PROC-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -736,3 +736,12 @@ Timings above are from this machine; CI's per-test factor is not in
 - Full `bash scripts/gates.sh` passed: 6 ran, 0 failed, 3 unconfigured, and
   `## Gate results` was written by the script. No source change was needed in
   GATES. This story adds or changes no gate, so `## Gate probes` does not apply.
+
+**REVIEW → DONE (2026-10-02, lead-po).**
+
+- PR [ryanczhang7/first-roblox#50](https://github.com/ryanczhang7/first-roblox/pull/50)
+  merged at 2026-10-02T17:32:25Z as `86ceeaf`.
+- CI on the PR: `boundaries` passed (run 37038820424), and `gates` passed in 4m15s
+  against `timeout-minutes: 45` (run 37038820243). Its gate summary was format 0s,
+  lint 1s, typecheck 3s, unit 66s (811 passed, 0 failed), build 0s and
+  harness 16s. Nothing is near a limit.
