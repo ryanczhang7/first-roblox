@@ -1,23 +1,35 @@
 --!strict
 --[[
-	The Procedure in play, per PROC-001 and `docs/wiki/game/mechanics.md` §1,
-	§3.2, §5 (G12): a turn commits a live step on the right setting and says
-	why it failed otherwise.
+	The Procedure in play, per PROC-001, PROC-002 and
+	`docs/wiki/game/mechanics.md` §1, §3.2, §5 (G12): a turn commits a live
+	step on the right setting and says why it failed otherwise, and the finale
+	commits only when both its machines are turned inside one window.
 
-	LIVENESS (P-3). A step is live when it is the first uncommitted step of its
-	track and is not that track's last entry - the finale step, which stays
-	`waiting` until PROC-002 opens the finale window (`finale_live_together`).
-	Decoys (machines in no track), committed machines and unknown ids are
-	never live.
+	LIVENESS (P-3, F-3). An ordinary step is live when it is the first
+	uncommitted step of its track and is not that track's last entry. The two
+	finale steps (`steps.finale`, each track's last entry) go live together
+	once every ordinary step of every track is committed
+	(`finale_live_together`); an armed finale machine is still live. Decoys,
+	committed machines and unknown ids are never live.
 
 	A TURN IS REFUSED OR EVALUATED. The refusals run in this order and the
 	first failure wins: `unknown_machine`, `not_key_holder`, `out_of_reach`,
-	`committed`, `resetting`. A refused turn is free: it returns the state it
-	was handed, unchanged, and writes no log entry. An evaluated turn commits a
-	live step on its required setting; anything else is rejected as `not_live`
-	(a waiting step or a decoy, whatever the setting - P-8) or `wrong_setting`,
-	charged that reason's constant, logged, and the dial shows the rejected
-	setting until `actuation_reset_seconds` have passed (half-open, P-6).
+	`committed`, `resetting`, `armed`. A refused turn is free: it returns the
+	state it was handed, unchanged, and writes no log entry. An evaluated turn
+	commits a live step on its required setting; anything else is rejected as
+	`not_live` (a waiting step or a decoy, whatever the setting - P-8) or
+	`wrong_setting`, charged that reason's constant, logged, and the dial shows
+	the rejected setting until `actuation_reset_seconds` have passed
+	(half-open, P-6).
+
+	THE FINALE (F-4..F-9). A correct turn on a live finale machine with no
+	window open ARMS it, opening a window to `now +
+	simultaneous_window_seconds`. A correct turn on the other machine at or
+	before that end commits both. A wrong turn on the other machine is an
+	ordinary rejection that also disarms the armed one, with no second charge.
+	A window past its end (strictly) disarms the armed machine and charges
+	`instability_per_failed_pair`: `tick` applies that, and so does `turn`,
+	before judging the turn, so a late turn cannot commit the finale.
 
 	TUNING LIVES IN THE STATE (P-1). `start` stores the tuning it is handed and
 	every constant is read from `state.tuning`, never from `MechanicsTuning`.
@@ -30,6 +42,7 @@
 local Generator = require("../facility/Generator")
 local Machines = require("../facility/Machines")
 local MechanicsTuning = require("@shared/MechanicsTuning")
+local PhaseMachine = require("../round/PhaseMachine")
 local Ring = require("../seats/Ring")
 
 export type Vec = { x: number, y: number, z: number }
@@ -63,9 +76,11 @@ export type ProcedureState = {
 	instability: number,
 	log: { ActuationLogEntry },
 	tuning: MechanicsTuning.MechanicsTuning,
+	-- The open finale window, or nil when none is (F-1).
+	armed: { machineId: number, closesAt: number }?,
 }
 
-type RefusalReason = "not_key_holder" | "out_of_reach" | "committed" | "resetting"
+type RefusalReason = "not_key_holder" | "out_of_reach" | "committed" | "resetting" | "armed"
 
 local Procedure = {}
 
@@ -94,20 +109,50 @@ function Procedure.start(
 	}
 end
 
+-- Every ordinary step (all but each track's last entry) committed (F-3).
+local function ordinaryDone(state: ProcedureState): boolean
+	for _, track in state.facility.steps.tracks do
+		for k = 1, #track - 1 do
+			if not state.committed[track[k]] then
+				return false
+			end
+		end
+	end
+	return true
+end
+
 function Procedure.isLive(state: ProcedureState, machineId: number): boolean
 	for _, track in state.facility.steps.tracks do
 		for k, id in track do
 			if not state.committed[id] then
-				-- The first uncommitted step of this track: live unless it is
-				-- the finale step, the track's last entry.
+				-- The first uncommitted step of this track. An ordinary step is
+				-- live; the finale step, the track's last entry, waits on the
+				-- ordinary steps of every track.
 				if id == machineId then
-					return k < #track
+					return k < #track or ordinaryDone(state)
 				end
 				break
 			end
 		end
 	end
 	return false
+end
+
+-- The finale is live: both its steps, or neither (F-3).
+local function finaleLive(state: ProcedureState): boolean
+	local finale = state.facility.steps.finale
+	return Procedure.isLive(state, finale[1]) and Procedure.isLive(state, finale[2])
+end
+
+function Procedure.isComplete(state: ProcedureState): boolean
+	for _, track in state.facility.steps.tracks do
+		for _, id in track do
+			if not state.committed[id] then
+				return false
+			end
+		end
+	end
+	return true
 end
 
 -- Inside the reset window at `now`: `now < rejectedUntil` (P-6).
@@ -135,15 +180,24 @@ local function holds(assignment: Ring.Assignment, playerId: string, keyClass: nu
 	return table.find(classes, keyClass) ~= nil
 end
 
--- Horizontal distance to `Machines.positionOf`, inclusive of the range (P-4).
-local function inReach(state: ProcedureState, machine: Machines.Machine, position: Vec?): boolean
+-- Horizontal distance to `Machines.positionOf`, inclusive of `range` (P-4).
+local function within(
+	state: ProcedureState,
+	machine: Machines.Machine,
+	position: Vec?,
+	range: number
+): boolean
 	if position == nil then
 		return false
 	end
 	local m = Machines.positionOf(state.facility.layout, machine, state.tuning)
 	local dx = position.x - m.x
 	local dz = position.z - m.z
-	return math.sqrt(dx * dx + dz * dz) <= state.tuning.instance.turn_range_studs
+	return math.sqrt(dx * dx + dz * dz) <= range
+end
+
+local function inReach(state: ProcedureState, machine: Machines.Machine, position: Vec?): boolean
+	return within(state, machine, position, state.tuning.instance.turn_range_studs)
 end
 
 -- The first refusal that applies to a known machine, in the Contract's order
@@ -168,6 +222,9 @@ local function refusal(
 	end
 	if resetting(state, machineId, now) then
 		return "resetting"
+	end
+	if state.armed ~= nil and state.armed.machineId == machineId then
+		return "armed"
 	end
 	return nil
 end
@@ -209,6 +266,74 @@ local function rejected(
 	return next_, { kind = "rejected", machineId = machineId, reason = reason }
 end
 
+-- Close the open window: the armed machine's dial shows its setting rejected
+-- until `actuation_reset_seconds` after `now` (F-7, F-8). Mutates `next_`, a
+-- fresh copy; charges nothing and logs nothing.
+local function disarm(next_: ProcedureState, now: number)
+	local armed = next_.armed
+	if armed == nil then
+		return
+	end
+	local d = next_.dials[armed.machineId]
+	next_.dials[armed.machineId] = {
+		setting = if d then d.setting else nil,
+		rejectedUntil = now + next_.tuning.actuation.actuation_reset_seconds,
+	}
+	next_.armed = nil
+end
+
+-- The state with a window past its end (strictly - the end is inclusive)
+-- closed and `instability_per_failed_pair` charged; otherwise `state` (F-8).
+local function expire(state: ProcedureState, now: number): ProcedureState
+	if state.armed == nil or now <= state.armed.closesAt then
+		return state
+	end
+	local next_ = copy(state)
+	next_.instability += state.tuning.actuation.instability_per_failed_pair
+	disarm(next_, now)
+	return next_
+end
+
+function Procedure.tick(
+	state: ProcedureState,
+	_assignment: Ring.Assignment,
+	now: number,
+	_positions: { [string]: Vec }
+): (ProcedureState, PhaseMachine.Outcome?)
+	return expire(state, now), nil
+end
+
+-- Finale machine id -> lit: the partner machine's key holder is within
+-- `partner_lamp_range_studs` of the PARTNER machine, while the finale is live
+-- (F-11).
+function Procedure.partnerLamps(
+	state: ProcedureState,
+	assignment: Ring.Assignment,
+	positions: { [string]: Vec }
+): { [number]: boolean }
+	local finale = state.facility.steps.finale
+	local live = finaleLive(state)
+	local range = state.tuning.instance.partner_lamp_range_studs
+	local lamps: { [number]: boolean } = {}
+	for i, id in finale do
+		local partner = machineOf(state.facility, finale[3 - i])
+		local lit = false
+		if live and partner ~= nil then
+			for playerId, position in positions do
+				if
+					holds(assignment, playerId, partner.keyClass)
+					and within(state, partner, position, range)
+				then
+					lit = true
+					break
+				end
+			end
+		end
+		lamps[id] = lit
+	end
+	return lamps
+end
+
 function Procedure.turn(
 	state: ProcedureState,
 	assignment: Ring.Assignment,
@@ -218,6 +343,10 @@ function Procedure.turn(
 	now: number,
 	positions: { [string]: Vec }
 ): (ProcedureState, TurnResult)
+	-- F-9: a window that ended before this turn closes first, whatever the
+	-- turn turns out to be; every result below is judged against that state.
+	state = expire(state, now)
+
 	local machine = machineOf(state.facility, machineId)
 	if machine == nil then
 		return state, { kind = "refused", machineId = machineId, reason = "unknown_machine" }
@@ -233,20 +362,41 @@ function Procedure.turn(
 		return rejected(state, playerId, machineId, setting, now, "not_live")
 	end
 	if setting ~= machine.requiredSetting then
-		return rejected(state, playerId, machineId, setting, now, "wrong_setting")
+		-- F-7: with a window open this is the other finale machine (the armed
+		-- one was refused above); the window closes, charged only once.
+		local next_, result = rejected(state, playerId, machineId, setting, now, "wrong_setting")
+		disarm(next_, now)
+		return next_, result
 	end
 
 	local next_ = copy(state)
-	next_.committed[machineId] = true
+	local result: TurnResult = { kind = "committed", machineId = machineId }
+	local logged: "committed" | "armed" = "committed"
+	if table.find(state.facility.steps.finale, machineId) == nil then
+		next_.committed[machineId] = true
+	elseif state.armed == nil then
+		-- F-4: the first finale machine arms and opens the window.
+		next_.armed = {
+			machineId = machineId,
+			closesAt = now + state.tuning.instance.simultaneous_window_seconds,
+		}
+		result = { kind = "armed", machineId = machineId }
+		logged = "armed"
+	else
+		-- F-5: the other one, inside the window, commits both together.
+		next_.committed[state.armed.machineId] = true
+		next_.committed[machineId] = true
+		next_.armed = nil
+	end
 	next_.dials[machineId] = { setting = setting }
 	table.insert(next_.log, {
 		playerId = playerId,
 		machineId = machineId,
 		setting = setting,
 		at = now,
-		result = "committed",
+		result = logged,
 	})
-	return next_, { kind = "committed", machineId = machineId }
+	return next_, result
 end
 
 return table.freeze(Procedure)

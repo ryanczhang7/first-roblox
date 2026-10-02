@@ -91,7 +91,7 @@ return {
 		Contract.committingTheHeadOfTrackOneMakesItsSecondStepLive(Procedure())
 	end,
 
-	["AC-1: tracks advance independently and a finale step is never live in this story, even with every ordinary step committed (finale_live_together)"] = function()
+	["AC-1: tracks advance independently and the finale steps go live together - only once every ordinary step of BOTH tracks is committed (finale_live_together; corrected in PROC-002 RED to the live set { 13, 17 })"] = function()
 		Contract.tracksAdvanceIndependentlyAndFinaleStepsStayWaiting(Procedure())
 	end,
 

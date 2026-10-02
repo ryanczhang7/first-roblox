@@ -378,8 +378,15 @@ function TurnContract.committingTheHeadOfTrackOneMakesItsSecondStepLive(P: Proce
 	end
 end
 
--- Tracks advance independently, and a finale step is never live in this
--- story: with every ordinary step of both tracks committed, nothing is live.
+-- Tracks advance independently, and a finale step waits for BOTH tracks:
+-- with track 1's ordinary steps committed and track 2's not, only track 2's
+-- head is live; with every ordinary step of both tracks committed, exactly
+-- the two finale steps are live (finale_live_together).
+--
+-- Corrected in PROC-002 RED (2026-10-02). PROC-001 pinned the interim
+-- behaviour here - "{} ... finale steps go live only in PROC-002" - and
+-- PROC-002's F-3 is the story that makes them live. Written against a module
+-- that does not yet do this, so it is red for the right reason.
 function TurnContract.tracksAdvanceIndependentlyAndFinaleStepsStayWaiting(P: Procedure)
 	local w = TurnContract.world()
 	local state = started(P, w)
@@ -401,11 +408,11 @@ function TurnContract.tracksAdvanceIndependentlyAndFinaleStepsStayWaiting(P: Pro
 		state = commit(P, w, state, id, t, "AC-1")
 	end
 	live = TurnContract.liveSet(P, state, allIdsAndUnknown())
-	if not Deep.equal(live, {}) then
+	if not Deep.equal(live, TurnContract.FINALE) then
 		Contract.fail(
 			`AC-1: with every ordinary step of both tracks committed the live set is {Deep.show(
 				live
-			)}, expected \{} - finale steps are waiting in PROC-001 and go live only in PROC-002`
+			)}, expected exactly the two finale steps {Deep.show(TurnContract.FINALE)} - they go live together once every ordinary step of both tracks is committed (finale_live_together, PROC-002 F-3)`
 		)
 	end
 end
