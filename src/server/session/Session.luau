@@ -4,7 +4,8 @@
 	seating ring (`architecture.md` §9.2, D22). M1's machine emits `AssignSeats`
 	and waits for `SeatsAssigned`; M2's `Ring.assign` deals and `Projection`
 	says what each seat may know. This module is where they meet, so that "the
-	pieces compose" is something a unit test can check.
+	pieces compose" is something a unit test can check. SLICE-005 adds M3: the
+	facility `Generator`, the `Procedure` and the `Turn` remote's handler.
 
 	ONE STEP, TWO MACHINE STEPS. `step` feeds the event to `PhaseMachine.step`.
 	When that emits `AssignSeats`, the ring is dealt from THE EFFECT'S `players`
@@ -14,9 +15,32 @@
 	`Round`. `Ring.assign` derives its own `"seats"` stream; nothing here
 	derives again.
 
+	THE DEALING STEP GENERATES THE FACILITY from the same effect seed, with the
+	state's tuning and (test seam only) `generatorPredicate`. On success the
+	Procedure starts at that `now` with the injected config's `roundSeconds`,
+	so its deadline and the machine's backstop share one duration (D11), and
+	every seated player is placed at the spawn room's centre: `positions` is
+	REPLACED and one `Placed` is emitted per player in seat order, each with
+	its own table. On failure the machine is stepped a THIRD time, at the same
+	`now`, with `RoundResolved{ no_contest, generation_failed }`; seat views are
+	still sent, because the ring was dealt.
+
 	`SeatsAssigned` IS INTERNAL. One arriving from outside is ignored before
 	the machine sees it: forwarded in `Assignment`, it would move to `Round`
 	with no ring dealt.
+
+	`PositionsSampled` AND `TurnRequested` NEVER REACH THE MACHINE. A sample
+	replaces `positions` with a copy (not a merge) in every phase and emits
+	nothing. A turn in `Round` with a Procedure goes through
+	`TurnRequests.handle` against the STORED positions, and the caller alone
+	gets a `SendTo` of kind `TurnResult`; anywhere else it is ignored.
+
+	THE MACHINE TAKES A `Tick` BEFORE THE PROCEDURE DOES. Then an undecided
+	Procedure is ticked. An outcome that appears in this step - from that tick
+	or from a turn - is fed to the machine as `RoundResolved` at the same
+	`now`. Reversed, the resolved machine would take the Tick and move on to
+	`Post`. Outside `Round` the machine ignores it, which is right when the
+	backstop or quorum resolved the round first.
 
 	EACH PLAYER IS SENT ONLY THEIR OWN VIEW. A seat view is a `SendTo`
 	addressed to one player with `Projection.forPlayer(assignment, thatPlayer)`
@@ -32,39 +56,63 @@
 	changes today because `seatOrder` shrinks, but the rule is the diff (PO
 	decision 2), not "send to everyone".
 
-	THE RING IS CLEARED ON ENTERING `Lobby`. A stale ring in the next lobby
-	would be withdrawn from, and seat views sent, for a round that is over.
+	THE RING, THE FACILITY AND THE PROCEDURE ARE CLEARED ON ENTERING `Lobby`.
+	A stale ring in the next lobby would be withdrawn from, and seat views
+	sent, for a round that is over. `positions` is kept: it is the driver's
+	last sample, not round state.
 
 	EFFECT ORDER within one step: the machine's pass-through effects (`Emit`,
 	`PromptRematch`, `ComputeTrace`) in emission order with `AssignSeats`
-	removed; then the `SendTo` seat views in seat order; then at most one
-	`Broadcast` of the `RoundView`, built from the state at the END of the step.
+	removed; then `Placed` in seat order; then the `SendTo` seat views in seat
+	order; then the `SendTo` turn result; then at most one `Broadcast` of the
+	`RoundView`, built from the state at the END of the step.
 
-	`secondsLeft` IS RELATIVE. It is the whole-second ceiling of the config's
-	duration minus the time spent in the phase, never an absolute deadline:
-	the server's clock is not the client's (§9.7). `nil` where the phase has no
-	running clock - `Assignment`, `Resolution`, and a `Lobby` below
-	`playersMin`, where the timer holds (§3).
+	`secondsLeft` IS RELATIVE. In `Round` with a Procedure it is the
+	whole-second ceiling of `Procedure.deadline` minus `now`, so an instability
+	penalty shows; elsewhere it is the ceiling of the config's duration minus
+	the time spent in the phase. Never an absolute deadline: the server's
+	clock is not the client's (§9.7). `nil` where the phase has no running
+	clock - `Assignment`, `Resolution`, and a `Lobby` below `playersMin`,
+	where the timer holds (§3).
 
 	PURE: nothing handed in is mutated, and the effect list is always a table.
 ]]
 
+local Generator = require("../facility/Generator")
+local MechanicsTuning = require("@shared/MechanicsTuning")
 local PhaseMachine = require("../round/PhaseMachine")
+local Procedure = require("../procedure/Procedure")
 local Projection = require("../seats/Projection")
 local RoundConfig = require("../round/RoundConfig")
 local Ring = require("../seats/Ring")
 local Rng = require("@shared/Rng")
+local TurnRequests = require("../procedure/TurnRequests")
 
 local Session = {}
+
+type Predicate = (Generator.Facility) -> string?
+
+export type SessionOptions = {
+	tuning: MechanicsTuning.MechanicsTuning?, -- default: the MechanicsTuning module
+	generatorPredicate: Predicate?, -- default: nil (production); a test seam
+}
 
 export type SessionState = {
 	round: PhaseMachine.RoundState,
 	assignment: Ring.Assignment?,
+	facility: Generator.Facility?,
+	procedure: Procedure.ProcedureState?,
+	positions: { [string]: Procedure.Vec }, -- the driver's last sample
+	tuning: MechanicsTuning.MechanicsTuning,
+	generatorPredicate: Predicate?,
 }
--- Later M3 stories add facility, procedure, channel, positions (§9.2).
+-- Later M3 stories add channel (§9.2).
 
 -- `SeatsAssigned` is produced inside `step`; one from outside is ignored (D5).
-export type SessionEvent = PhaseMachine.Event
+export type SessionEvent =
+	PhaseMachine.Event
+	| { kind: "PositionsSampled", samples: { [string]: Procedure.Vec } }
+	| { kind: "TurnRequested", playerId: string, args: { machine: number, setting: number } }
 
 -- `VIEW-003` moves this to `src/server/round/RoundView.luau` and widens it.
 export type RoundView = {
@@ -80,15 +128,34 @@ export type SessionEffect = {
 	playerId: string,
 	payloadKind: "SeatView",
 	payload: Projection.PublicSeatView,
-} | { kind: "Broadcast", payloadKind: "RoundView", payload: RoundView } | PhaseMachine.Effect -- minus AssignSeats, which is consumed here
+} | {
+	kind: "SendTo",
+	playerId: string,
+	payloadKind: "TurnResult",
+	payload: TurnRequests.TurnReply,
+} | { kind: "Placed", playerId: string, position: Procedure.Vec } | {
+	kind: "Broadcast",
+	payloadKind: "RoundView",
+	payload: RoundView,
+} | PhaseMachine.Effect -- minus AssignSeats, which is consumed here
 
 function Session.new(
 	config: RoundConfig.RoundConfig,
 	seed: number,
 	roundId: string,
-	sessionId: string
+	sessionId: string,
+	options: SessionOptions?
 ): SessionState
-	return { round = PhaseMachine.initial(config, seed, roundId, sessionId), assignment = nil }
+	local opts: SessionOptions = options or {}
+	return {
+		round = PhaseMachine.initial(config, seed, roundId, sessionId),
+		assignment = nil,
+		facility = nil,
+		procedure = nil,
+		positions = {},
+		tuning = opts.tuning or MechanicsTuning,
+		generatorPredicate = opts.generatorPredicate,
+	}
 end
 
 local function contains(list: { string }, value: string): boolean
@@ -131,9 +198,34 @@ local function seatView(assignment: Ring.Assignment, playerId: string): SessionE
 	}
 end
 
+local function vec(v: Procedure.Vec): Procedure.Vec
+	return { x = v.x, y = v.y, z = v.z }
+end
+
+-- The spawn room's centre, per `Machines.luau`'s header (§9.8).
+local function spawnCentre(
+	facility: Generator.Facility,
+	tuning: MechanicsTuning.MechanicsTuning
+): Procedure.Vec
+	local pitch = tuning.instance.room_pitch_studs
+	for _, room in facility.layout.rooms do
+		if room.id == facility.spawnRoom then
+			return { x = (room.column - 1) * pitch, y = 0, z = (room.row - 1) * pitch }
+		end
+	end
+	error(`Session: spawn room {facility.spawnRoom} is not in the layout`)
+end
+
 -- The whole seconds left in a timed phase, or `nil` where no clock runs.
-local function secondsLeftIn(round: PhaseMachine.RoundState, now: number): number?
+local function secondsLeftIn(
+	round: PhaseMachine.RoundState,
+	procedure: Procedure.ProcedureState?,
+	now: number
+): number?
 	local config = round.config
+	if round.phase == "Round" and procedure ~= nil then
+		return math.ceil(Procedure.deadline(procedure) - now)
+	end
 	local duration: number? = nil
 	if round.phase == "Lobby" and #round.players >= config.playersMin then
 		duration = config.lobbySeconds
@@ -148,13 +240,17 @@ local function secondsLeftIn(round: PhaseMachine.RoundState, now: number): numbe
 	return math.ceil(duration - (now - round.phaseEnteredAt))
 end
 
-local function roundView(round: PhaseMachine.RoundState, now: number): SessionEffect
+local function roundView(
+	round: PhaseMachine.RoundState,
+	procedure: Procedure.ProcedureState?,
+	now: number
+): SessionEffect
 	return {
 		kind = "Broadcast",
 		payloadKind = "RoundView",
 		payload = {
 			phase = round.phase,
-			secondsLeft = secondsLeftIn(round, now),
+			secondsLeft = secondsLeftIn(round, procedure, now),
 			players = table.clone(round.players),
 			playersMin = round.config.playersMin,
 			playersMax = round.config.playersMax,
@@ -179,58 +275,157 @@ function Session.step(
 		return state, {}
 	end
 
+	if event.kind == "PositionsSampled" then
+		local positions: { [string]: Procedure.Vec } = {}
+		for playerId, position in event.samples do
+			positions[playerId] = vec(position)
+		end
+		local next_ = table.clone(state)
+		next_.positions = positions
+		return next_, {}
+	end
+
 	local before = state.round
-	local round, machineEffects = PhaseMachine.step(before, event, now)
-	local effects: { SessionEffect } = {}
-	passThrough(effects, machineEffects)
-
-	local sends: { SessionEffect } = {}
+	local round = before
 	local assignment = state.assignment
+	local facility = state.facility
+	local procedure = state.procedure
+	local positions = state.positions
+	local effects: { SessionEffect } = {}
+	local placed: { SessionEffect } = {}
+	local sends: { SessionEffect } = {}
+	local reply: SessionEffect? = nil
+	-- An outcome the Procedure reached in THIS step, to route to the machine.
+	local reached: PhaseMachine.Outcome? = nil
 
-	local deal: PhaseMachine.Effect? = nil
-	for _, effect in machineEffects do
-		if effect.kind == "AssignSeats" then
-			deal = effect
+	if event.kind == "TurnRequested" then
+		if procedure == nil or assignment == nil or round.phase ~= "Round" then
+			return state, {}
+		end
+		local undecided = procedure.outcome == nil
+		local turned, result =
+			TurnRequests.handle(procedure, assignment, event.playerId, event.args, now, positions)
+		procedure = turned
+		reply = {
+			kind = "SendTo",
+			playerId = event.playerId,
+			payloadKind = "TurnResult",
+			payload = TurnRequests.reply(result),
+		}
+		if undecided and turned.outcome ~= nil then
+			reached = turned.outcome
+		end
+	else
+		local machineEffects
+		round, machineEffects = PhaseMachine.step(before, event, now)
+		passThrough(effects, machineEffects)
+
+		local deal: PhaseMachine.Effect? = nil
+		for _, effect in machineEffects do
+			if effect.kind == "AssignSeats" then
+				deal = effect
+			end
+		end
+
+		if deal ~= nil and deal.kind == "AssignSeats" then
+			local dealt = Ring.assign(deal.players, Rng.fromSeed(deal.seed))
+			local seated, seatedEffects = PhaseMachine.step(round, { kind = "SeatsAssigned" }, now)
+			round = seated
+			passThrough(effects, seatedEffects)
+			for _, playerId in dealt.players do
+				table.insert(sends, seatView(dealt, playerId))
+			end
+			assignment = dealt
+
+			local generated =
+				Generator.generate(dealt, deal.seed, state.tuning, state.generatorPredicate)
+			if generated.kind == "facility" then
+				facility = generated.facility
+				procedure = Procedure.start(
+					generated.facility,
+					now,
+					state.tuning,
+					deal.seed,
+					round.config.roundSeconds
+				)
+				local centre = spawnCentre(generated.facility, state.tuning)
+				positions = {}
+				for _, playerId in dealt.players do
+					positions[playerId] = vec(centre)
+					table.insert(
+						placed,
+						{ kind = "Placed", playerId = playerId, position = vec(centre) }
+					)
+				end
+			else
+				facility = nil
+				procedure = nil
+				local resolved, resolvedEffects = PhaseMachine.step(round, {
+					kind = "RoundResolved",
+					outcome = { result = "no_contest", reason = "generation_failed" },
+				}, now)
+				round = resolved
+				passThrough(effects, resolvedEffects)
+			end
+		elseif
+			event.kind == "PlayerLeft"
+			and assignment ~= nil
+			and contains(before.players, event.playerId)
+			and not contains(round.players, event.playerId)
+		then
+			local old = assignment
+			local withdrawn = Ring.withdraw(old, event.playerId)
+			for _, playerId in withdrawn.players do
+				local fresh = Projection.forPlayer(withdrawn, playerId)
+				if not sameView(fresh, Projection.forPlayer(old, playerId)) then
+					table.insert(sends, {
+						kind = "SendTo",
+						playerId = playerId,
+						payloadKind = "SeatView",
+						payload = fresh,
+					})
+				end
+			end
+			assignment = withdrawn
+		end
+
+		-- After the machine has taken the Tick, never before (C-3).
+		if
+			event.kind == "Tick"
+			and procedure ~= nil
+			and procedure.outcome == nil
+			and assignment ~= nil
+		then
+			local ticked = Procedure.tick(procedure, assignment, now, positions)
+			procedure = ticked
+			reached = ticked.outcome
 		end
 	end
 
-	if deal ~= nil and deal.kind == "AssignSeats" then
-		local dealt = Ring.assign(deal.players, Rng.fromSeed(deal.seed))
-		local seated, seatedEffects = PhaseMachine.step(round, { kind = "SeatsAssigned" }, now)
-		round = seated
-		passThrough(effects, seatedEffects)
-		for _, playerId in dealt.players do
-			table.insert(sends, seatView(dealt, playerId))
-		end
-		assignment = dealt
-	elseif
-		event.kind == "PlayerLeft"
-		and assignment ~= nil
-		and contains(before.players, event.playerId)
-		and not contains(round.players, event.playerId)
-	then
-		local old = assignment
-		local withdrawn = Ring.withdraw(old, event.playerId)
-		for _, playerId in withdrawn.players do
-			local fresh = Projection.forPlayer(withdrawn, playerId)
-			if not sameView(fresh, Projection.forPlayer(old, playerId)) then
-				table.insert(sends, {
-					kind = "SendTo",
-					playerId = playerId,
-					payloadKind = "SeatView",
-					payload = fresh,
-				})
-			end
-		end
-		assignment = withdrawn
+	if reached ~= nil then
+		local resolved, resolvedEffects = PhaseMachine.step(
+			round,
+			{ kind = "RoundResolved", outcome = table.clone(reached) },
+			now
+		)
+		round = resolved
+		passThrough(effects, resolvedEffects)
 	end
 
 	if round.phase == "Lobby" and before.phase ~= "Lobby" then
 		assignment = nil
+		facility = nil
+		procedure = nil
 	end
 
+	for _, effect in placed do
+		table.insert(effects, effect)
+	end
 	for _, send in sends do
 		table.insert(effects, send)
+	end
+	if reply ~= nil then
+		table.insert(effects, reply)
 	end
 
 	local timed = round.phase == "Lobby" or round.phase == "Round" or round.phase == "Post"
@@ -239,10 +434,19 @@ function Session.step(
 		or #round.players ~= #before.players
 		or (event.kind == "Tick" and timed)
 	then
-		table.insert(effects, roundView(round, now))
+		table.insert(effects, roundView(round, procedure, now))
 	end
 
-	return { round = round, assignment = assignment }, effects
+	return {
+		round = round,
+		assignment = assignment,
+		facility = facility,
+		procedure = procedure,
+		positions = positions,
+		tuning = state.tuning,
+		generatorPredicate = state.generatorPredicate,
+	},
+		effects
 end
 
 return Session

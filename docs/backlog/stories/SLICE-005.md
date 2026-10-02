@@ -5,7 +5,7 @@ slug: the-session-runs-the-facility-and-the-pr
 epic: EPIC-08
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/SLICE-005-the-session-runs-the-facility-and-the-pr
 depends_on: [SLICE-003, GEN-004, PROC-003, PROC-005]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -765,3 +765,50 @@ claims about the checks, not about the shipped module.
 - After the RED commit: `bash scripts/gates.sh --fast --gate harness` →
   `All required gates passed (1 ran, 0 unconfigured, 0 known).`
 - SLICE-003's `session_test` and `session_controls_test` pass with C-6 in place.
+
+### GREEN notes (feature-developer, 2026-10-02)
+
+Model: `claude-opus-5-5` (Opus 5.5); the dispatch named no override.
+
+**Files changed:** `src/server/session/Session.luau` only (no new module, no
+test, config or manifest touched). Built as C-1..C-5 say; no Contract block was
+found wrong. Two guards beyond the literal text, both unobservable: the turn and
+Tick paths also require `assignment ~= nil` (a procedure never exists without
+one), and the routed `RoundResolved` carries a clone of the Procedure's outcome
+table rather than the same table.
+
+**Negative controls, measured against the shipped module** (the `[measured]`
+lines printed by `session_round_test`, which runs the battery on the real
+Session):
+
+| Handoff row | Expected | Measured on the real Session |
+|---|---|---|
+| AC-4 win | 150/150, 150/150 | `AC-4: 150/150 scripted rounds won; 150/150 resolved in the completing turn's step` |
+| AC-4 control | 150/150, 150/150 | `AC-4 control: 150/150 rounds had every turn refused; 150/150 ended lost / clock on the deadline tick` |
+| AC-5 | 9/9, 9/9 | `AC-5: 9/9 rounds lost to instability in the 5th wrong turn's step; 9/9 showed every 20 s drop` |
+| AC-6 | 10/10 | `AC-6: 10/10 (k, seed) cases resolved lost / clock exactly on the Procedure's deadline tick` |
+| Lifecycle turns / clock-out | committed, rejected/wrong_setting, refused/not_key_holder, refused/unknown_machine, refused/out_of_reach; 20 s / 460 | the controls file prints it from the oracle: `lifecycle turns: { committed, rejected/wrong_setting, refused/not_key_holder, refused/unknown_machine, refused/out_of_reach }; routed clock-out at 460 with 20 s of penalty`. The real Session matches it step for step: FOLLOWS (state deep-equal the oracle after every lifecycle step) and TURN (each reply deep-equal `TurnRequests.reply` of the oracle's result) both pass |
+| Fixtures | 150/150 generation; 22.627 studs | fixtures tests green; `nearest machine to a spawn centre: 22.627416997969522 studs; turn_range_studs 10` |
+
+No divergence from RED's numbers. Every stand-in's `fires` set in the controls
+file is unchanged (26/26 pass).
+
+**D-1..D-4 against this code** (for GATES, via `scripts/mutate.sh`; each target
+string occurs once in the file):
+
+- D-1: `'s/reached = ticked.outcome/reached = nil/'` (line ~401) - the Tick path never routes.
+- D-2: `'s/reached = turned.outcome/reached = nil/'` (line ~316) - the turn path never routes.
+- D-3: `'s/return math.ceil(Procedure.deadline(procedure) - now)/return math.ceil(config.roundSeconds - (now - round.phaseEnteredAt))/'` (line ~227).
+- D-4: `'s/if effect.kind ~= "AssignSeats" then/if effect.kind ~= "AssignSeats" and effect.kind ~= "Emit" then/'` (line ~263, in `passThrough`).
+
+**Suite:** `lune run test` -> `901 passed, 0 failed` (887 + the 14), no
+`LOAD FAIL`, real 6m59s. `session_round_test` 16/16, controls 26/26,
+`session_test` 15/15, `session_controls_test` 33/33.
+
+**`bash scripts/gates.sh --fast`:** format PASS (145), lint PASS (145),
+typecheck PASS (27), unit PASS (901, 289 s), build PASS, **harness FAIL** on one
+assertion only, `project-counters` precondition "the working tree carries no
+stray .luau files" (actual: ` M src/server/session/Session.luau`). The counts
+themselves (AC-7, 145/145/27) pass. This is the same precondition RED met
+before its commit: it clears once Session.luau is committed. Not committed
+here (the dispatch did not ask for a commit).
