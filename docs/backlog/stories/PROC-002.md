@@ -4,8 +4,8 @@ title: The finale commits only when both machines are turned inside the window
 slug: the-finale-commits-only-when-both-machin
 epic: EPIC-05
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/PROC-002-the-finale-commits-only-when-both-machin
 depends_on: [PROC-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -248,6 +248,70 @@ fail. RED cannot run this. Owner: GATES.
 `partnerLamps` measure the holder's distance to their own lamp's machine rather
 than the partner's. AC-6 **must** then fail on the fixture where B's holder
 stands at A. RED cannot run this. Owner: GATES.
+
+### Results (lead-po, GATES, 2026-10-02, against `d49a07a`)
+
+Every run is `bash scripts/mutate.sh src/server/procedure/Procedure.luau '<EXPR>' -- lune run test`;
+each restore was verified byte-for-byte by `mutate.sh`, and `git status` showed
+only the story file modified afterwards. Unmutated: `728 passed, 0 failed`.
+
+**D-1 — RESULT: fails as required.** Two runs.
+
+*Run 1, broad:* `/"wrong_setting")$/{n;s/disarm(next_, now)/next_.instability += next_.tuning.actuation.instability_per_failed_pair; disarm(next_, now)/}`.
+This charged a failed pair on **every** `wrong_setting` turn, because `disarm`
+runs on all of them (it is a no-op with no window), so it hit more than AC-4:
+
+    FAIL  procedure_finale_test :: AC-4 under the SHIPPED tuning: a wrong turn on B with A armed raises instability by exactly 1 in total, not 2 (mechanics.md §5: no second penalty)
+    FAIL  procedure_finale_test :: AC-4/F-7: a wrong turn on a live finale machine with NO window open is an ordinary rejection - charged wrong_value, the other machine untouched
+    FAIL  procedure_finale_test :: AC-4/F-7: with A armed, a wrong turn on B inside the window is rejected / wrong_setting, charged instability_per_wrong_value ONCE (1, not also failed_pair 4), ...
+    FAIL  procedure_finale_test :: F-9: a turn on A after the window is refused / resetting ...; a wrong turn on B after the window is expiry plus an ordinary rejection
+    FAIL  procedure_test :: AC-3/P-1: charges accumulate and each reason charges ITS constant ... (wrong_value 1 + out_of_order 2 = 3)
+    FAIL  procedure_test :: AC-3: a live step turned to the wrong setting is rejected / wrong_setting, charged exactly instability_per_wrong_value, ...
+    FAIL  procedure_test :: AC-6/P-10: the log holds one { playerId, machineId, setting, at, result } per evaluated turn, ...
+    721 passed, 7 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_server_procedure_Procedure.luau.20261002T022109Z.376716.bak) ===
+
+*Run 2, narrowed to the D-1 path (window open):* the same with the charge guarded
+by `if next_.armed ~= nil then … end`:
+
+    FAIL  procedure_finale_test :: AC-4 under the SHIPPED tuning: a wrong turn on B with A armed raises instability by exactly 1 in total, not 2 (mechanics.md §5: no second penalty)
+    FAIL  procedure_finale_test :: AC-4/F-7: with A armed, a wrong turn on B inside the window is rejected / wrong_setting, charged instability_per_wrong_value ONCE (1, not also failed_pair 4), disarms both into reset windows and logs one entry
+    726 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_server_procedure_Procedure.luau.20261002T024811Z.412011.bak) ===
+
+Exactly the two AC-4 window checks, and nothing else. The failure messages' detail
+lines (the measured instability) were not captured by the filter; the mutation
+adds `failed_pair` (1 shipped, 4 overrides) on top of `wrong_value` (1, 1), so the
+assertions saw 2 and 5, which is what RED measured on its stand-in.
+
+**D-2 — RESULT: fails as required.** One run: the expiry check is in a single
+private `expire`, called by both `tick` and `turn`, so one mutation covers both.
+`s/now <= state\.armed\.closesAt/now < state.armed.closesAt/`, which makes expiry
+`now >= closesAt`:
+
+    FAIL  procedure_finale_test :: AC-5/F-6: a turn on the armed machine itself - right setting or wrong, inside the window or at its end - is refused / armed at no cost and returns the state passed
+    FAIL  procedure_finale_test :: AC-7/F-8: tick at t, mid-window and at exactly closesAt returns a state deep-equal to the one passed, and nil - expiry is strictly now > closesAt
+    FAIL  procedure_finale_test :: AC-7: a correct turn on B at EXACTLY t + simultaneous_window_seconds commits both - the window is inclusive at its end
+    725 passed, 3 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_server_procedure_Procedure.luau.20261002T022616Z.382547.bak) ===
+
+The same three checks RED's control fired: turn at the edge, tick at the edge,
+and the armed refusal at the edge.
+
+**D-3 — RESULT: fails as required.** `s/finale\[3 - i\]/finale[i]/`, so each lamp
+measures against its own machine:
+
+    FAIL  procedure_finale_test :: AC-6/F-11: any holder of the partner's class in range lights the lamp, and one player holding both classes lights the lamp of the machine they are NOT standing at
+    FAIL  procedure_finale_test :: AC-6/F-11: with the finale live, A's lamp is lit exactly when the holder of B's class is within partner_lamp_range_studs (4, not turn range 7) of B, ... B's the same way round; ...
+    726 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_server_procedure_Procedure.luau.20261002T023109Z.389066.bak) ===
+
+The second test contains the "B's holder at A, A's holder at B → both dark"
+fixture. RED's table listed a third check, `lamps-dark`, for its own-machine
+stand-in; it does not fire here. This mutation leaves liveness alone, so the lamps
+are dark whenever the finale is not live, which is all `lamps-dark` checks.
+RED's stand-in evidently differed from this mutation in that respect. AC-6's
+required failure is present.
 
 ## Out of scope
 
@@ -698,10 +762,22 @@ clears at the GREEN commit. Nothing else in `harness.log` failed. The full
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-02T02:47:45Z
+    commit: d49a07a
+    tree:   3ccc4ad37a808ddf968b7e192d5aa308548dc04c
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 126)
+    PASS         lint (1s, observed 126, floor 1)
+    PASS         typecheck (5s, observed 24)
+    PASS         unit (220s, observed 728, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (1s, observed 88474)
+    PASS         harness (39s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -805,3 +881,12 @@ clears it; the baselines themselves (126/126/24) already pass.
    F-9 says "a `turn` at `now > armed.closesAt` first applies exactly F-8", with
    no exception, and the window's end is an event that precedes the turn in
    arrival order.
+
+After the GREEN commit `d49a07a`: `bash .claude/tests/project-counters.test.sh` →
+`project-counters: 40 passed, 0 failed`. Every `--fast` gate is green.
+
+**GATES (lead-po, 2026-10-02).** D-1, D-2 and D-3 run before `gates.sh`, results
+under `## Deferred verifications`. Then `bash scripts/gates.sh` (full run, recorded
+by itself in `## Gate results`): `All required gates passed (6 ran, 3 unconfigured,
+0 known).` No source change was needed in GATES, so no feature-developer dispatch.
+No gate was added or changed, so `## Gate probes` is not required.
