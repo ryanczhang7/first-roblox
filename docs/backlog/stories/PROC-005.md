@@ -4,8 +4,8 @@ title: A turn arrives as a validated remote and is judged against server positio
 slug: a-turn-arrives-as-a-validated-remote-and
 epic: EPIC-05
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/PROC-005-a-turn-arrives-as-a-validated-remote-and
 depends_on: [PROC-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -152,15 +152,67 @@ them in its handoff.
 `handle` passes a positions table built from `args` (or an empty table) in
 place of `positions`. AC-4 **must** fail. Owner: GATES.
 
+*Result (GATES, 2026-10-02, lead-po): HOLDS.* `handle` was mutated to use a
+`position` smuggled into `args` in place of the accepted `positions`. The AC-4
+reach test went red, and the file was restored byte-for-byte.
+
+    52 - 		positions
+    52 + 		if (args :: any).position ~= nil then { [playerId] = (args :: any).position } else positions
+      FAIL  tests/server/turn_requests_test.luau :: AC-4: with the accepted positions out of reach and an in-reach position smuggled into args (position, positions, x/y/z) the turn is refused / out_of_reach with the state unchanged; with accepted positions in reach and a far one smuggled, it commits - both equal to a direct Procedure.turn
+    810 passed, 1 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .claude/state/mutations/src_server_procedure_TurnRequests.luau.20261002T162805Z.999292.bak) ===
+
 **D-2. AC-5's exact key set catches a leak.** Mutate `reply` to add one extra
 field, such as `setting = 0` or `requiredSetting = 1`. AC-5 **must** fail.
 Then mutate it to emit a wrong **value** (`kind` hard-coded to `"committed"`).
 AC-5 **must** fail again. Owner: GATES.
 
+*Result (GATES, 2026-10-02, lead-po): HOLDS on both.* (a) A leaked field: the
+rejected/refused reply gained `requiredSetting = 1`. Three tests went red, and
+the file was restored.
+
+    60 + 	return { machineId = result.machineId, kind = result.kind, reason = result.reason, requiredSetting = 1 }
+      FAIL  tests/server/turn_requests_test.luau :: AC-5: reply maps rejected (wrong_setting, not_live) and refused (every reason) results to exactly { machineId, kind, reason } with the reason unchanged
+      FAIL  tests/server/turn_requests_test.luau :: AC-5: the reply to a REAL wrong_setting rejection from Procedure.turn is exactly { machineId, kind, reason } and carries no requiredSetting or setting; a real commit and a real out_of_reach refusal map exactly too
+      FAIL  tests/server/turn_requests_test.luau :: Contract (D8): reply is built field by field - an extra field on the result does not reach the reply, and the reply is a fresh table rather than the result itself
+    808 passed, 3 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .claude/state/mutations/src_server_procedure_TurnRequests.luau.20261002T163101Z.1003896.bak) ===
+
+(b) A wrong value: `kind` was hard-coded to `"committed"` on both returns. Four
+tests went red, and the file was restored.
+
+    58 + 		return { machineId = result.machineId, kind = "committed" }
+    60 + 	return { machineId = result.machineId, kind = "committed", reason = result.reason }
+      FAIL  tests/server/turn_requests_test.luau :: AC-5: reply maps committed and armed results to exactly { machineId, kind } - key set enumerated with pairs, values equal
+      FAIL  tests/server/turn_requests_test.luau :: AC-5: reply maps rejected (wrong_setting, not_live) and refused (every reason) results to exactly { machineId, kind, reason } with the reason unchanged
+      FAIL  tests/server/turn_requests_test.luau :: AC-5: the reply to a REAL wrong_setting rejection from Procedure.turn is exactly { machineId, kind, reason } and carries no requiredSetting or setting; a real commit and a real out_of_reach refusal map exactly too
+      FAIL  tests/server/turn_requests_test.luau :: Contract (D8): reply is built field by field - an extra field on the result does not reach the reply, and the reply is a fresh table rather than the result itself
+    807 passed, 4 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .claude/state/mutations/src_server_procedure_TurnRequests.luau.20261002T163307Z.1006203.bak) ===
+
 **D-3. AC-1 reads the tuning, not a literal.** Mutate `GameRemotes`'s
 `minIntervalSeconds` to `turn_rate_limit_seconds + 1`, and separately its
 `setting` upper bound to `dial_settings + 1`. AC-1 **must** fail on each, and
 AC-2's `dial_settings + 1` case **must** fail on the second. Owner: GATES.
+
+*Result (GATES, 2026-10-02, lead-po): HOLDS on both.* (a) With
+`minIntervalSeconds` set to `turn_rate_limit_seconds + 1`, AC-1's rate check
+and AC-3's flood boundary both went red. (b) With the `setting` upper bound set
+to `dial_settings + 1`, AC-1's schema check and AC-2 (whose
+`setting = dial_settings + 1` case is then accepted) both went red. Both files
+were restored byte-for-byte.
+
+    31 + 	rateLimit = { minIntervalSeconds = MechanicsTuning.actuation.turn_rate_limit_seconds + 1 },
+      FAIL  tests/net/turn_remote_test.luau :: AC-1: Turn's rateLimit.minIntervalSeconds equals MechanicsTuning.actuation.turn_rate_limit_seconds
+      FAIL  tests/net/turn_remote_test.luau :: AC-3: two well-formed in-Round Turns at t and t + turn_rate_limit_seconds - 0.1 - the second is rejected for rate and the handler count stays 1; a third at exactly t + turn_rate_limit_seconds runs it (count 2)
+    809 passed, 2 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .claude/state/mutations/src_net_GameRemotes.luau.20261002T163710Z.1008452.bak) ===
+
+    28 + 		setting = Schema.integer(1, MechanicsTuning.instance.dial_settings + 1),
+      FAIL  tests/net/turn_remote_test.luau :: AC-1: Turn's schema answers as { machine = integer(1, actuator_count), setting = integer(1, dial_settings) } at 0, 1, max and max + 1 for each field, files a non-integer as range, and a missing, extra or non-table payload as shape
+      FAIL  tests/net/turn_remote_test.luau :: AC-2: a seated caller in Round sending a missing setting, machine = 0, setting = dial_settings + 1, setting = 1.5, an extra player key, or a string is rejected for shape, range, range, range, shape, shape respectively, and the handler never runs
+    809 passed, 2 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .claude/state/mutations/src_net_GameRemotes.luau.20261002T164011Z.1012043.bak) ===
 
 ## Out of scope
 
@@ -205,6 +257,8 @@ from an upstream story or spike (as noted above), amend it and re-run
   dispatch, overriding the agent definition's `opus`, as the dispatch note
   requires; the agent confirmed the override in its report). 2026-10-02.
 - PLANNED → RED orchestration - `lead-po` - `claude-opus-5-5`. 2026-10-02.
+- GREEN - `feature-developer` - `opus` (passed explicitly; the agent reported
+  resolving to `claude-opus-5-5`, no override). 2026-10-02.
 
 ## Test plan
 
@@ -599,10 +653,22 @@ Timings above are from this machine; CI's per-test factor is not in
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-02T16:56:04Z
+    commit: 29ffa78
+    tree:   cb56fd93c558a40604504ddadf04b1ae49e2f87c
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 137)
+    PASS         lint (1s, observed 137, floor 1)
+    PASS         typecheck (4s, observed 26)
+    PASS         unit (126s, observed 811, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (1s, observed 93179)
+    PASS         harness (16s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -645,3 +711,28 @@ Timings above are from this machine; CI's per-test factor is not in
 4. **Required gate:** `unit` (required), which covers `src/net/**` and
    `src/server/**`. No optional-only gate is involved, so `required_gates`
    stays empty.
+
+**GREEN (2026-10-02, lead-po).**
+
+- Freeze: snapshot taken right after `phase.sh set PROC-005 GREEN`, over the six
+  test files and `.claude/tests/project-counters.test.sh`. Before leaving GREEN:
+  `frozen: OK — 7 path(s) unchanged since the snapshot for PROC-005`.
+- Source read by the orchestrator against `## Contract`. `handle` is one call to
+  `Procedure.turn` reading only `args.machine`/`args.setting`, and `reply` builds
+  a new table for each of the two key sets. `GameRemotes` reads every bound from
+  `MechanicsTuning` through `@shared`.
+
+**GATES (2026-10-02, lead-po).**
+
+- Freeze: snapshot retaken right after `phase.sh set PROC-005 GATES` (the same
+  seven paths). After D-1 to D-3 and the full run:
+  `frozen: OK — 7 path(s) unchanged since the snapshot for PROC-005`.
+- Deferred verifications: D-1, D-2 (a leaked field and a wrong value) and D-3
+  (rate and bound) all hold, with results pasted under each block. These five
+  mutations also confirm the handoff's control predictions against the shipped
+  modules: the stand-ins `readsPositionFromArgs`, `leaksRequiredSetting`,
+  `hardcodesKind`, `rateLimitPlusOne` and `settingUpperBoundPlusOne` predicted
+  the same checks would fire.
+- Full `bash scripts/gates.sh` passed: 6 ran, 0 failed, 3 unconfigured, and
+  `## Gate results` was written by the script. No source change was needed in
+  GATES. This story adds or changes no gate, so `## Gate probes` does not apply.
