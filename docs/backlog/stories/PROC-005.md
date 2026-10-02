@@ -5,7 +5,7 @@ slug: a-turn-arrives-as-a-validated-remote-and
 epic: EPIC-05
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/PROC-005-a-turn-arrives-as-a-validated-remote-and
 depends_on: [PROC-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -201,6 +201,10 @@ from an upstream story or spike (as noted above), amend it and re-run
 
 - PLANNED - `lead-po` - `claude-opus-5-5` (Opus 5.5, from the session's own model
   identification; the /plan-product dispatch reported no override). 2026-09-30.
+- RED - `test-developer` - `fable` (passed explicitly as `model: fable` in the
+  dispatch, overriding the agent definition's `opus`, as the dispatch note
+  requires; the agent confirmed the override in its report). 2026-10-02.
+- PLANNED → RED orchestration - `lead-po` - `claude-opus-5-5`. 2026-10-02.
 
 ## Test plan
 
@@ -446,6 +450,53 @@ test failure in the controls file.
 These numbers were measured against stand-ins and my own checker. **Confirming
 them against the shipped modules is GREEN's job**: after GREEN, the 19 real
 tests must pass and the 29 control tests must still pass unchanged.
+
+### GREEN confirmation (2026-10-02, feature-developer, `claude-opus-5-5`)
+
+Shipped: `src/net/GameRemotes.luau` and `src/server/procedure/TurnRequests.luau`,
+nothing else under `src/`. `lune run test`: **811 passed, 0 failed** (all 48
+`turn_remote*` / `turn_requests*` tests pass; the 29 control tests unchanged).
+
+Each check measured directly against the SHIPPED modules, outside the test
+runner (a throwaway `lune` script under `.claude/state/`, since deleted, that
+called each helper's `failures`):
+
+    Turn entries in registry: 1 rawequal: true
+    TurnRemoteContract: real GameRemotes.Turn fails 0 of 9
+    TurnRequestsContract: real TurnRequests fails 0 of 9
+
+That matches RED's reference row (0 of 9 in each helper): the real modules
+behave as the reference stand-ins did. Every control row, re-read from the
+GREEN run's `[measured]` lines against the tables above:
+
+| Control | RED | GREEN | Match |
+|---|---|---|---|
+| TurnRemote reference | 0 of 9 | 0 of 9 | yes |
+| `settingUpperBoundPlusOne`, `machineLowerBoundZero`, `settingIsNumber`, `acceptsPlayer` | schema, AC-2 | schema, AC-2 (each) | yes |
+| `legalInLobbyToo` | phases, AC-3 phase | same | yes |
+| `rateLimitPlusOne`, `noRateLimit` | rateLimit, AC-3 rate | same (each) | yes |
+| `declaresAttemptLimit` | attemptLimit | same | yes |
+| `unregisteredCopy` | registry | same | yes |
+| `emptySchema` | 5 checks | same 5 | yes |
+| TurnRequests reference | 0 of 9 | 0 of 9 | yes |
+| `readsPositionFromArgs`, `readsPositionsFromArgs` | reach | reach (each) | yes |
+| `swapsMachineAndSetting`, `hardcodesSettingOne`, `returnsOnlyTheResult` | pass-through, reach, forwards, caller | same (each) | yes |
+| `hardcodesTheMachine` | forwards | forwards | yes |
+| `readsPlayerFromArgs` | caller | caller | yes |
+| `mutatesItsArguments` | purity | purity | yes |
+| `copiesTheMachineRecord`, `leaksRequiredSetting`, `hardcodesKind` | all 4 reply checks | all 4 (each) | yes |
+| `dropsReason` | 3 reply checks | same 3 | yes |
+| `passesTheResultThrough` | field-by-field only | same | yes |
+| checker: copied machine record | 1 problem naming `requiredSetting` | 1, same message | yes |
+| checker: wrong kind | 1 | 1, same message | yes |
+| checker: wrong machineId | 1 | 1 | yes |
+| checker: missing reason | 2 | 2 | yes |
+| checker: a string | 1 | asserted `== 1`, passes (no print) | yes |
+| checker: correct reply | 0 | 0 | yes |
+
+No divergence. The control stand-ins are self-contained, so they measure the
+same thing in GREEN as in RED; what is new is that the real suites now run the
+same checks against the shipped modules and fail none. D-1..D-3 remain GATES's.
 
 ### Deferred verifications D-1..D-3: DECLINED in RED
 
