@@ -4,8 +4,8 @@ title: Instability shortens the clock, darkens rooms and ends the round in a fix
 slug: instability-shortens-the-clock-darkens-r
 epic: EPIC-05
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/PROC-003-instability-shortens-the-clock-darkens-r
 depends_on: [PROC-002]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -981,3 +981,16 @@ under `## Deferred verifications`. Then `bash scripts/gates.sh` (the full run,
 which records itself in `## Gate results`): `All required gates passed (6 ran, 3
 unconfigured, 0 known).` No source change was needed in GATES. No gate was added
 or changed, so `## Gate probes` is not required.
+
+**REVIEW → DONE (lead-po, 2026-10-02).** PR
+https://github.com/ryanczhang7/first-roblox/pull/49 merged at
+2026-10-02T14:19:36Z as `e70b1a2`. CI on the PR head `750bedc`: `boundaries` pass
+(6s), `gates` pass (3m13s,
+https://github.com/ryanczhang7/first-roblox/actions/runs/37013535235). Timings
+read from that log:
+- Harness self-test: 1m53s.
+- `Run gates`: 62s, of which format 0s, lint 0s, typecheck 3s, unit 44s (763
+  tests), build 0s, harness 12s.
+
+The job sets no `timeout-minutes`, so the runner default applies and nothing is
+near a limit. No gate was pending CI.
