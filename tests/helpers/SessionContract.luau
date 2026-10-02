@@ -147,17 +147,25 @@ function SessionContract.broadcasts(effects: { any }): { any }
 	return out
 end
 
--- Everything that is neither a SendTo nor a Broadcast: what the session
--- claims to have passed through from the phase machine.
+--[[
+	The phase machine's own effect kinds - `Emit`, `PromptRematch`,
+	`ComputeTrace` and `AssignSeats` - in order: what the session claims to
+	have passed through from the machine. `AssignSeats` is kept so that the
+	control "passes AssignSeats through as well" still fires.
+
+	NARROWED IN SLICE-005's RED (C-6). It used to be "everything that is
+	neither a SendTo nor a Broadcast", and SLICE-005's `Placed` effect would
+	have failed AC-5's deep-equal on every dealing step. A kind this list does
+	not name is a session effect, not a machine effect. The narrowing is earned
+	by SLICE-005's D-4 (GATES): a Session that drops the machine's `Emit`s must
+	still fail the pass-through check.
+]]
+local MACHINE_EFFECT_KINDS = { "Emit", "PromptRematch", "ComputeTrace", "AssignSeats" }
+
 function SessionContract.passThroughOf(effects: { any }): { any }
 	local out: { any } = {}
 	for _, effect in effects do
-		if
-			not (
-				typeof(effect) == "table"
-				and (effect.kind == "SendTo" or effect.kind == "Broadcast")
-			)
-		then
+		if typeof(effect) == "table" and table.find(MACHINE_EFFECT_KINDS, effect.kind) ~= nil then
 			table.insert(out, effect)
 		end
 	end
