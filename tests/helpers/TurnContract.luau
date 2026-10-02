@@ -15,11 +15,17 @@
 	A `procedure` here is anything with four plain field functions, called with
 	a dot exactly as the story's Contract writes them:
 
-	    P.start(facility, now, tuning)                     -> ProcedureState
+	    P.start(facility, now, tuning, roundSeed, roundSeconds) -> ProcedureState
 	    P.isLive(state, machineId)                         -> boolean
 	    P.dial(state, machineId, now)                      -> DialView
 	    P.turn(state, assignment, playerId, machineId,
 	           setting, now, positions)                    -> (ProcedureState, TurnResult)
+
+	`start` GAINED `roundSeed` AND `roundSeconds` IN PROC-003 (its I-1, I-2).
+	Every scenario here passes `ROUND_SEED` and `ROUND_SECONDS` below; the
+	round is 1000 s long so that no PROC-001 check can reach PROC-003's
+	deadline (the latest turn here is at NOW + 105, the largest charge 3 points
+	at the shipped 20 s each), and no check here reads either value.
 
 	THE FIXTURE IS HAND-BUILT and depends on no generator sample and no rng
 	seed. Four players in a ring whose σ is written down, four rooms on a 2 x 2
@@ -63,6 +69,12 @@ export type Assignment = Ring.Assignment
 -- The base instant every scenario starts from. Not 0, so that `at = now` is
 -- distinguishable from `at = 0` (an unset field) in the log.
 TurnContract.NOW = 100
+
+-- PROC-003's two extra `start` arguments, as fixture data. The seed feeds only
+-- the blackout draw, which no PROC-001/002 check reads; the round is long
+-- enough that no PROC-001/002 scenario reaches the deadline (see the header).
+TurnContract.ROUND_SEED = 4242
+TurnContract.ROUND_SECONDS = 1000
 
 -- Seat order and the ring: kim -> zed -> amy -> bob -> kim. Class i at seat i,
 -- lens = k(σ(p)). kim's SUPPLIER (σ⁻¹) is bob, which AC-5 relies on.
@@ -244,7 +256,13 @@ local function allIdsAndUnknown(): { number }
 end
 
 local function started(P: Procedure, w: World): any
-	return P.start(w.facility, TurnContract.NOW, w.tuning)
+	return P.start(
+		w.facility,
+		TurnContract.NOW,
+		w.tuning,
+		TurnContract.ROUND_SEED,
+		TurnContract.ROUND_SECONDS
+	)
 end
 
 -- The holder, standing at the machine, turning it to its required setting at
@@ -1461,7 +1479,13 @@ function TurnContract.noCallMutatesItsArguments(P: Procedure)
 	end
 
 	guard("start", { facility = w.facility, tuning = w.tuning }, function()
-		P.start(w.facility, TurnContract.NOW, w.tuning)
+		P.start(
+			w.facility,
+			TurnContract.NOW,
+			w.tuning,
+			TurnContract.ROUND_SEED,
+			TurnContract.ROUND_SECONDS
+		)
 	end)
 	local state0 = started(P, w)
 	guard("isLive", { state = state0 }, function()

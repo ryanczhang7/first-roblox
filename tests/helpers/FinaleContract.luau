@@ -17,7 +17,7 @@
 	A `procedure` here is anything with the seven plain field functions the two
 	stories' Contracts write, called with a dot:
 
-	    P.start(facility, now, tuning)                     -> ProcedureState
+	    P.start(facility, now, tuning, roundSeed, roundSeconds) -> ProcedureState
 	    P.isLive(state, machineId)                         -> boolean
 	    P.dial(state, machineId, now)                      -> DialView
 	    P.turn(state, assignment, playerId, machineId,
@@ -34,6 +34,14 @@
 	1 -> 4, `instability_per_wrong_value` 1, `instability_per_out_of_order` 2,
 	`actuation_reset_seconds` 3 -> 5. AC-3 and AC-4 are ALSO run under the
 	shipped tuning, where they read out literally: +1, and "1, not 2".
+
+	SINCE PROC-003 `start` takes `roundSeed` and `roundSeconds` (TurnContract's
+	ROUND_SEED and ROUND_SECONDS, 1000 s), and the overrides raise
+	`instability_max` 5 -> 100: the F-9 check charges failed pair 4 + wrong
+	value 1 = 5, which under the shipped max would END THE ROUND (PROC-003 I-6)
+	and turn the checks that follow into `refused / round_over`. These checks
+	pin turn semantics, not round end, so the fixture is given room. The two
+	shipped-tuning checks charge 1 and are unaffected.
 
 	THE ORACLE PARTITION IS HONOURED HERE. Every criterion is SETTLED by
 	`mechanics.md` §3.2 and §5 (G12) and the Contract's F-1..F-12; every check
@@ -83,6 +91,8 @@ FinaleContract.OVERRIDES = {
 		instability_per_wrong_value = 1,
 		instability_per_out_of_order = 2,
 		instability_per_failed_pair = 4,
+		-- PROC-003: room below the max for the 5-point F-9 scenario (header).
+		instability_max = 100,
 	},
 }
 
@@ -119,7 +129,7 @@ function FinaleContract.shippedWorld(): World
 end
 
 local function started(P: Procedure, w: World): any
-	return P.start(w.facility, Turn.NOW, w.tuning)
+	return P.start(w.facility, Turn.NOW, w.tuning, Turn.ROUND_SEED, Turn.ROUND_SECONDS)
 end
 
 -- F-1: the three functions this story adds. Checked before use so a missing

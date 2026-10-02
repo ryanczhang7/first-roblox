@@ -34,6 +34,7 @@
 
 local Deep = require("../helpers/Deep")
 local Finale = require("../helpers/FinaleContract")
+local Turn = require("../helpers/TurnContract")
 
 local loaded, loadResult = pcall(require, "../../src/server/procedure/Procedure")
 
@@ -71,7 +72,7 @@ return {
 			`Procedure.tick is {typeof(P.tick)}, expected a function`
 		)
 		local w = Finale.world()
-		local state = P.start(w.facility, Finale.NOW, w.tuning)
+		local state = P.start(w.facility, Finale.NOW, w.tuning, Turn.ROUND_SEED, Turn.ROUND_SECONDS)
 		local next_, outcome = P.tick(state, w.assignment, Finale.NOW + 1, {})
 		assert(typeof(next_) == "table", `tick's first return is {typeof(next_)}, expected a state`)
 		assert(

@@ -70,7 +70,15 @@ local function standIn(defects: Defects): Contract.Procedure
 		return nil
 	end
 
-	function P.start(facility: any, _now: number, tuning: any): any
+	-- PROC-003 added `roundSeed` and `roundSeconds` to `start`; this stand-in
+	-- has no round end or blackout, so it accepts and ignores them.
+	function P.start(
+		facility: any,
+		_now: number,
+		tuning: any,
+		_roundSeed: number,
+		_roundSeconds: number
+	): any
 		return {
 			facility = facility,
 			committed = {},

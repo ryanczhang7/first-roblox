@@ -96,7 +96,15 @@ local function standIn(defects: Defects): Turn.Procedure
 		return true
 	end
 
-	function P.start(facility: any, _now: number, tuning: any): any
+	-- PROC-003 added `roundSeed` and `roundSeconds` to `start`; this stand-in
+	-- has no round end or blackout, so it accepts and ignores them.
+	function P.start(
+		facility: any,
+		_now: number,
+		tuning: any,
+		_roundSeed: number,
+		_roundSeconds: number
+	): any
 		return {
 			facility = facility,
 			committed = {},
@@ -544,6 +552,13 @@ return {
 			t.instance.turn_range_studs,
 			s.instance.turn_range_studs
 		)
+		-- PROC-003: the max must clear the 5-point F-9 scenario (FinaleContract header).
+		if t.actuation.instability_max <= 5 then
+			table.insert(
+				problems,
+				`instability_max override {t.actuation.instability_max} does not clear the 5-point F-9 scenario; PROC-003 would end the round inside it`
+			)
+		end
 		-- The shipped values the literal AC-3/AC-4 checks read out.
 		if
 			s.actuation.instability_per_failed_pair ~= 1

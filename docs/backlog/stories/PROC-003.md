@@ -4,8 +4,8 @@ title: Instability shortens the clock, darkens rooms and ends the round in a fix
 slug: instability-shortens-the-clock-darkens-r
 epic: EPIC-05
 type: feature
-status: todo
-phase: PLANNED
+status: in-progress
+phase: RED
 branch: story/PROC-003-instability-shortens-the-clock-darkens-r
 depends_on: [PROC-002]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -78,29 +78,140 @@ backstop that can never fire first.
 
 ## Contract
 
-**Module.** `src/server/procedure/Procedure.luau`, extended. This story adds:
+**Module.** `src/server/procedure/Procedure.luau`, extended. This story adds
+(amended by the PO at PLANNED → RED, 2026-10-02; see I-1 and I-2 for why the
+drafted `blackoutRng` field and the four-argument `start` were replaced):
 
-    ProcedureState.startedAt: number
-    ProcedureState.penaltySeconds: number
-    ProcedureState.dark: { [number]: boolean }      -- room id -> dark
-    ProcedureState.outcome: PhaseMachine.Outcome?
-    ProcedureState.blackoutRng: Rng.Rng             -- Rng.fromSeed(roundSeed):derive("blackout")
-    Procedure.start(facility, now, tuning, roundSeed: number) -> ProcedureState   -- CHANGED: gains roundSeed
+    ProcedureState.startedAt: number                -- the `now` passed to start
+    ProcedureState.roundSeconds: number             -- the `roundSeconds` passed to start
+    ProcedureState.penaltySeconds: number           -- 0 at start
+    ProcedureState.dark: { [number]: boolean }      -- Layout room id -> dark; {} at start
+    ProcedureState.outcome: PhaseMachine.Outcome?   -- nil at start
+    ProcedureState.roundSeed: number                -- the `roundSeed` passed to start
+    ProcedureState.blackoutDraws: number            -- nextInteger calls made on the blackout stream; 0 at start
+    Procedure.start(facility, now, tuning, roundSeed: number, roundSeconds: number) -> ProcedureState   -- CHANGED
     Procedure.deadline(state) -> number
     Procedure.isDark(state, room: number) -> boolean
-    Procedure.blackoutWeights(state) -> { [number]: number }   -- lit room -> weight; exported for AC-3
+    Procedure.blackoutWeights(state) -> { [number]: number }   -- every LIT room id -> its weight (0 included)
+    Procedure.drawRoom(weights: { [number]: number }, rng: Rng.Rng) -> number?   -- one draw (I-5); exported for AC-3
+    TurnResult refused reason gains "round_over"                -- CHANGED (additive), I-7
 
-- **Changed signature: `Procedure.start` gains `roundSeed`.** Callers as of
-  `PROC-002`'s DONE: `tests/server/procedure_*` only. RED lists them from the
-  tree and updates them in this RED. That is a change to its own epic's tests,
-  not to a frozen DONE story's test, **provided `PROC-001` and `PROC-002` are
-  the only callers**. Confirm with `rg "Procedure.start" src tests`.
-- `Outcome` is the phase machine's type. `src/server/procedure/` may require
-  `src/server/round/` (same layer).
-- The draw: build the list of lit rooms in ascending id, compute the weights,
-  and draw with `blackoutRng:nextInteger` over the cumulative integer weights.
-  Weights are integers (both weight constants are integers). The uniform
-  fallback draws over the list itself.
+- **Changed signature: `Procedure.start` gains `roundSeed` and `roundSeconds`.**
+  Callers, checked against `main` at `66748b6` with
+  `rg "\.start\(" src tests lune` (the `P.start` calls) — **tests only**, no
+  production caller:
+
+      tests/helpers/TurnContract.luau:247, :1464           (PROC-001)
+      tests/helpers/FinaleContract.luau:122                (PROC-002)
+      tests/server/procedure_test.luau:67                  (PROC-001)
+      tests/server/procedure_finale_test.luau:74           (PROC-002)
+      tests/server/procedure_controls_test.luau:73         (PROC-001 stand-in's own start)
+      tests/server/procedure_finale_controls_test.luau:99  (PROC-002 stand-in's own start)
+
+  RED updates every one in this RED: these are this epic's own tests, and
+  changing the fixture call is test data, not an assertion. RED's handoff states
+  the list was re-checked against the tree.
+- `Outcome` is the phase machine's type (`PhaseMachine.Outcome`, already required
+  by `Procedure` since `PROC-002`).
+
+**Pinned semantics (PO, at PLANNED → RED, 2026-10-02).** These continue P-1..P-11
+(`PROC-001`) and F-1..F-12 (`PROC-002`), which all still hold except where I-6
+and I-7 extend them. RED may amend any block below in place, with a dated reason
+next to it; GREEN builds what the amended block says.
+
+- **I-1. No live `Rng` in the state.** `Rng` streams are closures with mutable
+  state (`src/shared/Rng.luau`, `newStream`); a stream stored in the state would
+  be shared by every copy, so a draw on a new state would advance the old
+  state's stream too, breaking D3, P-11 and determinism. Instead the state holds
+  `roundSeed` and `blackoutDraws`. A draw builds
+  `Rng.fromSeed(state.roundSeed):derive("blackout")`, advances it by
+  `blackoutDraws` calls of `nextNumber()` (each `nextInteger` consumes exactly
+  one `nextNumber`), draws, and stores `blackoutDraws + <draws made>`. So the k-th blackout draw
+  of a round is the k-th `nextInteger` of that stream, whoever's state it is
+  made on.
+- **I-2. `roundSeconds` is passed in.** `round_seconds` lives in
+  `Tuning.round` (`src/shared/Tuning.luau`), not in `MechanicsTuning`, and
+  `start`'s `tuning` is `MechanicsTuning` (P-1). The session passes
+  `RoundConfig.fromTuning(Tuning).roundSeconds` (`SLICE-005`). Tests pass their
+  own value.
+- **I-3. The clock.** `deadline(state) = startedAt + roundSeconds −
+  penaltySeconds`. Every instability point charged, by any path (`wrong_setting`,
+  `not_live`, a failed pair from expiry), adds `points ×
+  actuation.instability_clock_penalty_seconds` to `penaltySeconds` in the same
+  event. **The clock is out at `now >= deadline`** (the remaining clock "reaches
+  0", §5).
+- **I-4. Crossings.** When a charge takes instability from `old` to `new`, every
+  `v` in `old+1 .. new` with `v % instability_blackout_threshold == 0` **and**
+  `v < instability_max` is one crossing, handled in ascending order. (The shipped
+  charges are all 1; tests that override a charge to 2 can cross twice.) Each
+  crossing darkens `blackout_rooms_per_threshold` rooms, one draw at a time,
+  recomputing the lit set between draws. A crossing with no lit room does
+  nothing and consumes no draw.
+- **I-5. The weights and the draw.** `blackoutWeights(state)` maps every lit
+  room (in `facility.layout.rooms`, not in `dark`) to the sum over the track
+  machines in it that are not committed of `blackout_weight_live_step` if
+  `isLive` (an armed machine is live, F-3) or `blackout_weight_waiting_step`
+  otherwise. Decoys and committed machines add 0; a room with neither is present
+  with weight 0. `drawRoom(weights, rng)`: let `rooms` be the keys in ascending
+  id. If `rooms` is empty, return nil and draw nothing. If the weights sum to
+  `W > 0`: `r = rng:nextInteger(1, W)`, return the first room whose cumulative
+  weight is `>= r` (so a zero-weight room is never returned). Otherwise (all
+  zero): `i = rng:nextInteger(1, #rooms)`, return `rooms[i]`. Exactly one
+  `nextInteger` per non-nil draw. A crossing calls `drawRoom(blackoutWeights(s),
+  <the stream of I-1>)`.
+- **I-6. One event, in this order** — `turn` and `tick` both:
+  1. If `outcome ~= nil`: nothing changes (AC-7). `tick` returns `(state,
+     state.outcome)`; `turn` returns `(state, { kind = "refused", machineId =
+     machineId, reason = "round_over" })`.
+  2. Expire an open window (F-8/F-9), charging through I-3/I-4/I-6.4.
+  3. If no outcome yet and `now >= deadline`: `outcome = { result = "lost",
+     reason = "clock" }`. A `turn` then returns `refused / round_over` with that
+     state (the turn arrived after the round ended).
+  4. Otherwise (`turn` only) evaluate the turn as `PROC-001`/`PROC-002` say. Any
+     charge it makes runs I-3 and I-4, then: if instability `>= instability_max`
+     → `lost / instability` (no blackout at the max, I-4); **else** if `now >=
+     deadline` → `lost / clock`. A commit that completes the Procedure
+     (`isComplete`) → `won / procedure_complete`.
+  Steps 2's charge uses the same post-charge check as step 4 (instability first,
+  then clock). So within one event a win is decided before anything else can
+  be (a commit charges nothing), instability before clock (§5, "Same-tick
+  ordering").
+- **I-7. `round_over` (additive to `TurnResult`).** The refusal for a turn on a
+  decided round, or one arriving at `now >= deadline`. It is free like every
+  refusal and writes no log entry. P-9's "state deep-equal to the one passed"
+  holds when the round was already decided before the call.
+- **I-8. `tick`'s second value is `state.outcome`** of the returned state — nil
+  until decided, then the same outcome on every later tick. `turn` exposes the
+  outcome through the returned state's `outcome`.
+- **I-9. `isDark(state, room)`** is `state.dark[room] == true`; false for an
+  unknown room id. Blackout is permanent: nothing ever clears `dark`.
+- **I-10. Non-mutation** (P-11, F-12) extends to `deadline`, `isDark`,
+  `blackoutWeights` and `drawRoom`'s `weights` (the `rng` it is handed is
+  advanced, by design).
+
+**The PROC-001/002 fixtures need room on the clock and below the max — RED's to
+fix.** With this story every charge shortens the clock and the round ends at
+`instability_max`. The `TurnContract` and `FinaleContract` fixtures charge up to
+several points and turn at times up to `NOW + 105` and beyond; under shipped
+values (`instability_max` 5, 20 s per point) some existing sequences would now
+end the round and turn later calls into `refused / round_over`. RED passes those
+fixtures a `roundSeconds` and, where needed, an `instability_max` override large
+enough that no PROC-001/002 check ends the round, and lists in the handoff each
+check it re-read against I-6. That is fixture data, not a weakened assertion:
+those checks pin turn semantics, not round end.
+
+**Test files.** `tests/server/procedure_outcome_test.luau` and
+`tests/server/procedure_outcome_controls_test.luau`, checks in
+`tests/helpers/OutcomeContract.luau`, following the `TurnContract` /
+`FinaleContract` pattern. A facility whose layout has rooms of known weights may
+be hand-built for AC-3/AC-4; reuse `TurnContract`'s fixture where it fits.
+
+**Epic check (PO, 2026-10-02).** EPIC-05 done-when #4 is this story's whole:
+clock penalty (AC-1), blackout crossings and weighted draw (AC-2..AC-5), loss at
+the max and the single-event order win → instability → clock (AC-6, AC-7).
+Done-when #5 is `PROC-005`. No gap.
+
+**Gate.** `unit` (required) runs `lune run test`. `required_gates` stays `[]`.
 
 **Oracle partition.** AC-1, AC-2, AC-4 and AC-6 to AC-8 are **settled** by
 `mechanics.md` §5 and `tuning.md` §4: read every number from `MechanicsTuning`
@@ -116,6 +227,15 @@ this. Owner: GATES.
 
 **D-2. Order of outcomes.** Use `scripts/mutate.sh` to swap the instability and
 clock checks. AC-6's second clause **must** then fail. Owner: GATES.
+
+**D-3. A decided round stays decided.** Use `scripts/mutate.sh` to remove the
+`outcome ~= nil` guard (I-6 step 1) from `turn`. AC-7 **must** then fail. RED
+cannot run this. Owner: GATES.
+
+**D-4. The draw reads the right stream.** Use `scripts/mutate.sh` to change the
+`"blackout"` label in the derive to another string. AC-5's equivalence with an
+independently built `Rng.fromSeed(seed):derive("blackout")` stream **must**
+then fail. RED cannot run this. Owner: GATES.
 
 ## Out of scope
 
@@ -158,31 +278,464 @@ from an upstream story or spike (as noted above), amend it and re-run
 
 - PLANNED - `lead-po` - `claude-opus-5-5` (Opus 5.5, from the session's own model
   identification; the /plan-product dispatch reported no override). 2026-09-30.
+- PLANNED → RED contract pinning - `lead-po` - `claude-opus-5-5`. 2026-10-02.
+- RED - `test-developer` - `claude-fable-5-1` (Fable 5.1). The dispatch passed
+  `model: fable` explicitly; the agent self-reports Fable 5.1. 2026-10-02.
 
 ## Test plan
 
-<!-- Filled by the Test Developer during RED: which tests, at which level,
-     and which AC each one covers. -->
+All unit level, on the pure module, through `lune run test`. The checks live
+once in `tests/helpers/OutcomeContract.luau`, are applied to the real module in
+`tests/server/procedure_outcome_test.luau`, and are observed to accept a
+reference stand-in and to fire against one-defect stand-ins in
+`tests/server/procedure_outcome_controls_test.luau` - the `TurnContract` /
+`FinaleContract` pattern.
+
+**Fixtures.** `TurnContract`'s facility (rooms: 11, 12, 19 in 1; 13, 14 in 2;
+15, 16 in 3; 17, 18 in 4) under the shipped tuning with eleven overrides:
+clock penalty **7** (not 20), blackout threshold **3** (not 2), rooms per
+threshold **2** (not 1), `instability_max` **6** (not 5; a multiple of the
+threshold so a blackout fired at the max is visible), live weight **5**,
+waiting weight **2** (not equal, not 1), plus PROC-001/002's turn range 7,
+window 3, reset 5, wrong value 1, out of order 2, failed pair 1. Start weights
+are therefore `{ 1 = 7, 2 = 7, 3 = 4, 4 = 2 }` (recomputed independently in
+the controls file). `start` is given `roundSeed = 9001`, `roundSeconds = 200`
+(deadline 300), or a scenario's own value. An "every point" variant (threshold
+1, one room per crossing, max 10) and a hand-built three-room facility (every
+track step in room 1, a decoy in room 2, step 31 + a decoy in room 3; with 31
+committed room 1 weighs 14 and rooms 2, 3 weigh 0) serve AC-3's first clause,
+AC-4 and AC-5. Two "shipped" rows use `MechanicsTuning` unmodified and
+`Tuning.round.round_seconds`.
+
+**`procedure_outcome_test.luau` - the real module (23 tests, all red in RED)**
+
+| Test (OutcomeContract check) | Asserts | AC / I |
+|---|---|---|
+| exports (inline) | `deadline`, `isDark`, `blackoutWeights`, `drawRoom` are functions, alongside the seven existing | Contract |
+| `startCarriesTheRoundFieldsAndTheNewExportsAnswerInShape` | `startedAt = 100`, `roundSeconds = 200`, `penaltySeconds = 0`, `dark = {}`, `outcome = nil`, `roundSeed = 9001`, `blackoutDraws = 0` (deep-equal); `deadline = 300`; `isDark` false for 1..4 and 99; `blackoutWeights = { 7, 7, 4, 2 }`; `tick` at start returns a deep-equal state and nil, `state.outcome` nil | Contract, I-1, I-2, I-8 |
+| start stores what it is handed (inline) | two starts with seeds 11/12 and 300/400 s differ in `roundSeed`, `roundSeconds`, `deadline` | I-1, I-2 |
+| `deadlineIsStartPlusRoundSecondsLessThePenaltyPerPoint` | 300; 293 after a wrong setting; 279 after a not_live decoy (+2 at once); 300 with every ordinary step committed; 300 with A armed; 293 after the window expires by tick. `penaltySeconds` = points x 7 throughout | AC-1, I-3 |
+| `underTheShippedTuningTheDeadlineReadsLiterally` | 520, 500, 480 | AC-1 |
+| `risingToJustBelowTheThresholdDarkensNothing` | at 1 and 2: `dark = {}`, `blackoutDraws = 0`, outcome nil | AC-2 |
+| `crossingTheThresholdDarkensExactlyRoomsPerThresholdByTheWeightedDraw` | weights at 2 are start's; 2 -> 3 darkens exactly the two rooms `drawRoom(weights, Rng.fromSeed(9001):derive("blackout"))` returns (first removed before the second), `blackoutDraws = 2`, `isDark` agrees, outcome nil, `blackoutWeights` has exactly the lit rooms as keys | AC-2, AC-3 (weighting), I-1, I-4, I-5 |
+| `aChargeThatJumpsOverTheMultipleStillCrossesIt` | 2 -> 4 by one not_live charge darkens the same two rooms (crossing 3 handled); 4 -> 5 adds none | AC-2, I-4 |
+| `reachingInstabilityMaxEndsTheRoundWithoutAnotherBlackout` | at 5 outcome nil; the sixth point's turn is `rejected / wrong_setting`, instability 6, `outcome = lost / instability`, still two rooms dark, still two draws | AC-2 (third sentence), AC-6 |
+| `oneLitRoomHoldingEveryUncommittedStepIsAlwaysTheOneDarkened` | three-room facility, 40 seeds: weights `{ 14, 0, 0 }`; the crossing darkens exactly room 1 every time | AC-3 first clause (settled) |
+| `theHeavierOfTwoRoomsIsDrawnThreeTimesInFour` | 20,000 `drawRoom({ [4] = 3, [7] = 1 }, stream)` on seed 9001's "blackout" stream: frequency of 4 in [0.73, 0.77]; only 4 or 7 ever returned | AC-3 second clause (oracle-free) |
+| `drawRoomMapsTheDrawToTheFirstRoomWhoseCumulativeWeightReachesIt` | scripted rng: `{1=3,2=1}` r=1,3 -> 1, r=4 -> 2 with one `nextInteger(1, 4)`; `{1=0,2=3,3=0,4=1}` r=1,3 -> 2, r=4 -> 4 (zero rooms skipped); `{9=1,2=2}` r=2 -> 2, r=3 -> 9 (ascending id, `(1, 3)`); all-zero `{2,5,9}` i=1 -> 2, i=3 -> 9 with `(1, 3)`; `{6=0}` -> 6 with `(1, 1)`; `{}` -> nil, no call; weights never mutated; never `nextNumber`/`shuffle`/`derive` | I-5, I-10 |
+| `everyLitRoomAtWeightZeroStillDarkensOneAndNoneLitDoesNothing` | three-room facility, threshold 1: crossing 1 -> room 1; crossing 2 (both lit rooms at 0) -> the room `drawRoom` predicts, `blackoutWeights` then one key at 0; crossing 3 -> the last; crossing 4 (none lit) -> nothing dark added, `blackoutDraws` stays 3, `blackoutWeights = {}`, no raise, instability 4, outcome nil | AC-4, I-4 |
+| `theSameSeedReplaysTheSameRoomsInTheSameOrder` | every-point tuning: four crossings twice on seed 9001 give the same four rooms in order, equal to `predictDraws` on the independent stream; seed 9002 likewise | AC-5, I-1 |
+| `drawingFromTheBlackoutStreamMovesNoGeneratorDraw` | `Generator.generate(assignment, 9001, MechanicsTuning)` deep-equal before/after four blackouts on roundSeed 9001; `Rng.fromSeed(9001):derive("instance")` first 8 draws unchanged | AC-5 |
+| `theLastFinaleCommitBeforeTheDeadlineWinsAndAtTheDeadlineItIsRoundOver` | 50 s round: A armed at 149, B at 149.999 -> `committed`, `outcome = won / procedure_complete`, `isComplete` true, tick at 250 returns `won` twice; B at exactly 150 -> `refused / round_over`, `outcome = lost / clock`, nothing committed, no log entry | AC-6 first clause, I-3, I-6 step 3, I-7, I-8 |
+| `instabilityMaxAndTheClockInOneTurnRecordInstability` | 50 s round, sixth point at 108 (deadline 115 -> 108, clock exactly 0) and 49 s round, sixth point at 110 (114 -> 107, below 0): both `lost / instability`; the round was undecided before; the turn is the ordinary rejection; `deadline` moved | AC-6 second clause, I-6 step 4 |
+| `theDeadlinePassingByTimeAloneIsLostClockAtExactlyTheDeadline` | tick at 299.999 no-op; at 300 `lost / clock` as second value AND `state.outcome`, nothing else changed; at 1300 the same; after one point tick at 292.999 no-op and at 293 lost; a correct turn at 300 -> `refused / round_over` on input + `lost / clock` | AC-6 third clause, I-3, I-6 step 3, I-7, I-8 |
+| `underTheShippedTuningFiveWrongTurnsLoseByInstabilityWithTwoRoomsDark` | shipped tuning, 420 s: turns 11, 14, 18, 19, 11 at 100..104: dark count 0, 1, 1, 2, 2; outcome nil until the fifth, then `lost / instability`; deadline 420 (clock not out) | AC-6 shipped, AC-2 shipped |
+| `tickExpiryChargesTheClockCrossesTheThresholdAndCanEndTheRound` | with the finale live: weights `{ 0, 5, 0, 5 }`; two wrong finale turns then an expired window -> instability 3, deadline 279, two rooms dark via `tick`, second return nil; two more wrong turns and another expiry -> `tick` returns `lost / instability` twice, instability 6, `armed` nil, still two dark | I-6 step 2, I-3, I-4, I-8 |
+| `aDecidedRoundStaysDecided` | won, lost / instability, lost / clock (A still armed): six kinds of later turn (wrong, correct, decoy, finale, unknown id, non-holder) at two later times -> `refused / round_over` echoing the id, state deep-equal; ticks at three times -> same outcome, same state; the decided state never mutated | AC-7, I-6 step 1, I-7 |
+| `isDarkIsTrueForTheRestOfTheRound` | after the crossing the two dark rooms read true, lit rooms and 99 false, through five commits, a tick, arming, completing and the win; `dark` never shrinks | AC-8, I-9 |
+| `noOutcomeCallMutatesItsArguments` | `deadline`, `isDark`, `blackoutWeights`, `drawRoom`'s weights, a crossing turn, a clock-ending tick, a round_over turn: arguments deep-equal; a crossing downstream does not reach back | I-10 |
+
+**`procedure_outcome_controls_test.luau` - stand-ins (12 tests, all green in RED)**
+
+| Test | Stand-in defect | Fires exactly / measures |
+|---|---|---|
+| baseline | none (the reference) | 0 of 21 outcome checks |
+| audit | none | 0 of 20 `TurnContract` checks, 0 of 22 `FinaleContract` checks (the mechanical half of the I-6 audit) |
+| fixtures: overrides distinct | - | every override differs from shipped and from what it must be told from; max is a multiple of the threshold; shipped 420 / 20 / 5 / 2 / 1 / 1 / 1 as the literal checks assume |
+| fixtures: weights recomputed | - | `{ 7, 7, 4, 2 }` from the placement and tracks, without the module |
+| fixtures: three-room facility | - | every step in room 1 except 31 (room 3); decoys one each in rooms 2, 3; ids not indices; positions distinct |
+| AC-3 control | uniform draw | frequency **0.50355** (reference **0.7527**); fires zero-weight, frequency, drawRoom mapping |
+| AC-6 control | clock checked before instability | sixth point on a 49 s round: **lost / clock** (reference lost / instability); fires the ordering check |
+| AC-7 control | no outcome guard | fires the decided-round check |
+| AC-2 control | blackout at the max | **4** dark rooms at the max (reference **2**); fires max-darkens-nothing and expiry-to-the-max |
+| I-1 control | `derive("instance")` | fires the five checks that predict WHICH rooms (crossing, jump, max, AC-4, replay) |
+| I-1 control | ignores `blackoutDraws` | fires the four-crossing replay check only (measured: every two-draw check coincides on seed 9001) |
+| I-3 control | out at `now > deadline` | fires the finale-at-deadline and tick-at-deadline checks |
+
+**PROC-001/002 updated.** `start` gains two arguments in every fixture call
+(`TurnContract.ROUND_SEED = 4242`, `ROUND_SECONDS = 1000`);
+`FinaleContract.OVERRIDES` gains `instability_max = 100`; both controls'
+reference stand-ins accept and ignore the new arguments. No assertion changed.
 
 ## Handoff: RED -> GREEN
 
-<!-- Filled by the Test Developer at the end of RED. This is the ONLY channel
-     to the Feature Developer, whose context is fresh. Must contain:
-       * the exact command that runs the new tests
-       * the failure output, and why it is the RIGHT failure
-       * every file touched, and which AC each test covers
-       * the EXPORT SHAPE the tests already pin: every module they import, the
-         exact exported names and signatures, and the types the assertions
-         destructure. Not a suggestion - a test already imports them, so a
-         wrong guess is a compile error. Say what the tests do NOT constrain
-         too, so it stays the implementer's choice.
-       * any test that passed on arrival, and the probe or negative control
-         that earns it
-       * the EXPECTED VALUE of every negative control, as a table: threshold,
-         candidate range, and the number the control measured. In RED the
-         suite fails at import, so no assertion in it has run - the controls
-         are claims until GREEN confirms them against the shipped module
-       * anything discovered that changes the approach -->
+**Model this RED resolved to:** Fable 5.1 (`claude-fable-5-1`), the `fable` row
+of `## Model guidance`. The dispatch message named no `model:` override; the
+agent definition's own `model:` is what I ran on. 2026-10-02.
+
+### The command
+
+    lune run test
+
+runs the whole suite (`tests/**/*_test.luau`); there is no per-file switch. The
+`unit` gate is the same command. Snapshot the test files before GREEN starts:
+
+    bash scripts/frozen.sh snapshot tests/helpers/OutcomeContract.luau tests/helpers/TurnContract.luau \
+      tests/helpers/FinaleContract.luau tests/server/procedure_outcome_test.luau \
+      tests/server/procedure_outcome_controls_test.luau tests/server/procedure_test.luau \
+      tests/server/procedure_finale_test.luau tests/server/procedure_controls_test.luau \
+      tests/server/procedure_finale_controls_test.luau
+
+### The failure, verbatim
+
+From `bash scripts/gates.sh --fast` on the uncommitted RED tree, 2026-10-02
+(unit gate log `.claude/state/gate-logs/unit.log`):
+
+    740 passed, 23 failed
+
+All 23 are `tests/server/procedure_outcome_test.luau` (every test in it); the
+12 new control tests pass, and the 728 that passed before this RED still pass.
+Every failure block, abridged to its first line where the lines repeat:
+
+    FAIL  tests/server/procedure_outcome_test.luau :: Contract: Procedure exports deadline, isDark, blackoutWeights and drawRoom as plain field functions, alongside PROC-001/002's seven
+          ...procedure_outcome_test:80: the Contract's exports are not all functions: Procedure.deadline is nil, Procedure.isDark is nil, Procedure.blackoutWeights is nil, Procedure.drawRoom is nil
+
+    FAIL  tests/server/procedure_outcome_test.luau :: Contract: start stores the roundSeed and roundSeconds it was handed, not constants - two starts with different values differ in exactly those fields and in deadline
+          ...procedure_outcome_test:95: roundSeed is nil / nil, expected 11 / 12
+
+    FAIL  tests/server/procedure_outcome_test.luau :: AC-7/I-7: once won, lost / instability or lost / clock, every later turn - wrong, correct, decoy, finale, unknown id, non-holder - is refused / round_over on a deep-equal state, and every later tick returns the same outcome and the same state
+          AC-7/I-7: once decided, every later turn is refused / round_over on a deep-equal state and every later tick returns the same outcome:
+    won: precondition - state.outcome is nil, expected { reason = "procedure_complete", result = "won" }
+    lost / instability: precondition - state.outcome is nil, expected { reason = "instability", result = "lost" }
+    lost / clock (with A still armed): precondition - state.outcome is nil, expected { reason = "clock", result = "lost" }
+
+    FAIL  tests/server/procedure_outcome_test.luau :: Contract/I-1/I-2: start(facility, now, tuning, roundSeed, roundSeconds) carries startedAt, ... tick at start returns the state and nil
+          I-2: Procedure.deadline is nil, expected a function
+    FAIL  ... :: AC-1/I-3: deadline is startedAt + roundSeconds minus instability_clock_penalty_seconds (the fixture's 7, not 20) per point, ...
+          I-2: Procedure.deadline is nil, expected a function
+    FAIL  ... :: AC-1 under the SHIPPED tuning: with round_seconds 420 the deadline is t0 + 420, then 500 after one point and 480 after two ...
+          I-2: Procedure.deadline is nil, expected a function
+    FAIL  ... :: AC-6: the last finale commit at deadline - 0.001 is won / procedure_complete ...
+          I-2: Procedure.deadline is nil, expected a function
+    FAIL  ... :: AC-6/I-6: a wrong turn that reaches instability_max AND whose penalty takes the clock to exactly 0, or below it, records lost / instability ...
+          I-2: Procedure.deadline is nil, expected a function
+    FAIL  ... :: AC-6/I-3/I-8: tick at deadline - 0.001 changes nothing; at exactly the deadline it is lost / clock ...
+          I-2: Procedure.deadline is nil, expected a function
+    FAIL  ... :: AC-6 under the SHIPPED tuning: five wrong turns lose by instability (max 5) ...
+          I-2: Procedure.deadline is nil, expected a function
+    FAIL  ... :: I-6 step 2: an expired finale window charges through the clock (7 s), crosses the threshold ...
+          I-2: Procedure.deadline is nil, expected a function
+    FAIL  ... :: I-10: deadline, isDark, blackoutWeights, drawRoom's weights, a crossing turn, ...
+          I-2: Procedure.deadline is nil, expected a function
+    FAIL  ... :: AC-2: rising to 1 and to 2 (threshold 3) darkens nothing and draws nothing
+          I-2: Procedure.isDark is nil, expected a function
+    FAIL  ... :: AC-2/I-5: rising from 2 to 3 darkens EXACTLY blackout_rooms_per_threshold (2) rooms ...
+          I-2: Procedure.isDark is nil, expected a function
+    FAIL  ... :: AC-2/I-4: a 2-point charge from 2 to 4 skips the value 3 but still crosses it once ...
+          I-2: Procedure.isDark is nil, expected a function
+    FAIL  ... :: AC-2/AC-6: reaching instability_max (6, a multiple of threshold 3) is lost / instability with no blackout at the max ...
+          I-2: Procedure.isDark is nil, expected a function
+    FAIL  ... :: AC-3: with every uncommitted step in one lit room and the other lit rooms at weight 0 ...
+          I-2: Procedure.isDark is nil, expected a function
+    FAIL  ... :: AC-4/I-4: with every lit room at weight 0 a crossing still darkens one lit room ...
+          I-2: Procedure.isDark is nil, expected a function
+    FAIL  ... :: AC-5/I-1: one seed replays four crossings as the same four rooms in the same order ...
+          I-2: Procedure.isDark is nil, expected a function
+    FAIL  ... :: AC-5: Generator.generate with seed s deep-equals itself before and after a Procedure on roundSeed s drew four blackouts ...
+          I-2: Procedure.isDark is nil, expected a function
+    FAIL  ... :: AC-8/I-9: a dark room reads isDark true through commits, a tick, arming, completing and the win ...
+          I-2: Procedure.isDark is nil, expected a function
+    FAIL  ... :: AC-3 (oracle-free): over 20,000 draws of drawRoom({ [4] = 3, [7] = 1 }) on one "blackout" stream, room 4 is drawn with frequency 0.75 +/- 0.02
+          I-2: Procedure.drawRoom is nil, expected a function
+    FAIL  ... :: AC-3/I-5: drawRoom is exactly one nextInteger(1, W) mapped to the first room in ascending id whose cumulative weight reaches it ...
+          I-2: Procedure.drawRoom is nil, expected a function
+
+**Gate shape (`gates.sh --fast`, 2026-10-02, local Windows):**
+
+    PASS         format (1s, observed 129)
+    PASS         lint (2s, observed 129, floor 1)
+    PASS         typecheck (5s, observed 24)
+    FAIL         unit (193s, exit 1) -> .claude/state/gate-logs/unit.log
+    UNCONFIGURED coverage
+    PASS         build (1s, observed 88474)
+    FAIL         harness (31s, exit 1) -> .claude/state/gate-logs/harness.log
+
+`harness` is `project-counters: 39 passed, 1 failed`, the one being "the working
+tree carries no stray .luau files", the uncommitted-tree precondition, which
+goes green at the RED commit (the baselines themselves, 129/129/24, already
+match: AC-7 passed). `stylua --check src tests lune` and `selene src tests lune`
+are clean (0 errors, 0 warnings). No test in the suite owns a timeout; Lune's
+runner has none, so there is nothing to budget. The three new files run in
+under a second in isolation (the 20,000-draw frequency check included: 0.8 s
+for the whole controls file); the suite's 193 s is the existing sweeps.
+
+**Why it is the right failure.** The module loads (PROC-001/002 wrote it), so
+no test fails at import. All 23 tests in `procedure_outcome_test.luau` are red,
+each on its own first assertion, in one of three ways: (a) 19 tests fail on a
+`need()` guard that names the missing export (`I-2: Procedure.deadline is nil,
+expected a function`, or `isDark` / `drawRoom`) - the guard exists so a missing
+export reads as a named absence rather than "attempt to call a nil value";
+(b) the exports test lists all four missing by name; (c) two tests that use
+only PROC-001/002's exports fail on behaviour: `start` ignores the new
+arguments (`roundSeed is nil / nil, expected 11 / 12`), and no decided state
+can be built (`won: precondition - state.outcome is nil, expected { reason =
+"procedure_complete", result = "won" }`, and the same for both losses). None is
+a timeout, config or lint error. Nothing else in the suite moved: the 728 that
+passed before this RED still pass, the 12 new control tests pass, and the 46
+PROC-001/002 tests stay green against the existing module - it ignores the two
+extra `start` arguments and their fixtures were given room on the clock and
+below the max (see the audit below).
+
+### Files touched
+
+| File | Change |
+|---|---|
+| `tests/helpers/OutcomeContract.luau` | NEW. Fixtures (TurnContract's with the overrides, the every-point variant, the three-room facility), scenario helpers, the 21 checks, `CHECKS`, `failures`, `heavierRoomFrequency`, `predictDraws`, `darkRooms`, `blackoutStream` |
+| `tests/server/procedure_outcome_test.luau` | NEW. The 23 tests on the real module (`pcall(require)` + per-test re-check) |
+| `tests/server/procedure_outcome_controls_test.luau` | NEW. Reference stand-in (P-1..P-11, F-1..F-12, I-1..I-10) + seven one-defect stand-ins + fixture assertions; 12 tests |
+| `tests/helpers/TurnContract.luau` | `ROUND_SEED`, `ROUND_SECONDS`; `started` and the P-11 `start` guard pass them; header documents the new signature. No assertion changed |
+| `tests/helpers/FinaleContract.luau` | `started` passes them; `OVERRIDES.actuation.instability_max = 100`; header says why. No assertion changed |
+| `tests/server/procedure_test.luau` | the inline `start` call passes them |
+| `tests/server/procedure_finale_test.luau` | the inline `start` call passes them (`Turn` required at the top) |
+| `tests/server/procedure_controls_test.luau` | reference stand-in's `start` accepts and ignores `_roundSeed, _roundSeconds` |
+| `tests/server/procedure_finale_controls_test.luau` | same; the F-2 fixtures test also requires `instability_max > 5` |
+| `.claude/tests/project-counters.test.sh` | `BASE_FORMAT`/`BASE_LINT` 126 -> 129 (three new `.luau` under `tests/`), provenance comment; `BASE_TYPECHECK` and the narrow counts unchanged. GREEN adds no `.luau` file, so these are the post-GREEN counts too. Commit it in the RED commit (check-boundaries 3j freezes `.claude/tests/**` outside RED) |
+| `docs/backlog/stories/PROC-003.md` | `## Test plan`, this section |
+
+No manifest, no config, no source. `.claude/state/red/` holds my scratch
+runner and probe; it is ignored and not for commit.
+
+### Callers of `start` re-checked against the tree (2026-10-02)
+
+    rg "\.start\(" src tests lune
+
+finds, besides the definition, exactly the Contract's six sites - now updated -
+plus the three new files: `TurnContract.luau:259` (`started`) and `:1482` (the
+P-11 guard), `FinaleContract.luau:132`, `procedure_test.luau:68`,
+`procedure_finale_test.luau:75`, `procedure_controls_test.luau:75` and
+`procedure_finale_controls_test.luau:101` (the stand-ins' own `start`),
+`OutcomeContract.luau:223`, `procedure_outcome_test.luau:93-94`,
+`procedure_outcome_controls_test.luau:101, :571, :595`. `rg
+"require\(.*procedure/Procedure"` finds only the three `*_test.luau` files that
+test the real module. No production caller; the Contract's list holds.
+
+### The export shape the tests pin (facts - a test already imports them)
+
+Module: `src/server/procedure/Procedure.luau`, required as
+`require("../../src/server/procedure/Procedure")` from `tests/server/`. Every
+export is a plain field on the returned table, called with a dot.
+
+- `Procedure.start(facility, now, tuning, roundSeed: number, roundSeconds: number) -> ProcedureState`.
+  The returned state carries, **deep-equal**: `startedAt = now`, `roundSeconds`,
+  `penaltySeconds = 0`, `dark = {}`, `outcome = nil` (absent or nil - `Deep`
+  treats them alike), `roundSeed`, `blackoutDraws = 0`, alongside PROC-001/002's
+  fields. `TurnContract.startReturnsTheContractState` checks six named fields
+  only, so the new ones do not disturb it.
+- `Procedure.deadline(state) -> number`, compared with `==` against
+  `startedAt + roundSeconds - penaltySeconds`. `state.penaltySeconds` is read
+  directly too (`== points x instability_clock_penalty_seconds`).
+- `Procedure.isDark(state, room: number) -> boolean`, compared with `~= false`
+  / `~= true` - a real boolean, `false` for an unknown id (99).
+- `Procedure.blackoutWeights(state) -> { [number]: number }`, compared by
+  `Deep.equal` against a map with **every lit room as a key, zero-weight rooms
+  included, dark rooms absent**: `{ [1] = 7, [2] = 7, [3] = 4, [4] = 2 }` at
+  start under the overrides; `{}` when every room is dark. Weight = sum over the
+  room's track machines that are not committed of `blackout_weight_live_step`
+  if `isLive` else `blackout_weight_waiting_step`; decoys 0.
+- `Procedure.drawRoom(weights, rng) -> number?`, pinned by a scripted rng:
+  **exactly one** `rng:nextInteger(1, W)` when the weights sum to `W > 0`,
+  returning the first room in ascending id whose cumulative weight `>= r`;
+  exactly one `rng:nextInteger(1, #rooms)` returning `rooms[i]` (ascending id)
+  when every weight is 0; `nil` and **no call** for `{}`. It must not call
+  `nextNumber`, `shuffle` or `derive` on the rng it is handed (the scripted rng
+  raises on those). `weights` is not mutated.
+- The blackout stream: the k-th draw of a round equals the k-th `nextInteger`
+  of an independent `Rng.fromSeed(state.roundSeed):derive("blackout")`. The
+  tests predict rooms with `drawRoom(weights, thatStream)` and compare against
+  `state.dark`; `state.blackoutDraws` must count every non-nil draw (2 after a
+  crossing of 2 rooms; unchanged by a crossing with no lit room).
+- `state.dark` is read as `dark[room] == true`; `darkRooms` lists keys whose
+  value is `true`. A room darkened is `dark[room] = true`.
+- `state.outcome` is compared by `Deep.equal` against **exactly**
+  `{ result = "won", reason = "procedure_complete" }`,
+  `{ result = "lost", reason = "instability" }` or
+  `{ result = "lost", reason = "clock" }` - no extra field.
+- `tick(state, assignment, now, positions) -> (state, state.outcome)`: the
+  second value is compared by `Deep.equal` to the first value's `.outcome`,
+  nil until decided. `positions` is `{}` in every tick here.
+- `turn` on a decided round, or arriving at `now >= deadline`, returns
+  `{ kind = "refused", machineId = <the id passed>, reason = "round_over" }`
+  **before** `unknown_machine` (an unknown id on a decided round is
+  `round_over`). The state returned is deep-equal to the input when the round
+  was decided before the call; when the call itself decides it by the clock, it
+  is the input plus `outcome = lost / clock` and nothing else (no log entry, no
+  dial, no commit).
+- The turn that reaches `instability_max` returns the **ordinary** result
+  (`rejected / wrong_setting`) with the outcome on the state. A completing
+  finale turn returns `committed` with `outcome = won / procedure_complete`.
+- Order within one event, as I-6: a charge checks instability first (`>=
+  instability_max`), then the clock (`now >= deadline`), **the clock being read
+  after the penalty is applied**. Expiry by `tick` or inside `turn` charges
+  through the same path (penalty, crossings, outcome).
+- Crossings: every `v` in `old+1 .. new` with `v % threshold == 0 and v <
+  instability_max`, ascending; each draws `blackout_rooms_per_threshold` rooms
+  one at a time, recomputing the weights between draws; nothing at the max.
+- Constants are read from `state.tuning.actuation`: `instability_clock_penalty_seconds`,
+  `instability_blackout_threshold`, `blackout_rooms_per_threshold`,
+  `instability_max`, `blackout_weight_live_step`, `blackout_weight_waiting_step`
+  (plus PROC-001/002's). Every one is overridden to a distinct value, so reading
+  the module-level `MechanicsTuning` or the wrong constant fails a named check.
+- `Tuning.round.round_seconds` is **not** read by the module; the shipped-row
+  tests pass it as `roundSeconds`.
+
+**Not constrained** (your choice): how the stream is advanced internally
+(`nextNumber` x `blackoutDraws` per draw, or once per crossing, or any scheme
+with the same k-th-draw property); whether `dark` also carries explicit
+`false`s; how `blackoutWeights` walks the placement; whether `copy` clones
+`dark` and `outcome` (I-10 only requires arguments left deep-equal and the new
+state independent); what `dial` answers in a dark room; whether `tick`'s
+`assignment` or `positions` are read; the text of any error; the `TurnResult`
+type's exact union shape beyond the `round_over` literal.
+
+### Tests that passed on arrival, and what earns them
+
+All 12 tests in `procedure_outcome_controls_test.luau` pass in RED by design:
+they run the `OutcomeContract` checks against stand-ins, not the module. What
+earns each: the reference stand-in is accepted by all 21 outcome checks, all 20
+`TurnContract` checks and all 22 `FinaleContract` checks (positive control),
+and every defective stand-in was **observed** to fire the exact set of checks
+its test names (the `[measured]` lines in the unit log). Nothing in
+`procedure_outcome_test.luau` passes.
+
+The 46 PROC-001/002 tests pass on arrival against the existing module because
+only their fixture calls changed (two extra `start` arguments the module
+ignores; a larger `instability_max` for the finale fixture). No assertion in
+them changed, so nothing new needs earning; their controls fire the same sets
+they did before (unchanged `[measured]` lines).
+
+### Negative controls: expected values, measured in RED
+
+Unlike an import-failing RED, these controls **did execute**: the stand-ins
+need only merged modules. GREEN's job is to confirm the real module is
+*accepted* by the same checks (the 23 red tests going green) and to read the
+same numbers off the shipped module where a row names one.
+
+| Control (one defect on the reference) | Threshold / expected (reference) | Measured on the control | Checks that fired (exactly) |
+|---|---|---|---|
+| AC-3: uniform draw | heavier-room frequency in [0.73, 0.77]; reference **0.7527** on seed 9001 (deterministic - GREEN's `drawRoom` must read exactly 0.7527 on that stream if it implements I-5) | **0.50355**; picks a zero-weight room on some of the 40 seeds (uniform over three rooms hits room 1 about one time in three) | `oneLitRoom…`, `theHeavierOfTwoRooms…`, `drawRoomMaps…` |
+| AC-6: clock before instability | sixth point on a 49 s round: `lost / instability` | **`lost / clock`** | `instabilityMaxAndTheClockInOneTurn…` |
+| AC-7: no outcome guard | later turns `refused / round_over`, state deep-equal | turns evaluated and charged; the armed window on the lost / clock state expires | `aDecidedRoundStaysDecided` |
+| AC-2: blackout at the max | **2** dark rooms at instability 6 | **4** | `reachingInstabilityMax…`, `tickExpiryCharges…` |
+| I-1: `derive("instance")` | rooms as predicted on the "blackout" stream | different rooms (e.g. `{ 2, 3 }` for `{ 1, 2 }` at the crossing) | the five checks that predict which rooms: crossing, jump, max, AC-4, replay |
+| I-1: ignores `blackoutDraws` | replay order `{ 1, 2, 4, 3 }` on seed 9001 | **`{ 1, 2, 3, 4 }`** | `theSameSeedReplays…` only - the two-draw checks coincide on this seed (see the comment in the controls file) |
+| I-3: out at `now > deadline` | B at exactly 150 `round_over`; tick at 300 `lost / clock` | B at 150 **commits and wins**; tick at 300 returns **nil** | `theLastFinaleCommit…`, `theDeadlinePassing…` |
+| reference | - | 0 of 21 / 0 of 20 / 0 of 22 fail | - |
+
+Three predictions were wrong on first run and corrected in the controls file
+*to what was measured*, with the reason beside each: the wrong-stream control
+does not fire the expiry check (the two finale rooms are the only weighted
+ones, so two draws take both whatever the stream says) nor the AC-8 check (it
+pins persistence, not which rooms); the ignores-`blackoutDraws` control fires
+only the four-crossing replay check (on seed 9001 the first value maps to the
+same room as the reference's second draw in every two-draw scenario); and the
+`>` control also fired AC-7's precondition because that check built its lost /
+clock state by a tick AT the deadline - the check now ticks at deadline + 0.5,
+so the exact instant stays I-3's own check's business and each control pins one
+thing.
+
+### Deferred verifications I cannot run
+
+D-1..D-4 all mutate the real implementation, which does not exist in RED.
+**I did not run them.** They stay with GATES. The controls table says what each
+must show: D-1 (every weight 1) -> `oneLitRoom…` fails (a zero-weight room is
+drawn) and `theHeavierOfTwoRooms…` reads about 0.5; D-2 (swap the checks) ->
+`instabilityMaxAndTheClockInOneTurn…` records `lost / clock`; D-3 (remove the
+guard) -> `aDecidedRoundStaysDecided`; D-4 (change the label) -> the five
+room-predicting checks, `theSameSeedReplays…` among them.
+
+### PROC-001/002 audit against I-6 (every check, one line each)
+
+Mechanical form: the outcome reference stand-in passes all 20 `TurnContract`
+and all 22 `FinaleContract` checks (the `audit:` test). By hand, what I-6 adds
+is: every charge moves the deadline (1100 - 20 x points under the fixtures'
+shipped penalty), the round ends at `now >= deadline` or at `instability_max`
+(5 shipped, 100 under the finale overrides), and a charge crossing a multiple of
+2 darkens a room. The latest `now` in either fixture is 123; the largest charge
+in `TurnContract` is 3 points, in `FinaleContract` 5.
+
+`TurnContract` (shipped max 5, every check at most 3 points, deadline >= 1040):
+1. `startReturnsTheContractState` - six named fields; the new ones are not forbidden. Unaffected.
+2. `liveSetAtStartIsExactlyTheTrackHeads` - no charge. Unaffected.
+3. `committingTheHeadOfTrackOneMakesItsSecondStepLive` - commits only. Unaffected.
+4. `tracksAdvanceIndependentlyAndFinaleStepsStayWaiting` - commits only. Unaffected.
+5. `holderInReachOnTheRequiredSettingCommits` - one commit; `dial` at NOW + 1000 is a view, not an event. Unaffected.
+6. `reachIsInclusiveAtTurnRangeStudsAndIgnoresY` - commits. Unaffected.
+7. `wrongSettingOnALiveStepIsRejectedAndChargesPerWrongValue` - 1 point; `expectRejection` compares result, instability, `committed[id]`, `dials[id]`, the view and the live set, not the whole state, so `dark`/`penaltySeconds` moving is invisible to it. Unaffected.
+8. `waitingStepIsNotLiveWhateverTheSetting` - 2 points each from fresh starts (0 -> 2 crosses 2: one room darkens); field-wise comparison as above. Unaffected.
+9. `decoyIsNotLiveWhateverTheSetting` - 2 points, as above. Unaffected.
+10. `chargesAccumulateByReason` - 1 + 2 = 3 points, a crossing at 2; compares instability and the result. Unaffected.
+11. `rejectedDialShowsTheSettingUntilTheResetBoundaryThenUnset` - 1 point; refusal `resetting` compares `Deep.equal(inside, state)` - a refusal with no expiry and no clock-out returns the state itself. Unaffected.
+12. `unknownMachineIsRefused` - P-9 deep-equal: no expiry, no clock-out. Unaffected.
+13. `nonHolderIsRefusedAndNotCharged` - as 12. Unaffected.
+14. `holderOutOfHorizontalReachOrWithoutAPositionIsRefused` - as 12. Unaffected.
+15. `committedMachineIsRefused` - as 12. Unaffected.
+16. `resettingDialIsRefused` - 1 point then refusals, as 12. Unaffected.
+17. `refusalChecksRunInOrderAndTheFirstFailureWins` - `round_over` precedes `unknown_machine` in I-6 step 1, but no case here is on a decided round or at the deadline, so the order pinned is a suffix of the new one. Unaffected.
+18. `supplierIsJudgedKeyHolderAfterWithdraw` - commits and refusals. Unaffected.
+19. `logHoldsOneEntryPerEvaluatedTurnInCallOrderAndNoneForRefusals` - 1 + 2 = 3 points (a crossing at 2); compares log and instability. Unaffected.
+20. `noCallMutatesItsArguments` - `start` guard passes the new arguments; a crossing turn must leave its input deep-equal, which I-10 requires anyway. Unaffected.
+
+`FinaleContract` (overrides: max 100, failed pair 4; shipped rows: max 5, failed pair 1):
+1. `startHasNoWindowAndTheNewExportsAnswerInShape` - `tick` at NOW + 1 with no window must return a deep-equal state and nil: deadline 1100, so no clock-out. Unaffected.
+2. `neitherFinaleMachineIsLive…` - commits only. Unaffected.
+3. `anArmedMachineIsStillLive…` - arm and complete, no charge. (A completing turn now also sets `outcome = won`; the check reads the live set only.) Unaffected.
+4. `correctTurnOnALiveFinaleMachineWithNeitherArmedArmsIt` - compares `armed`, `dials[id]`, instability, `committed`, the log. Unaffected.
+5. `correctTurnOnTheOtherMachineInsideTheWindowCommitsBoth` - compares named fields and `isComplete`; `outcome = won` is an extra field it does not read. Unaffected.
+6. `turnOnTheOtherMachineAtExactlyTheWindowsEndCommitsBoth` - as 5. Unaffected.
+7. `tickAtOrBeforeTheWindowsEndChangesNothing` - deep-equal, no charge, deadline 1100. Unaffected.
+8. `tickPastTheWindowDisarmsBothAndChargesExactlyOneFailedPair` - 4 points (0 -> 4 crosses 2 and 4: two rooms darken by tick); compares `armed`, instability, dials, `committed`, log, views, live set - not `dark`. Unaffected.
+9. `afterExpiryTheArmedMachineResetsLikeAnyRejectionThenCanArmAgain` - 4 points; refusal deep-equal against the post-expiry state passed in (no new expiry at that now). Unaffected.
+10. `underTheShippedTuningAnExpiredWindowCostsExactlyOne` - 1 point, shipped max 5. Unaffected.
+11. `wrongTurnOnTheOtherMachineInsideTheWindowIsRejectedOnceAndDisarmsBoth` - 1 point. Unaffected.
+12. `underTheShippedTuningAWrongTurnWithTheWindowOpenCostsOneNotTwo` - 1 point. Unaffected.
+13. `wrongTurnOnALiveFinaleMachineWithNoWindowOpenIsAnOrdinaryRejection` - 1 point. Unaffected.
+14. `turnOnTheArmedMachineIsRefusedArmedAtNoCost` - refusals at or before `closesAt`, no expiry, deep-equal. Unaffected.
+15. `armedIsTheLastRefusalChecked` - as 14. Unaffected.
+16. `aCorrectTurnOnTheOtherMachineAfterTheWindowAppliesExpiryThenArmsIt` - 4 points then an arm; compares named fields. Unaffected.
+17. `aTurnAfterTheWindowReturnsThePostExpiryState` - **the 5-point check** (4 + 1): under the shipped max 5 this would now be `lost / instability` and the wrong turn on B `refused / round_over`; with `instability_max = 100` it is unchanged. Its `Deep.equal(state, expired)` between turn and tick still holds: both apply the same expiry, the same crossing draws (same seed, same `blackoutDraws`), the same penalty. **This is the one check that needed the fixture change.**
+18. `bothLampsAreDarkWhileTheFinaleIsNotLive` - commits and lamps. Unaffected.
+19. `aLampIsLitExactlyWhen…` - lamps. Unaffected.
+20. `anyHolderOfThePartnersClassInRange…` - lamps. Unaffected.
+21. `isCompleteIsTrueExactlyWhenEveryTrackMachineIsCommitted` - `isComplete` only. Unaffected.
+22. `noFinaleCallMutatesItsArguments` - adds nothing I-10 does not already require. Unaffected.
+
+Also `TurnContract.refusalProblems`' P-9 deep-equal: every caller passes a state
+with no expired window and a `now` far below the deadline, so neither F-9's nor
+I-6 step 3's departure from P-9 applies.
+
+### Doubts and discoveries
+
+- **No `## Contract` block needed amending.** Every mechanism held when
+  exercised: `Rng.fromSeed(seed):derive("blackout")` rebuilt per draw and
+  advanced by `blackoutDraws` `nextNumber()` calls reproduces the k-th draw
+  (the reference does exactly that and the independent-stream checks accept
+  it); `Generator.generate(TurnContract.assignment(), 9001, MechanicsTuning)`
+  produces a facility at attempt 1; `Deep.equal` treats an absent `outcome`
+  and `nil` alike.
+- **A derived pin, flagged:** I-6 step 1 puts `round_over` before
+  `unknown_machine`, so `aDecidedRoundStaysDecided` expects `round_over` for
+  id 99 on a decided round. It follows from the step order as written; if the
+  PO would rather an unknown id always read `unknown_machine`, that is an I-6
+  amendment and one case in that check changes.
+- **The clock is read after the penalty.** `instabilityMaxAndTheClockInOneTurn…`
+  arranges the sixth point so the clock is out only *after* its own penalty
+  (deadline 115 -> 108 at now 108). An implementation that reads the clock
+  before applying the penalty would still record `lost / instability` here
+  (instability is checked first), but would miss `lost / clock` on a turn
+  whose penalty alone zeroes the clock below the max. No AC states that case
+  and no test pins it; I-3 ("in the same event") and I-6 step 4 imply it.
+  Flagging so GREEN builds penalty-then-clock deliberately.
+- **`ignores-blackoutDraws` is a weak control on this seed** (one check
+  fires). The four-crossing replay check is what catches it; the two-draw
+  checks happen to coincide. Not a defect in the checks - the equivalence they
+  pin is correct - but D-4's label mutation is the stronger GATES probe for
+  the stream, and a `blackoutDraws`-ignoring implementation would be caught
+  by `theSameSeedReplays…`.
+- The harness gate's one red assertion is the uncommitted-tree precondition
+  ("no stray .luau files"); the baselines themselves (129/129/24) already
+  match. Commit `.claude/tests/project-counters.test.sh` in the RED commit.
+- The `tick` scenarios pass `positions = {}`; `assignment` is the fixture's.
+  Neither is read by anything I-1..I-10 names.
 
 ## Regressions
 
@@ -236,3 +789,37 @@ from an upstream story or spike (as noted above), amend it and re-run
 
 ## Notes
 
+
+**PO rulings on RED's doubts (lead-po, 2026-10-02).**
+
+1. **A turn naming an unknown machine on a decided round is `round_over`, not
+   `unknown_machine`.** Kept: I-6 step 1 runs before every refusal, and a decided
+   round answers nothing else.
+2. **The clock is read after the penalty within the same charge.** Kept: that
+   is I-3 ("in the same event") and I-6 step 4, and it is what makes AC-6's
+   second clause reachable at all.
+3. **The `ignores-blackoutDraws` control is weak on this seed (one check).**
+   Accepted; D-4 (the label mutation) is the stronger probe, and GATES runs it.
+
+**PO verification of RED (lead-po, 2026-10-02).** `lune run test`, run
+independently: `740 passed, 23 failed`, all 23 in `procedure_outcome_test.luau`
+(19 on the `need()` guards for `deadline`, `isDark` and `drawRoom`, 1 on the
+exports check, 1 on `roundSeed` not stored, 1 on AC-7's decided states not being
+buildable, 1 more guard). No PROC-001/002 test went red. Their diff is fixture
+data only (`start`'s two new arguments, a 1000 s round, and `FinaleContract`'s
+`instability_max` 5 → 100 with its reason beside it). No assertion changed. I
+also read the AC-6 ordering check: it asserts as preconditions that the clock is
+still running at five points and out after six, so it cannot pass vacuously.
+
+`bash scripts/gates.sh --fast` on the uncommitted RED tree:
+
+    PASS         format (1s, observed 129)
+    PASS         lint (1s, observed 129, floor 1)
+    PASS         typecheck (3s, observed 24)
+    FAIL         unit (149s, exit 1)      -- exactly the 23 above
+    UNCONFIGURED coverage
+    PASS         build (0s, observed 88474)
+    FAIL         harness (21s, exit 1)    -- 39/40: "no stray .luau" (uncommitted tree)
+
+Admissible. The RED commit (tests and counter baselines, `phase: RED`) clears
+the harness precondition.
