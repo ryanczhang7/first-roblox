@@ -4,8 +4,8 @@ title: Instability shortens the clock, darkens rooms and ends the round in a fix
 slug: instability-shortens-the-clock-darkens-r
 epic: EPIC-05
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/PROC-003-instability-shortens-the-clock-darkens-r
 depends_on: [PROC-002]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -236,6 +236,55 @@ cannot run this. Owner: GATES.
 `"blackout"` label in the derive to another string. AC-5's equivalence with an
 independently built `Rng.fromSeed(seed):derive("blackout")` stream **must**
 then fail. RED cannot run this. Owner: GATES.
+
+### Results (lead-po, GATES, 2026-10-02, against `dab4ac5`)
+
+Every run is `bash scripts/mutate.sh src/server/procedure/Procedure.luau '<EXPR>' -- lune run test`;
+each restore was verified byte-for-byte by `mutate.sh`, and `git status`
+afterwards showed only the story file modified. Unmutated: `763 passed, 0 failed`.
+
+**D-1 — RESULT: fails as required.** `s/total += w$/total += 1/;s/cumulative += weights\[room\]/cumulative += 1/`
+(every weight counts as 1, in both the total and the cumulative walk):
+
+    FAIL  procedure_outcome_test :: AC-3 (oracle-free): over 20,000 draws of drawRoom({ [4] = 3, [7] = 1 }) on one "blackout" stream, room 4 is drawn with frequency 0.75 +/- 0.02
+    FAIL  procedure_outcome_test :: AC-3/I-5: drawRoom is exactly one nextInteger(1, W) mapped to the first room in ascending id whose cumulative weight reaches it ...
+    FAIL  procedure_outcome_test :: AC-3: with every uncommitted step in one lit room and the other lit rooms at weight 0 (decoys, a committed step), the crossing darkens that room on every one of 40 seeds
+    760 passed, 3 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_server_procedure_Procedure.luau.20261002T055411Z.652544.bak) ===
+
+Both AC-3 clauses fail: the zero-weight room is drawn, and the frequency leaves
+the band. These are exactly the three checks RED's uniform-draw control fired.
+
+**D-2 — RESULT: fails as required.** Lines 286–289 rewritten to test
+`now >= deadline` first (→ `lost / clock`), then `instability >= instability_max`:
+
+    FAIL  procedure_outcome_test :: AC-6/I-6: a wrong turn that reaches instability_max AND whose penalty takes the clock to exactly 0, or below it, records lost / instability - never lost / clock
+    762 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_server_procedure_Procedure.luau.20261002T055724Z.654757.bak) ===
+
+**D-3 — RESULT: fails as required.** `502,504d` deletes `turn`'s I-6 step 1
+guard (`if state.outcome ~= nil then return … round_over end`). `mutate.sh`
+reported 66 lines changed, because every later line shifts up by 3.
+
+    FAIL  procedure_outcome_test :: AC-7/I-7: once won, lost / instability or lost / clock, every later turn - wrong, correct, decoy, finale, unknown id, non-holder - is refused / round_over on a deep-equal state, and every later tick returns t…
+    762 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_server_procedure_Procedure.luau.20261002T055953Z.656779.bak) ===
+
+**D-4 — RESULT: fails as required.** `258s/derive("blackout")/derive("blackouts")/`:
+
+    FAIL  procedure_outcome_test :: AC-2/AC-6: reaching instability_max (6, ...) is lost / instability with no blackout at the max - still two rooms dark, still two draws ...
+    FAIL  procedure_outcome_test :: AC-2/I-4: a 2-point charge from 2 to 4 skips the value 3 but still crosses it once (two rooms dark), and 4 -> 5 darkens nothing more
+    FAIL  procedure_outcome_test :: AC-2/I-5: rising from 2 to 3 darkens EXACTLY blackout_rooms_per_threshold (2) rooms - the two drawRoom(blackoutWeights(s), stream) returns on an independent Rng.fromSeed(seed):derive("blackout") stream ...
+    FAIL  procedure_outcome_test :: AC-5/I-1: one seed replays four crossings as the same four rooms in the same order, and that order is what drawRoom predicts on an independent "blackout" stream - for two seeds
+    759 passed, 4 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_server_procedure_Procedure.luau.20261002T060155Z.658939.bak) ===
+
+AC-5's equivalence check fails, as required. RED's `derive("instance")` control
+fired five checks; this label fires four. The AC-4 all-zero-weight check does not
+fire. The likely cause, not checked: its uniform draw over the lit rooms lands
+on the same room from both streams, which a single draw can do by chance. Either
+way the four checks that predict rooms from more than one draw all catch the
+change, and AC-5's equivalence, which is what D-4 requires, fails.
 
 ## Out of scope
 
@@ -821,10 +870,22 @@ from RED to report. D-1..D-4 remain GATES's.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-02T06:09:10Z
+    commit: dab4ac5
+    tree:   483436d6273c42b317af57701fab544205b06250
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 129)
+    PASS         lint (1s, observed 129, floor 1)
+    PASS         typecheck (3s, observed 24)
+    PASS         unit (116s, observed 763, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 91349)
+    PASS         harness (24s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -911,3 +972,12 @@ the harness precondition.
       FAIL         harness (18s, exit 1)   -- 39/40: "no stray .luau" (Procedure.luau uncommitted)
 
   The GREEN commit clears that one; re-checked after it below.
+
+After the GREEN commit `dab4ac5`: `bash .claude/tests/project-counters.test.sh` →
+`project-counters: 40 passed, 0 failed`. Every `--fast` gate is green.
+
+**GATES (lead-po, 2026-10-02).** D-1 to D-4 ran before `gates.sh`; results are
+under `## Deferred verifications`. Then `bash scripts/gates.sh` (the full run,
+which records itself in `## Gate results`): `All required gates passed (6 ran, 3
+unconfigured, 0 known).` No source change was needed in GATES. No gate was added
+or changed, so `## Gate probes` is not required.
