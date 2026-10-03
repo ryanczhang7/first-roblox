@@ -73,6 +73,41 @@ alone. A second script loses it to instability.
   one second earlier is still `Round`, and the backstop's time is never
   reached.
 
+## Amendments
+
+All three were made during PLANNED, on 2026-10-02, before RED started and
+before any test existed. They are recorded here because the criteria differ
+from the version planned onto `main`. The user approved them in this session,
+choosing "Penalised clock" over waiving D-1. That option named the AC-6
+rewrite and the AC-4/AC-5 tightening together.
+
+- **AC-6.** *Was:* "Given a round where time alone runs out, when the
+  Procedure's deadline passes, then the session records `lost / clock` on that
+  tick, not later when the phase machine's backstop fires." *Now:* the same
+  zero-penalty case, plus the penalised clock: with `k` points charged for each
+  `k` in `1 … instability_max − 1`, the round resolves on the tick at
+  `startedAt + roundSeconds − k × instability_clock_penalty_seconds`, the tick
+  one second earlier is still `Round`, and the backstop's time is never
+  reached. *Why:* with no penalty, the two clocks give the same tick and the
+  same outcome, so the criterion could not tell the Procedure's routing from
+  the backstop. D-1 would have passed against a broken session (PO decision 1).
+  Confirmed in GATES: D-1's mutation left exactly the two zero-penalty cases
+  green.
+- **AC-4.** *Was:* "…every round ends `won / procedure_complete`, and the phase
+  machine is in `Resolution` → `Post` within the next ticks." *Now:* recorded
+  "in the step that takes the completing `TurnRequested`", moving to
+  `Resolution` there and to `Post` on the next `Tick`. Control unchanged.
+- **AC-5.** *Was:* "…the round ends `lost / instability`. The deadline seen by
+  a `RoundView` built mid-round (`secondsLeft`) has dropped by
+  `instability_clock_penalty_seconds` per point." *Now:* recorded in the step
+  that takes the `instability_max`-th wrong `TurnRequested`. After each earlier
+  wrong turn, the next `Tick`'s `RoundView.secondsLeft` is lower by the penalty
+  per point than an unpenalised round's at the same `now`.
+  *Why (AC-4 and AC-5):* a turn that decides the round should not wait up to a
+  second for a Tick to end it (PO decision 2). The original "within the next
+  ticks" and "built mid-round" pinned no step. D-2 shows the new wording
+  catches a session that routes only on Tick.
+
 ## Contract
 
 Pinned in PLANNED, 2026-10-02. **RED may amend any block in place, with the
