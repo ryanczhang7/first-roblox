@@ -4,8 +4,8 @@ title: A player's lens view holds only settings their lens may read from where t
 slug: a-player-s-lens-view-holds-only-settings
 epic: EPIC-07
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/VIEW-001-a-player-s-lens-view-holds-only-settings
 depends_on: [PROC-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -183,6 +183,55 @@ run this. Owner: GATES.
 **D-4. Line of sight is consulted last.** With `lensFor` changed to call
 `lineOfSight` before the class check, the call-count assertion **must** fail.
 RED cannot run this. Owner: GATES.
+
+### Results (GATES, orchestrator, 2026-10-03, against `fd63c56`)
+
+All four run with `bash scripts/mutate.sh src/server/seats/Projection.luau
+'<expr>' -- lune run test`, one at a time; baseline `936 passed, 0 failed`.
+Every count matches the handoff's control table for the corresponding stub
+(`keyNotLens` 5 tests, `ignoreDark` 3, `strictRange` 1, `sightFirst` 1).
+
+**D-1 — RAN, PASSED (the suite caught it).**
+
+    === mutate: src/server/seats/Projection.luau (1 line(s) changed by s/local lensClass = Ring.lensOf(assignment, playerId)/local lensClass = assignment.keyClasses[playerId][1]/) ===
+      FAIL  tests/server/lens_view_test.luau :: AC-1: lineOfSight is consulted only for machines that already pass class, range, lit and not-committed, ...
+      FAIL  tests/server/lens_view_test.luau :: AC-1: over 200 generated facilities at each n in 4..6 and 50 positions per player, every reading is of a machine of Ring.lensOf's class, ...
+      FAIL  tests/server/lens_view_test.luau :: AC-1: the range is inclusive at exactly lens_read_range_studs from procedure.tuning ...
+      FAIL  tests/server/lens_view_test.luau :: AC-4: a room holding four machines of the lens class, one committed, reads as exactly three readings ascending by machineId
+      FAIL  tests/server/lens_view_test.luau :: AC-5: a helper at a machine of their lens class in a lit room reads it, and once Procedure.isDark says the room is dark ...
+    931 passed, 5 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_seats_Projection.luau.20261003T195755Z.812778.bak) ===
+
+**D-2 — RAN, PASSED.** (The one matching line was deleted; mutate.sh's "20
+line(s) changed" is its positional diff count after the deletion shifts the
+rest of the file.)
+
+    === mutate: src/server/seats/Projection.luau (20 line(s) changed by /and not Procedure.isDark(procedure, machine.room)/d) ===
+      FAIL  tests/server/lens_view_test.luau :: AC-1: lineOfSight is consulted only for machines that already pass class, range, lit and not-committed, ...
+      FAIL  tests/server/lens_view_test.luau :: AC-1: over 200 generated facilities at each n in 4..6 and 50 positions per player, ...
+      FAIL  tests/server/lens_view_test.luau :: AC-5: a helper at a machine of their lens class in a lit room reads it, and once Procedure.isDark says the room is dark ...
+    933 passed, 3 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_seats_Projection.luau.20261003T200251Z.819576.bak) ===
+
+**D-3 — RAN, PASSED.** A wrong value, caught by exactly one assertion — the
+boundary pin, as predicted; the 150,000-call random sample alone does not
+catch it.
+
+    === mutate: src/server/seats/Projection.luau (1 line(s) changed by s/<= range and lineOfSight/< range and lineOfSight/) ===
+      FAIL  tests/server/lens_view_test.luau :: AC-1: the range is inclusive at exactly lens_read_range_studs from procedure.tuning (the fixture's 9, not the shipped 12), horizontal, and a 500-stud y offset does not matter (D-3)
+    935 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_seats_Projection.luau.20261003T200730Z.825160.bak) ===
+
+**D-4 — RAN, PASSED.** `lineOfSight` prepended to the class clause (so it is
+consulted first, and twice for machines that pass):
+
+    === mutate: src/server/seats/Projection.luau (1 line(s) changed by s/^\(\t*\)machine.keyClass == lensClass$/\1lineOfSight(position, Machines.positionOf(layout, machine, procedure.tuning)) and machine.keyClass == lensClass/) ===
+      FAIL  tests/server/lens_view_test.luau :: AC-1: lineOfSight is consulted only for machines that already pass class, range, lit and not-committed, at most once per machine, ... (D-4)
+    935 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_seats_Projection.luau.20261003T201226Z.832861.bak) ===
+
+After all four: `git diff --quiet src` clean; no `.bak` left under
+`.claude/state/mutations/`.
 
 ## Out of scope
 
@@ -598,10 +647,22 @@ partial run is not evidence):
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-03T20:25:28Z
+    commit: fd63c56
+    tree:   2ba9d168eaad76990bee282e1c2e2ef816b5a1e4
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 149)
+    PASS         lint (1s, observed 149, floor 1)
+    PASS         typecheck (3s, observed 27)
+    PASS         unit (212s, observed 936, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (1s, observed 102288)
+    PASS         harness (27s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -760,3 +821,24 @@ test files, `projection_test.luau`, `ProjectionContract`, `ProjectionStubs`,
 
 - GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5), planned `opus`,
   dispatched with `model: opus`; no override reported.
+- `bash scripts/gates.sh --fast` by the orchestrator at `fd63c56` (GREEN
+  committed, tree clean): PASS format (149), lint (149), typecheck (27), unit
+  (228 s, `936 passed, 0 failed`), build (102288), harness (`project-counters:
+  40 passed, 0 failed`); `changes: 2 changed source path(s), all exercised by a
+  required gate`; `All required gates passed (6 ran, 1 unconfigured, 0 known).`
+  The feature-developer's earlier `--fast` unit exit 143 (process terminated, no
+  test failed) did not reproduce here.
+
+### GATES (orchestrator, 2026-10-03)
+
+- Snapshot re-taken right after `phase.sh set VIEW-001 GATES`, same 9 paths.
+  Before leaving GATES: `frozen: OK — 9 path(s) unchanged since the snapshot for VIEW-001`.
+- D-1..D-4 run before `gates.sh`; results pasted under `## Deferred
+  verifications`. The handoff's control table predicted each count (5, 3, 1, 1)
+  and every prediction matched against the shipped module — the suite's
+  discrimination is evidence, not a claim.
+- Full `bash scripts/gates.sh` at `fd63c56`: all required gates passed (6 ran, 3
+  unconfigured, 0 known); see `## Gate results`. No source change was needed in
+  GATES, so no feature-developer dispatch. This story adds and changes no gate,
+  so `## Gate probes` is not required.
+- GATES - `lead-po` (orchestrator, no subagent) - `claude-opus-5-5`.
