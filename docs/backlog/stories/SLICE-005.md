@@ -812,3 +812,26 @@ stray .luau files" (actual: ` M src/server/session/Session.luau`). The counts
 themselves (AC-7, 145/145/27) pass. This is the same precondition RED met
 before its commit: it clears once Session.luau is committed. Not committed
 here (the dispatch did not ask for a commit).
+
+### GREEN verification (orchestrator, 2026-10-02)
+
+- Dispatch: `feature-developer`, `model: opus` passed explicitly; resolved
+  `claude-opus-5-5` (self-reported). Only `src/server/session/Session.luau`
+  changed (`git diff --stat`: 1 source file, +309/−58 with the story).
+- Freeze: `frozen: OK — 140 path(s) unchanged since the snapshot for SLICE-005`
+  (snapshot of every tracked file under `tests/`, `.claude/tests/`, `lune/`,
+  taken right after `phase.sh set SLICE-005 GREEN`).
+- GREEN commit `18b5b4d`. Then `bash scripts/gates.sh --fast`: format PASS
+  (145), lint PASS (145), typecheck PASS (27), **unit PASS `901 passed, 0
+  failed`** (213 s), build PASS, harness PASS (40); `changes: 1 changed source
+  path(s), all exercised by a required gate`; `All required gates passed (6
+  ran, 1 unconfigured, 0 known).`
+- Controls confirmed against the shipped module (the `[measured]` lines
+  `session_round_test` prints): `AC-4: 150/150 … won; 150/150 resolved in the
+  completing turn's step`; `AC-4 control: 150/150 … every turn refused;
+  150/150 ended lost / clock on the deadline tick`; `AC-5: 9/9 … in the 5th
+  wrong turn's step; 9/9 showed every 20 s drop`; `AC-6: 10/10 (k, seed) …
+  exactly on the Procedure's deadline tick`. All equal the handoff's
+  expected values. The stand-ins' fired sets are unchanged (controls 26/26).
+- D-1..D-4 are not yet run; the feature-developer's proposed `mutate.sh`
+  expressions are in `### GREEN notes` for GATES.
