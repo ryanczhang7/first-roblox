@@ -4,8 +4,8 @@ title: The session runs the facility and the Procedure, and scripted turns win o
 slug: the-session-runs-the-facility-and-the-pr
 epic: EPIC-08
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/SLICE-005-the-session-runs-the-facility-and-the-pr
 depends_on: [SLICE-003, GEN-004, PROC-003, PROC-005]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -954,3 +954,11 @@ here (the dispatch did not ask for a commit).
   unconfigured, 0 known).` unit 901 in 181 s; recorded by gates.sh under
   `## Gate results`.
 - Freeze through GATES: `frozen: OK — 140 path(s) unchanged since the snapshot for SLICE-005`
+
+### REVIEW → DONE (orchestrator, 2026-10-03)
+
+- PR https://github.com/ryanczhang7/first-roblox/pull/52 merged 2026-10-03T16:16:46Z as `053f854`.
+- CI on the PR: `boundaries` success (run 37090398288, 8 s). `gates` success
+  (run 37090398280): job 4m15s against `timeout-minutes: 45`, `Harness
+  self-test` 2m18s, `Run gates` 1m38s. Nothing is within 10 % of a limit, and
+  no gate reached REVIEW marked pending CI.
