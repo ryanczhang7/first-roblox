@@ -4,8 +4,8 @@ title: A player's lens view holds only settings their lens may read from where t
 slug: a-player-s-lens-view-holds-only-settings
 epic: EPIC-07
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/VIEW-001-a-player-s-lens-view-holds-only-settings
 depends_on: [PROC-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -842,3 +842,12 @@ test files, `projection_test.luau`, `ProjectionContract`, `ProjectionStubs`,
   GATES, so no feature-developer dispatch. This story adds and changes no gate,
   so `## Gate probes` is not required.
 - GATES - `lead-po` (orchestrator, no subagent) - `claude-opus-5-5`.
+
+### DONE (2026-10-03)
+
+- PR [#53](https://github.com/ryanczhang7/first-roblox/pull/53) merged at
+  2026-10-03T20:42:20Z as `8d8ad97`.
+- CI: `boundaries` pass (6 s); `gates` pass (4m3s against `timeout-minutes: 45`)
+  — https://github.com/ryanczhang7/first-roblox/actions/runs/37152235952 —
+  unit 80 s (`936 passed, 0 failed`), harness 13 s (`project-counters: 40
+  passed, 0 failed`). No timing near a limit.
