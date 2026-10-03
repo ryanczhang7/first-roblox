@@ -264,7 +264,15 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-# LAST SET: VIEW-001 (RED), which adds four test files
+# LAST SET: VIEW-002 (RED), which adds four test files
+# (tests/helpers/TurnCuesContract.luau, tests/helpers/TurnCuesStubs.luau,
+# tests/server/turn_cues_test.luau, tests/server/turn_cues_controls_test.luau)
+# and no source: GREEN extends src/server/seats/Projection.luau only. MEASURED
+# on the uncommitted RED tree with `bash scripts/gates.sh --fast`: `stylua over
+# 153 files`, `selene over 153 files`, `analyze over 27 files`. These are also
+# the post-GREEN counts: 149 + 4 = 153/153/27, narrow unchanged at 27/27/8.
+# The "no stray .luau files" precondition is red until the RED commit.
+# BEFORE THAT: VIEW-001 (RED), which adds four test files
 # (tests/helpers/LensViewContract.luau, tests/helpers/LensViewStubs.luau,
 # tests/server/lens_view_test.luau, tests/server/lens_view_controls_test.luau)
 # and no source: GREEN extends src/server/seats/Projection.luau and edits one
@@ -324,8 +332,8 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=149    # stylua  over src tests lune   (149 = 27 src + 122 tests/lune, post VIEW-001)
-BASE_LINT=149      # selene  over src tests lune
+BASE_FORMAT=153    # stylua  over src tests lune   (153 = 27 src + 126 tests/lune, post VIEW-002)
+BASE_LINT=153      # selene  over src tests lune
 BASE_TYPECHECK=27  # analyze over src (NET-001 probe included; + SLICE-003's Session)
 NARROW_FORMAT=27   # stylua  over src alone
 NARROW_LINT=27     # selene  over src alone
