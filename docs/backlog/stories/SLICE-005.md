@@ -4,8 +4,8 @@ title: The session runs the facility and the Procedure, and scripted turns win o
 slug: the-session-runs-the-facility-and-the-pr
 epic: EPIC-08
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/SLICE-005-the-session-runs-the-facility-and-the-pr
 depends_on: [SLICE-003, GEN-004, PROC-003, PROC-005]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -288,6 +288,67 @@ GATES.
 `scripts/mutate.sh`, make `Session` drop the machine's `Emit` effects.
 SLICE-003's AC-5 pass-through check **must** still fail. RED cannot run this
 (no Session emits `Placed` yet). Owner: GATES.
+
+
+### Results (GATES, orchestrator, 2026-10-02, against GREEN commit `0006635`)
+
+Run with `bash scripts/mutate.sh src/server/session/Session.luau '<expr>' -- lune run build/session-mini.luau`,
+where `build/session-mini.luau` is a throwaway (git-ignored) runner of exactly
+`tests/server/session_round_test.luau` and `tests/server/session_test.luau`
+(baseline unmutated: `31 passed, 0 failed`). Each target string occurs once.
+Every run ended `restored (verified byte-for-byte against …/.claude/state/mutations/…bak)`;
+no `.bak` remains, and `git status` shows no source change afterwards.
+
+**D-1 — RAN. Caught.** `s/reached = ticked.outcome/reached = nil/` (the Tick
+path never routes; only the backstop resolves).
+
+    [measured] AC-6: 2/10 (k, seed) cases resolved lost / clock exactly on the Procedure's deadline tick
+    FAIL ../tests/server/session_round_test :: AC-6: with k points charged for each k in 0 .. instability_max - 1 …
+          AC-6: with k points charged the round must resolve lost / clock on the tick at startedAt + roundSeconds - k x penalty, still Round a second earlier, the backstop never reached:
+    23 passed, 8 failed
+    === mutate: command exited 1; restored (verified byte-for-byte …) ===
+
+The 2/10 are the two k = 0 cases (the backstop's own tick), as D-1 predicted.
+The 8 failures are AC-6 plus AC-1 ×2, C-3 ×3, C-4, C-5 - the same set the
+RED stand-in `skipsRoutingOnTick` fired (the lifecycle's second half cascades
+from an unrouted clock-out).
+
+**D-2 — RAN. Caught.** `s/reached = turned.outcome/reached = nil/` (the turn
+path never routes).
+
+    [measured] AC-4: 0/150 scripted rounds won; 0/150 resolved in the completing turn's step
+    FAIL ../tests/server/session_round_test :: AC-4: over 50 seeds at each n in {4, 5, 6} …
+    [measured] AC-5: 0/9 rounds lost to instability in the 5th wrong turn's step; 9/9 showed every 20 s drop
+    FAIL ../tests/server/session_round_test :: AC-5: instability_max wrong turns on the live step …
+    29 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte …) ===
+
+Exactly AC-4 and AC-5, as the stand-in `skipsRoutingOnTurn` predicted; the
+clock checks stay green.
+
+**D-3 — RAN. Caught.** `s/return math.ceil(Procedure.deadline(procedure) - now)/return math.ceil(config.roundSeconds - (now - round.phaseEnteredAt))/`
+
+    [measured] AC-5: 9/9 rounds lost to instability in the 5th wrong turn's step; 0/9 showed every 20 s drop
+    FAIL ../tests/server/session_round_test :: AC-5: …
+    FAIL ../tests/server/session_round_test :: Contract (C-5): every RoundView in Round carries secondsLeft = ceil(Procedure.deadline(procedure) - now) …
+    29 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte …) ===
+
+AC-5's `secondsLeft` assertion went red; SLICE-003's AC-4 payload check
+(`session_test`) stayed green, as required.
+
+**D-4 — RAN. Caught.** `s/if effect.kind ~= "AssignSeats" then/if effect.kind ~= "AssignSeats" and effect.kind ~= "Emit" then/`
+(the Session drops the machine's `Emit` effects).
+
+    FAIL ../tests/server/session_test :: AC-5: on every step the non-SendTo, non-Broadcast effects deep-equal PhaseMachine.step's own effects … minus AssignSeats …
+          AC-5: Emit, PromptRematch and ComputeTrace pass through unchanged and in order; AssignSeats never appears:
+    FAIL ../tests/server/session_round_test :: AC-2: with options.generatorPredicate refusing every attempt …
+    29 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte …) ===
+
+SLICE-003's pass-through check still fails through the narrowed
+`passThroughOf` (C-6 earned), plus AC-2 - the same set the stand-in
+`dropsEmits` fired.
 
 ## Out of scope
 
@@ -681,10 +742,22 @@ claims about the checks, not about the shipped module.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-03T02:30:23Z
+    commit: 0006635
+    tree:   26a6921fbdda483602be8782573534c0bc59011b
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 145)
+    PASS         lint (1s, observed 145, floor 1)
+    PASS         typecheck (4s, observed 27)
+    PASS         unit (181s, observed 901, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 100345)
+    PASS         harness (20s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -835,3 +908,14 @@ here (the dispatch did not ask for a commit).
   expected values. The stand-ins' fired sets are unchanged (controls 26/26).
 - D-1..D-4 are not yet run; the feature-developer's proposed `mutate.sh`
   expressions are in `### GREEN notes` for GATES.
+
+### GATES (orchestrator, 2026-10-02)
+
+- No feature-developer dispatch was needed: every required gate passed on the
+  GREEN code. Source unchanged in GATES apart from the four `mutate.sh` runs,
+  each restored and verified.
+- D-1..D-4 ran before `gates.sh`; results in `## Deferred verifications`.
+- `bash scripts/gates.sh` (full): `All required gates passed (6 ran, 3
+  unconfigured, 0 known).` unit 901 in 181 s; recorded by gates.sh under
+  `## Gate results`.
+- Freeze through GATES: `frozen: OK — 140 path(s) unchanged since the snapshot for SLICE-005`
