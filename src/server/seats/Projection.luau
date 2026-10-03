@@ -42,10 +42,30 @@
 	that includes σ written out as an ORDER, which is why `seatOrder` is the SEAT
 	order and not the ring walked from p.
 
-	WHAT M3 ADDS, and where: `pairings` (this player's lens contents) and
-	`fragments` (this player's order fragments), both per-player secrets, both
-	added to the list below BY NAME. Nothing else about this module changes -
-	that is the whole reason this is built now, while the only secret is σ.
+	WHAT M3 ADDS, and where: not wider fields on this view but views of their
+	own beside it (`architecture.md` D16), each an allowlist built BY NAME.
+	`lensFor` (VIEW-001) is this player's lens view - the required settings p's
+	lens may read from where p stands (D14). `turnCuesFor` (VIEW-002, not built
+	yet) is the next. `PublicSeatView` does not change - that is the whole
+	reason it was built while the only secret was σ.
+
+	WHAT `p`'s LENS VIEW HOLDS, and why each field is safe (`roles.md` §6:
+	"only for the machine they are reading"):
+
+	  readings     one entry per machine p is reading NOW: of p's lens class
+	               (`Ring.lensOf`), within `lens_read_range_studs` horizontally
+	               of p's accepted position, in a lit room, not committed, and
+	               in line of sight. Ascending by machine id, built fresh.
+	  machineId    which machine. Public: every machine is in the layout.
+	  setting      its required setting. The secret itself, and safe only
+	               because every clause above is the server's: a client holding
+	               it was able to read it by standing there with its light up.
+
+	WHAT IS NEVER SENT on the lens view: any machine outside those five clauses,
+	and no room, class, tag or player - the client has those from public state,
+	and each would be a second copy of a fact to keep consistent. Light
+	DIRECTION is not a clause here: it is presentation (D14, `components.md`
+	C-01, C-02), drawn by the client over readings the server already allowed.
 
 	THE RING RELATIONS COME FROM `Ring`, never from a private σ⁻¹ here. `Ring`'s
 	own header says direction is the one error the ring's structure cannot catch:
@@ -54,6 +74,8 @@
 	free to disagree with the first and impossible to test apart from it.
 ]]
 
+local Machines = require("../facility/Machines")
+local Procedure = require("../procedure/Procedure")
 local Ring = require("./Ring")
 
 local Projection = {}
@@ -146,6 +168,69 @@ function Projection.forPlayer(assignment: Ring.Assignment, playerId: Ring.Player
 		dependentId = Ring.dependentOf(assignment, playerId),
 		seatOrder = seatOrder,
 	}
+end
+
+--[[
+	THE LENS VIEW'S ALLOWLIST IS ITS TYPE, as `PublicSeatView`'s is (D16). A
+	reading carries exactly `machineId` and `setting`; the view carries exactly
+	`readings`.
+]]
+export type LensReading = { machineId: number, setting: number }
+export type LensView = { readings: { LensReading } } -- ascending by machineId
+
+--[[
+	`p`'s lens view from `position` (VIEW-001).
+
+	Every machine is a candidate, decoys included. The four cheap clauses are
+	asked first and `lineOfSight` LAST, at most once per machine: in a real place
+	it is a raycast. The class is `Ring.lensOf` - the stored lens, never the
+	player's own key, which is the direction error the ring cannot catch. The
+	range and the dark check come from `Machines` and `Procedure` rather than a
+	second implementation here, and every constant is read from
+	`procedure.tuning` (P-1). Range is horizontal and inclusive, as P-4's
+	`within` is, with the lens constant.
+
+	Each reading is built literally, field by field; no machine record is ever
+	copied, so a field added to `Machine` later cannot ride along.
+]]
+function Projection.lensFor(
+	assignment: Ring.Assignment,
+	procedure: Procedure.ProcedureState,
+	playerId: Ring.PlayerId,
+	position: Procedure.Vec?,
+	lineOfSight: (from: Procedure.Vec, to: Procedure.Vec) -> boolean
+): LensView
+	local readings: { LensReading } = {}
+	if position == nil then
+		return { readings = readings }
+	end
+
+	local lensClass = Ring.lensOf(assignment, playerId)
+	local range = procedure.tuning.instance.lens_read_range_studs
+	local layout = procedure.facility.layout
+
+	for _, machine in procedure.facility.placement.machines do
+		if
+			machine.keyClass == lensClass
+			and procedure.committed[machine.id] ~= true
+			and not Procedure.isDark(procedure, machine.room)
+		then
+			local at = Machines.positionOf(layout, machine, procedure.tuning)
+			local dx = position.x - at.x
+			local dz = position.z - at.z
+			if math.sqrt(dx * dx + dz * dz) <= range and lineOfSight(position, at) then
+				table.insert(
+					readings,
+					{ machineId = machine.id, setting = machine.requiredSetting }
+				)
+			end
+		end
+	end
+
+	table.sort(readings, function(a: LensReading, b: LensReading): boolean
+		return a.machineId < b.machineId
+	end)
+	return { readings = readings }
 end
 
 return Projection

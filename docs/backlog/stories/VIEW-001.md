@@ -5,7 +5,7 @@ slug: a-player-s-lens-view-holds-only-settings
 epic: EPIC-07
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/VIEW-001-a-player-s-lens-view-holds-only-settings
 depends_on: [PROC-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -653,3 +653,110 @@ partial run is not evidence):
   `lineOfSight` consulted last and at most once per machine. These are contract
   precision, not new scope: AC-1's "within … horizontally" and the existing
   "called only for machines that already pass" bullet already said so.
+
+### RED verified by the orchestrator (2026-10-03)
+
+- `lune run test`, run independently: `926 passed, 10 failed`; all ten in
+  `tests/server/lens_view_test.luau` — nine on `Projection.lensFor is nil`, one
+  (AC-6) on `Projection.luau mentions "fragments" on line(s) 46` / `"pairings"`.
+  Every pre-existing test passes, including the widened SEAT-002 require guard.
+- ACs unchanged against `main` (diff of the section is empty).
+- RED committed as `38e4e33` while the story says `phase: RED`, so the counter
+  baselines (145 → 149) are in a RED commit (`check-boundaries.sh` 3j).
+- `bash scripts/gates.sh --fast` at `38e4e33`: PASS format (149), lint (149),
+  typecheck (27), build (100345 bytes), harness (`project-counters: 40 passed,
+  0 failed`); FAIL unit (216 s, `926 passed, 10 failed`, the assertions above
+  and nothing else). Admissible.
+
+### GREEN (2026-10-03)
+
+**Model.** `feature-developer`, resolved as `claude-opus-5-5` (Opus 5.5),
+matching the planned `opus` row; no override in the dispatch.
+
+**What changed** (source only; `git status` shows no test file touched):
+
+- `src/server/seats/Projection.luau`: `export type LensReading`,
+  `export type LensView`, and `Projection.lensFor(assignment, procedure,
+  playerId, position, lineOfSight)` as the Contract says. If `position` is nil
+  it returns `{ readings = {} }` before anything else, so `lineOfSight` is never
+  called. Otherwise every machine in `procedure.facility.placement.machines` is
+  a candidate. The cheap clauses run first: class `== Ring.lensOf`, then
+  `committed[id] ~= true`, then `not Procedure.isDark`. Next comes the
+  horizontal range check against `Machines.positionOf(layout, machine,
+  procedure.tuning)`, `<= procedure.tuning.instance.lens_read_range_studs`.
+  `lineOfSight(position, positionOfResult)` is called last, through `and`
+  short-circuit, so it runs at most once per machine. Each reading is built
+  literally, the list is sorted by `table.sort` on `machineId`, and the list
+  and the view are fresh on every call. The only requires are `./Ring`,
+  `../procedure/Procedure` and `../facility/Machines`, with no cycle. None of
+  the flat-ban names is used. The header's "WHAT M3 ADDS" paragraph is
+  rewritten to name `lensFor` (D14/D16, a separate allowlisted view) and
+  `turnCuesFor` (VIEW-002, not built). A new "WHAT p's LENS VIEW HOLDS" /
+  "WHAT IS NEVER SENT" block follows the existing WHAT-p-IS-TOLD style.
+  `forPlayer` is untouched.
+- `src/server/seats/Ring.luau` line 54: "pairings a lens actually shows" is now
+  "entries a lens actually shows". No code changed.
+- `stylua` reflowed one `table.insert` line. `stylua --check src` is clean.
+
+**Tests.** `lune run test`, full suite (7 m 28 s plain on this machine):
+
+    936 passed, 0 failed
+
+The scratch single-file runner took 7.7 s for `lens_view_test.luau` (11/11),
+of which AC-6's `classify.sh` shell-out was 6.1 s and AC-1 was 0.51 s.
+`lens_view_controls_test.luau` gave 24/24 and `projection_test.luau` 10/10
+(the widened require guard passes against the three real requires).
+
+**Fast gates.** `bash scripts/gates.sh --fast` on the uncommitted GREEN tree:
+
+    PASS         format (2s, observed 149)
+    PASS         lint (2s, observed 149, floor 1)
+    PASS         typecheck (4s, observed 27)
+    FAIL         unit (254s, exit 143) -> .claude/state/gate-logs/unit.log
+    UNCONFIGURED coverage
+    PASS         build (5s, observed 102288)
+    FAIL         harness (87s, exit 1) -> .claude/state/gate-logs/harness.log
+
+- `unit` exit 143 means the process was SIGTERMed (`Terminated  lune run
+  test`). No test had failed up to that point, and the gate has no timeout.
+  An earlier `--fast` attempt had been killed by the agent's own
+  background-task time limit, which left an orphaned `lune`. I killed that
+  orphan before this run started, so it was not the cause, and I could not
+  find out what was. I re-ran the gate alone with `bash scripts/gates.sh
+  --gate unit`: `PASS unit (378s, observed 936, floor 507)`, "All required
+  gates passed".
+- `harness`: `project-counters: 39 passed, 1 failed`. The one failure is "the
+  working tree carries no stray .luau files", which lists ` M
+  src/server/seats/Projection.luau` and ` M src/server/seats/Ring.luau`. That
+  precondition is red on any uncommitted `.luau` change and clears at the GREEN
+  commit. The counts did not move (149/149/27, as RED pinned, since no source
+  file was added).
+
+**Negative controls confirmed against the shipped module.** I measured with an
+ignored scratch script (`.claude/state/scratch/measure_lens_green.luau`). It
+calls `LensViewContract.audit` on `Projection.lensFor` and on
+`LensViewStubs.reference` over the same samples:
+
+| Sample | Quantity | RED (reference stub) | GREEN (shipped `lensFor`) |
+|---|---|---|---|
+| FULL (600 facilities, 150,000 calls) | extra / missing / malformed | 0 / 0 / 0 | 0 / 0 / 0 |
+| FULL | sole exclusions class / range / lit / committed / sight | 21573 / 158214 / 2526 / 1562 / 2458 | 21573 / 158214 / 2526 / 1562 / 2458 |
+| FULL | non-empty expected views | 5,392 | 5,392 |
+| FULL | extras by violated clause | all 0 | all 0 |
+| control (36 facilities, 9,000 calls) | extra / missing | 0 / 0 | 0 / 0 |
+| control | sole exclusions | 1452 / 9306 / 147 / 102 / 141 | 1452 / 9306 / 147 / 102 / 141 |
+| control | non-empty expected views | 363 | 363 |
+
+Every number matches; nothing diverged. The one-defect stub controls do not
+involve the shipped module, and all 24 pass under `lune run test`.
+
+### GREEN freeze (orchestrator, 2026-10-03)
+
+Snapshot taken right after `phase.sh set VIEW-001 GREEN`, over the four new
+test files, `projection_test.luau`, `ProjectionContract`, `ProjectionStubs`,
+`SourceScan` and `project-counters.test.sh`. Before leaving GREEN:
+
+    frozen: OK — 9 path(s) unchanged since the snapshot for VIEW-001
+
+- GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5), planned `opus`,
+  dispatched with `model: opus`; no override reported.
