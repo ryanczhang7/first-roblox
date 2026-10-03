@@ -51,7 +51,7 @@
 	leaver's lens - exactly what `roles.md` section 6 says is lost.
 
 	WHAT THIS MODULE DOES NOT KNOW. Lens CONTENTS - the `(tag → required value)`
-	pairings a lens actually shows - come from the M3 instance generator, so an
+	entries a lens actually shows - come from the M3 instance generator, so an
 	`Assignment` carries `players`, `sigma`, `keyClasses` and `lens` and nothing
 	else. It needs no Roblox runtime either: no `Instance`, no service, no clock -
 	`rejoin` is handed `now` - nothing but arithmetic over tables.

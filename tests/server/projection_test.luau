@@ -83,6 +83,11 @@ local BANNED: { string } = {
 	"setmetatable",
 }
 
+-- The modules `Projection.luau` may require, by name (VIEW-001 PO-2): the
+-- ring for its types and relations, Machines for `positionOf` and Procedure
+-- for `isDark`. None of the three exports a copy helper.
+local ALLOWED_REQUIRES: { string } = { "./Ring", "../procedure/Procedure", "../facility/Machines" }
+
 return {
 	--[[ The export shape. Pinned first because everything below depends on it
 	     and a wrong guess here is a compile error rather than a puzzle. ]]
@@ -152,7 +157,12 @@ return {
 		)
 	end,
 
-	["AC-4: the only module Projection.luau requires is ./Ring, so no copy helper arrives under another name"] = function()
+	--[[ VIEW-001 PO-2 widened this allowlist from `./Ring` alone to the three
+	     modules `lensFor` needs, BY NAME - never "any relative require". The
+	     widened assertion passed on arrival (the module still requires only
+	     Ring) and was earned with scripts/mutate.sh, adding a fourth require;
+	     the red is pasted in VIEW-001's `## Handoff: RED -> GREEN`. ]]
+	["AC-4: Projection.luau requires nothing but ./Ring, ../procedure/Procedure and ../facility/Machines, by name, so no copy helper arrives under another name"] = function()
 		local files = SourceScan.sourceFilesIn(SEATS)
 		assert(
 			SourceScan.contains(files, PROJECTION),
@@ -163,18 +173,27 @@ return {
 		local fs = require("../helpers/GatedFs")
 		local text = fs.readFile(PROJECTION)
 		local requires = SourceScan.scanFor({ PROJECTION }, { "require" })
-		local ringRequires = select(2, string.gsub(text, 'require%(%s*"%./Ring"%s*%)', ""))
-			+ select(2, string.gsub(text, "require%(%s*'%./Ring'%s*%)", ""))
+		local allowed = 0
+		for _, name in ALLOWED_REQUIRES do
+			-- `%.` escapes every dot in the name; `/` needs none.
+			local escaped = string.gsub(name, "%.", "%%.")
+			allowed += select(2, string.gsub(text, `require%(%s*"{escaped}"%s*%)`, "")) + select(
+				2,
+				string.gsub(text, `require%(%s*'{escaped}'%s*%)`, "")
+			)
+		end
 		assert(
 			#requires >= 1,
 			`{PROJECTION} requires nothing; PO-1 says it reads Ring.PlayerId, Ring.KeyClass and `
 				.. `Ring.Assignment through require("./Ring")`
 		)
 		assert(
-			#requires == ringRequires,
-			`{PROJECTION} has {#requires} require(s) but {ringRequires} of them are require("./Ring"). `
-				.. `The types come from Ring and the ring relations come from Ring; nothing else is `
-				.. `needed, and a helper required here is a copy helper the flat ban cannot see:\n`
+			#requires == allowed,
+			`{PROJECTION} has {#requires} require(s) but only {allowed} of them name one of `
+				.. `{table.concat(ALLOWED_REQUIRES, ", ")}. The types and ring relations come from `
+				.. `Ring, the position and the dark check from Machines and Procedure (VIEW-001 PO-2); `
+				.. `nothing else is needed, and a helper required here is a copy helper the flat ban `
+				.. `cannot see:\n`
 				.. SourceScan.describeHits(requires)
 		)
 	end,
