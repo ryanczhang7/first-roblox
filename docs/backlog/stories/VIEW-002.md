@@ -5,7 +5,7 @@ slug: a-player-s-turn-cues-name-only-their-own
 epic: EPIC-07
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/VIEW-002-a-player-s-turn-cues-name-only-their-own
 depends_on: [PROC-002]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -684,3 +684,84 @@ No acceptance criterion was touched.
 - One handoff finding accepted as settled, not new scope: a finale step at
   position 1 is `next` at the shipped lookahead. G12 says "not live and position
   <= `turn_cue_lookahead`" with no exception for finale steps.
+- RED committed as `8a05afb` with the story at `phase: RED` (counter baselines
+  149 → 153 in a RED commit). `bash scripts/gates.sh --fast` at `8a05afb`: PASS
+  format (153), lint (153), typecheck (27), build, harness (`project-counters:
+  40 passed, 0 failed`); FAIL unit (214 s, `950 passed, 9 failed`, the nine
+  above and nothing else). Admissible.
+
+### GREEN (2026-10-03)
+
+- GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5, from the session's
+  own model identification); no override reported in the dispatch.
+- **Provenance.** The implementation in `src/server/seats/Projection.luau`
+  (`export type TurnCues = { live: { number }, ["next"]: { number } }`,
+  `Projection.turnCuesFor`, the header's WHAT M3 ADDS update and the new WHAT
+  p's TURN CUES HOLD block) was written by an earlier GREEN dispatch that was
+  interrupted by a session restart before it verified anything. This dispatch
+  reviewed it against `## Contract` and the handoff and **changed nothing**:
+  ownership is `table.find` over `assignment.keyClasses[playerId]`, key class
+  is matched by the machine's `id` field, liveness is `Procedure.isLive`,
+  position counts uncommitted steps per track from 0, the window is `<=`
+  `procedure.tuning.instance.turn_cue_lookahead`, `next` excludes live, both
+  lists are fresh and sorted, requires and `forPlayer`/`lensFor` untouched,
+  no banned helper, no bare `next` identifier.
+- `lune run test` (real 1m45.9s):
+
+      959 passed, 0 failed
+
+  All nine `tests/server/turn_cues_test.luau` tests pass; nothing else changed.
+- `stylua --check src` clean; `selene` on `Projection.luau`: 0 errors, 0 warnings.
+- `bash scripts/gates.sh --fast` (uncommitted tree, not recorded):
+
+      PASS         format (1s, observed 153)
+      PASS         lint (0s, observed 153, floor 1)
+      PASS         typecheck (3s, observed 27)
+      PASS         unit (100s, observed 959, floor 507)
+      UNCONFIGURED coverage
+      PASS         build (1s, observed 103831)
+      FAIL         harness (15s, exit 1) -> .claude/state/gate-logs/harness.log
+      changes: 1 changed source path(s), all exercised by a required gate
+
+  `harness` fails only on `project-counters`' "the working tree carries no
+  stray .luau files" (`actual:  M src/server/seats/Projection.luau`), the
+  uncommitted-edit precondition; it clears at the GREEN commit.
+- **Handoff figures confirmed against the shipped module**
+  (`.claude/state/scratch/measure_cues_green.luau`, which runs
+  `Contract.audit`/`describeAudit` over `Projection.turnCuesFor` and over
+  `Stubs.reference` on the same cases, then every check function on the full
+  sample):
+
+  | Figure | RED (reference stub) | GREEN (real `turnCuesFor`) |
+  |---|---|---|
+  | Sub-sample: facilities / calls / states | 36 / 3,600 / 720 | 36 / 3,600 / 720 |
+  | Sub-sample: expected non-empty (live, next) | 2,130 (1,137, 1,103) | 2,130 (1,137, 1,103) |
+  | Sub-sample: both tracks / excluded-by-one / owned-decoy | 186 / 615 / 3,600 | 186 / 615 / 3,600 |
+  | Sub-sample: waiting finale / AC-4 states / armed | 537 / 276 / 36 | 537 / 276 / 36 |
+  | Sub-sample: two-cue lists | 76 of 7,200 | 76 of 7,200 |
+  | FULL: facilities / states / calls | 600 / 12,000 / 60,000 | 600 / 12,000 / 60,000 |
+  | FULL: non-empty (live, next) | 34,988 (18,727, 18,234) | 34,988 (18,727, 18,234) |
+  | FULL: both tracks / excluded-by-one / owned-decoy | 3,487 / 10,275 / 60,000 | 3,487 / 10,275 / 60,000 |
+  | FULL: waiting finale / AC-4 states / armed | 8,925 / 4,725 / 600 | 8,925 / 4,725 / 600 |
+  | FULL: two-cue lists | 1,514 of 120,000 | 1,514 of 120,000 |
+  | Violations (all kinds), both samples | 0 | 0 |
+  | AC-5 supplier calls | 720 | 720 (474 transferred-class cues expected, 0 missing) |
+  | All eight checks on the full sample | pass (reference) | pass |
+
+  No divergence. The per-stub control counts (`everyLive`, `lensNotKey`, ...)
+  are properties of the stubs, not of the module, and are pinned and passing
+  in `turn_cues_controls_test.luau` within the 959. D-1..D-4 remain GATES'.
+
+### GREEN freeze and orchestrator check (2026-10-03)
+
+- The first GREEN dispatch (`feature-developer`, `model: opus`) was cut off by
+  a session restart after writing `turnCuesFor` and before verifying it; its
+  resolved model was never reported. A second dispatch (`feature-developer`,
+  `claude-opus-5-5`) reviewed that code, changed nothing, and verified it (see
+  `### GREEN` above). The orchestrator read the diff against the Contract
+  before the second dispatch.
+- Snapshot taken right after `phase.sh set VIEW-002 GREEN` over the four new
+  test files, the three VIEW-001 lens files, `projection_test.luau`,
+  `SourceScan.luau` and `project-counters.test.sh`. Before leaving GREEN:
+
+      frozen: OK — 10 path(s) unchanged since the snapshot for VIEW-002
