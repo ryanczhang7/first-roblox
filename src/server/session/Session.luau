@@ -21,7 +21,9 @@
 	so its deadline and the machine's backstop share one duration (D11), and
 	every seated player is placed at the spawn room's centre: `positions` is
 	REPLACED and one `Placed` is emitted per player in seat order, each with
-	its own table. On failure the machine is stepped a THIRD time, at the same
+	its own table. `tracks` is replaced by exactly the dealt players, each
+	`Positions.placed` at the centre with its refusal count carried, so the
+	placement is the baseline the next sample is judged from. On failure the machine is stepped a THIRD time, at the same
 	`now`, with `RoundResolved{ no_contest, generation_failed }`; seat views are
 	still sent, because the ring was dealt.
 
@@ -29,9 +31,16 @@
 	the machine sees it: forwarded in `Assignment`, it would move to `Round`
 	with no ring dealt.
 
-	`PositionsSampled` AND `TurnRequested` NEVER REACH THE MACHINE. A sample
-	replaces `positions` with a copy (not a merge) in every phase and emits
-	nothing. A turn in `Round` with a Procedure goes through
+	`PositionsSampled` AND `TurnRequested` NEVER REACH THE MACHINE. A sample is
+	a claim (VIEW-004, §9.8): in every phase each `(playerId, sample)` is
+	offered to that player's `Positions` track with the STATE'S tuning walk
+	speed, and the batch MERGES - a player absent from it keeps their track.
+	`positions` is then exactly the ACCEPTED positions, fresh copies; a player
+	with no accepted sample is absent, and so in range of nothing. In `Round`
+	only, every player whose refusals have run longer than
+	`Positions.RESYNC_SECONDS` is placed back at their last accepted position,
+	one `Placed` per player in ascending `playerId`; that is the only effect a
+	sample ever emits. A turn in `Round` with a Procedure goes through
 	`TurnRequests.handle` against the STORED positions, and the caller alone
 	gets a `SendTo` of kind `TurnResult`; anywhere else it is ignored.
 
@@ -58,8 +67,8 @@
 
 	THE RING, THE FACILITY AND THE PROCEDURE ARE CLEARED ON ENTERING `Lobby`.
 	A stale ring in the next lobby would be withdrawn from, and seat views
-	sent, for a round that is over. `positions` is kept: it is the driver's
-	last sample, not round state.
+	sent, for a round that is over. `positions` and `tracks` are kept: they
+	are the last accepted samples, not round state.
 
 	EFFECT ORDER within one step: the machine's pass-through effects (`Emit`,
 	`PromptRematch`, `ComputeTrace`) in emission order with `AssignSeats`
@@ -81,6 +90,7 @@
 local Generator = require("../facility/Generator")
 local MechanicsTuning = require("@shared/MechanicsTuning")
 local PhaseMachine = require("../round/PhaseMachine")
+local Positions = require("./Positions")
 local Procedure = require("../procedure/Procedure")
 local Projection = require("../seats/Projection")
 local RoundConfig = require("../round/RoundConfig")
@@ -102,7 +112,8 @@ export type SessionState = {
 	assignment: Ring.Assignment?,
 	facility: Generator.Facility?,
 	procedure: Procedure.ProcedureState?,
-	positions: { [string]: Procedure.Vec }, -- the driver's last sample
+	positions: { [string]: Procedure.Vec }, -- the ACCEPTED positions only
+	tracks: { [string]: Positions.Track }, -- each player's plausibility track
 	tuning: MechanicsTuning.MechanicsTuning,
 	generatorPredicate: Predicate?,
 }
@@ -153,6 +164,7 @@ function Session.new(
 		facility = nil,
 		procedure = nil,
 		positions = {},
+		tracks = {},
 		tuning = opts.tuning or MechanicsTuning,
 		generatorPredicate = opts.generatorPredicate,
 	}
@@ -200,6 +212,17 @@ end
 
 local function vec(v: Procedure.Vec): Procedure.Vec
 	return { x = v.x, y = v.y, z = v.z }
+end
+
+-- A fresh copy of every accepted position; a player never accepted is absent.
+local function acceptedPositions(tracks: { [string]: Positions.Track }): { [string]: Procedure.Vec }
+	local positions: { [string]: Procedure.Vec } = {}
+	for playerId, track in tracks do
+		if track.accepted ~= nil then
+			positions[playerId] = vec(track.accepted)
+		end
+	end
+	return positions
 end
 
 -- The spawn room's centre, per `Machines.luau`'s header (§9.8).
@@ -276,13 +299,33 @@ function Session.step(
 	end
 
 	if event.kind == "PositionsSampled" then
-		local positions: { [string]: Procedure.Vec } = {}
-		for playerId, position in event.samples do
-			positions[playerId] = vec(position)
+		local walkSpeed = state.tuning.instance.walk_speed_studs_per_second
+		local tracks: { [string]: Positions.Track } = table.clone(state.tracks)
+		for playerId, sample in event.samples do
+			tracks[playerId] = (Positions.offer(tracks[playerId], sample, now, walkSpeed))
 		end
+
+		local effects: { SessionEffect } = {}
+		if state.round.phase == "Round" then
+			local due: { string } = {}
+			for playerId, track in tracks do
+				if Positions.needsResync(track, now) then
+					table.insert(due, playerId)
+				end
+			end
+			table.sort(due)
+			for _, playerId in due do
+				local track = tracks[playerId]
+				local at = track.accepted :: Procedure.Vec
+				tracks[playerId] = Positions.placed(track, at, now)
+				table.insert(effects, { kind = "Placed", playerId = playerId, position = vec(at) })
+			end
+		end
+
 		local next_ = table.clone(state)
-		next_.positions = positions
-		return next_, {}
+		next_.tracks = tracks
+		next_.positions = acceptedPositions(tracks)
+		return next_, effects
 	end
 
 	local before = state.round
@@ -291,6 +334,7 @@ function Session.step(
 	local facility = state.facility
 	local procedure = state.procedure
 	local positions = state.positions
+	local tracks = state.tracks
 	local effects: { SessionEffect } = {}
 	local placed: { SessionEffect } = {}
 	local sends: { SessionEffect } = {}
@@ -350,8 +394,10 @@ function Session.step(
 				)
 				local centre = spawnCentre(generated.facility, state.tuning)
 				positions = {}
+				tracks = {}
 				for _, playerId in dealt.players do
 					positions[playerId] = vec(centre)
+					tracks[playerId] = Positions.placed(state.tracks[playerId], centre, now)
 					table.insert(
 						placed,
 						{ kind = "Placed", playerId = playerId, position = vec(centre) }
@@ -443,6 +489,7 @@ function Session.step(
 		facility = facility,
 		procedure = procedure,
 		positions = positions,
+		tracks = tracks,
 		tuning = state.tuning,
 		generatorPredicate = state.generatorPredicate,
 	},

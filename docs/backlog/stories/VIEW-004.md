@@ -5,7 +5,7 @@ slug: an-implausible-position-is-not-trusted-f
 epic: EPIC-07
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/VIEW-004-an-implausible-position-is-not-trusted-f
 depends_on: [SLICE-005]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -765,3 +765,82 @@ The first three were put to the user before RED and answered by them.
 - `## Amendments` added by the orchestrator for the PLANNED-phase AC-4 and AC-5
   edits. `check-boundaries.sh` requires it whenever the criteria differ from
   `main`, in whatever phase they were edited (SLICE-005 hit this at REVIEW).
+- RED committed as `7e572ce` with the story at `phase: RED`. `bash
+  scripts/gates.sh --fast` at `7e572ce`: PASS format (159), lint (159),
+  typecheck (27), build; FAIL unit (104 s, `981 passed, 20 failed`, the twenty
+  above and nothing else); FAIL harness (`project-counters: 29 passed, 11
+  failed`). The stray-.luau precondition cleared at the commit. All eleven
+  harness failures are the counter baselines set to their post-GREEN values
+  (e.g. `expected count: 160 / actual count: 159`; typecheck and narrow 28 vs
+  27), which only GREEN's one new source file (`Positions.luau`) can satisfy.
+  The "92 files" in their names is stale test wording, not a measurement.
+  Admissible: no timeout, config or lint failure.
+
+### GREEN
+
+- GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5, from the session's
+  own model identification); the dispatch named no override.
+- **Changed.** New `src/server/session/Positions.luau`: pure, requires
+  nothing, `Vec`/`Track` types, `TOLERANCE = 1.5`, `SLACK_STUDS = 2`,
+  `RESYNC_SECONDS = 3`, `placed`/`offer`/`needsResync` exactly per the
+  Contract; header carries the engineering-constant justification.
+  `src/server/session/Session.luau`: `SessionState.tracks` (`{}` from `new`);
+  `PositionsSampled` clones the tracks map, offers each sample with
+  `state.tuning.instance.walk_speed_studs_per_second`, in `Round` only places
+  every `needsResync` player back (ascending `playerId`, one `Placed` each,
+  fresh position), and derives `positions` from the tracks' `accepted` (fresh
+  copies, never-accepted absent); the deal replaces `tracks` with the dealt
+  players `Positions.placed(old, centre, now)`; Lobby entry keeps both. Header
+  comment updated (the "replaces positions" paragraph). Nothing else touched.
+  A track for a player outside the batch is shared by reference with the old
+  state - never mutated, since `offer`/`placed` always return fresh tables.
+- **Tests.** `lune run test`: `1001 passed, 0 failed` (1m52s).
+  `bash scripts/frozen.sh verify`: `frozen: OK — 14 path(s) unchanged since
+  the snapshot for VIEW-004`.
+- **Fast gates** (`bash scripts/gates.sh --fast`, 7m21s): PASS format
+  (observed 160), lint (160), typecheck (28), unit (257 s, observed 1001),
+  build; UNCONFIGURED coverage; FAIL harness - `project-counters: 39 passed,
+  1 failed`, the one failure being the stray-.luau precondition
+  (`actual: M src/server/session/Session.luau / ?? src/server/session/Positions.luau`),
+  which clears when the orchestrator commits. The eleven count cases RED set
+  (160/160/28, narrow 28) all pass now.
+- **Negative controls, RED's expected vs measured against the shipped
+  module** (scratch script `.claude/state/scratch/confirm.luau`, ignored):
+
+| Quantity | RED expected | GREEN measured |
+|---|---|---|
+| bound(0.1) / bound(1) | 4.4 / 26 | 4.4 / 26 |
+| bound(2) / (3) / (3.5) / (4) / (5) | 50 / 74 / 86 / 98 / 122 | 50 / 74 / 86 / 98 / 122 |
+| settled controls | 200 @ 0.1 refused, 1.5 accepted | refused / accepted |
+| exact bound | 26 accepted / 26.000001 refused | accepted / refused |
+| dt case (87) | refused @3, @3.5; accepted @4 | refused, refused (refusals 2, run from 3), accepted (run cleared, refusals 2) |
+| clamp case | 2 accepted / 2.5 refused | accepted / refused |
+| resync | false at 3 s / true at 3.000001 s | false / true |
+| tuning case (42 at dt 1) | refused at 16, accepted at 160 | refused / accepted |
+| AC-5 fixture | beyond turn range 10 and bound(0.1) 4.4; "nearest machine to a spawn centre is 22.63" | seed 107's T1[1] machine (15) is 93.30 studs away: precondition holds. Benign: 22.63 is the minimum over machines, 93.30 is the fixture's own machine |
+| real `Positions`, MODULE_CHECKS | reference stub fires 0 of 10 | 0 of 10 |
+| real `Session` + `Positions`, SESSION_CHECKS | reference stand-in fires 0 of 7 | 0 of 7 |
+| real `Session`, SLICE-005 CHECKS | reference stand-in fires 0 of 16 | 0 of 16 |
+
+  The stub-control `[measured]` lines in `positions_controls_test` print the
+  same sets as RED's table (e.g. `storesRawSamples`, `positions =
+  tolerance100`, `refusesEverything`, the walking budget 15 s / 75 s / 83 s /
+  25 s / 18 s against 340 s). No divergence other than the AC-5 row above.
+
+### GREEN freeze (orchestrator, 2026-10-04)
+
+Snapshot taken right after `phase.sh set VIEW-004 GREEN` over the eleven files
+RED committed (`project-counters.test.sh`, `PositionsContract`,
+`PositionsStubs`, `ScriptedRound`, `SessionRoundContract`,
+`SessionRoundStubs`, `positions_controls_test`, `positions_test`,
+`session_positions_test`, `session_round_controls_test`,
+`session_round_test`) plus `turn_requests_test`, `SessionContract` and
+`session_test`. Before leaving GREEN:
+
+    frozen: OK — 14 path(s) unchanged since the snapshot for VIEW-004
+
+- GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5), planned `opus`,
+  dispatched with `model: opus`; no override reported.
+- The orchestrator read `Positions.offer` and `needsResync` against the
+  Contract: inclusive bound measured from the last accepted sample, `dt`
+  clamped at 0, no baseline is not a refusal, strict `>` for resync.
