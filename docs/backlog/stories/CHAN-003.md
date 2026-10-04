@@ -4,8 +4,8 @@ title: A call its handler declines costs the attempt floor but not the send cool
 slug: a-call-its-handler-declines-costs-the-at
 epic: EPIC-06
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/CHAN-003-a-call-its-handler-declines-costs-the-at
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -210,6 +210,60 @@ GATES.
 `context.clock.now()` separately for each limiter, AC-5's clock-once assertion,
 run on a remote declaring both limits, **must** fail. RED cannot run this.
 Owner: GATES.
+
+### Results (GATES, orchestrator, 2026-10-04, against `3eb8595`)
+
+All four were run with `bash scripts/mutate.sh <file> '<expr>' -- lune run test`,
+one at a time, from a baseline of `1038 passed, 0 failed`. Each changed exactly
+one line, went red where its entry said it must, and was restored and verified.
+Afterwards `src` was clean and no `.bak` was left, and only then did the full
+`gates.sh` run.
+
+**D-1 — RAN, PASSED.** `refund` clears the key instead of restoring it. AC-3
+went red, and **AC-1 stayed green, as D-1 requires**. The failing set is
+exactly the `refundClearsKey` row of the handoff's control table.
+
+    === mutate: src/net/RateLimiter.luau (1 line(s) changed by s/keys\[key\] = { at = before :: number, before = nil }/keys[key] = nil/) ===
+      FAIL  tests/net/decline_test.luau :: AC-3 (limiter): RateLimiter.refund(p, k, t1) after acceptances at t0 and t1 puts the key back to t0 - t0 + 9.9 refused, t0 + 10 allowed - ...
+      FAIL  tests/net/decline_test.luau :: AC-3: after an acceptance at t0 and a call at t1 = t0 + 10 accepted then declined, the send limiter holds t0 again - ...
+      FAIL  tests/net/decline_test.luau :: Contract (decline twice): a call declined twice is declined once - after an acceptance at t0 the key holds t0, not nothing, ...
+    1035 passed, 3 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_net_RateLimiter.luau.20261004T224153Z.42568.bak) ===
+
+**D-2 — RAN, PASSED.** `decline` also refunds the attempt limiter. AC-2 went
+red, matching the `refundsAttemptToo` row exactly.
+
+    === mutate: src/net/Wrapper.luau (1 line(s) changed by s/limiter:refund(playerId, definition.name, sentAt)$/limiter:refund(playerId, definition.name, sentAt) if attemptLimiter ~= nil and now ~= nil then attemptLimiter:refund(playerId, definition.name, now :: number) end/) ===
+      FAIL  tests/net/decline_test.luau :: AC-2: on a remote declaring attemptLimit 1 s and rateLimit 10 s, a second call at t + 0.9 is rate with exactly '"<name>" is limited to one attempt per 1 s per pl...
+      FAIL  tests/net/decline_test.luau :: Contract (step 1): when the attempt floor refuses, the send limiter is not consulted and records nothing - ...
+    1036 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_net_Wrapper.luau.20261004T224507Z.55580.bak) ===
+
+**D-3 — RAN, PASSED.** `refund`'s `last.at ~= acceptedAt` guard was removed,
+and the required "stale refund" case went red.
+
+The handoff's `refundIgnoresAcceptedAt` row predicted three failures (AC-3
+limiter, stale refund, unknown refund); the real module gives two. The AC-3
+limiter test stays green because the real `RateLimiter` has a second defence
+the stub lacked. A value restored by a refund carries no history
+(`before = nil`), so a second refund of the same instant still stops at the
+`last.before == nil` guard. The difference is in the mutation's shape (one
+guard removed, versus a stub with neither), not a test that cannot fail.
+
+    === mutate: src/net/RateLimiter.luau (1 line(s) changed by s/if last.at ~= acceptedAt then/if false then/) ===
+      FAIL  tests/net/decline_test.luau :: Contract (stale refund): after acceptances at t0, t1 and t2, refund(p, k, t1) is a no-op - the key still holds t2 and t2 + 9.9 is refused
+      FAIL  tests/net/decline_test.luau :: Contract (unknown refund): refund for a stranger, an unused key or an instant that was never accepted is a no-op and never raises, ...
+    1036 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_net_RateLimiter.luau.20261004T224745Z.66641.bak) ===
+
+**D-4 — RAN, PASSED.** The send limiter reads the clock a second time. Only
+AC-5 went red, matching the `readsClockPerLimiter` row exactly. That earns
+AC-5's clock-once case, which had been green on arrival.
+
+    === mutate: src/net/Wrapper.luau (1 line(s) changed by s/if limiter:allow(playerId, definition.name, now)/if limiter:allow(playerId, definition.name, context.clock.now())/) ===
+      FAIL  tests/net/decline_test.luau :: AC-5: a call reaching stage 5 reads context.clock.now() exactly once on a remote declaring both limits, the send limit alone or the attempt floor alone - ...
+    1037 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_net_Wrapper.luau.20261004T225035Z.79163.bak) ===
 
 ## Out of scope
 
@@ -755,10 +809,22 @@ restored and verified by `cmp`); GREEN resumes with no source change owed.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-04T22:59:18Z
+    commit: 3eb8595
+    tree:   eb3482e879ee64e4d89174e6cc66b2754ce24e62
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 164)
+    PASS         lint (0s, observed 164, floor 1)
+    PASS         typecheck (4s, observed 28)
+    PASS         unit (153s, observed 1038, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 109401)
+    PASS         harness (19s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -942,3 +1008,27 @@ lands. GREEN adds no file, so the counter baselines (164/164/28) are unaffected.
 - GREEN after the return **is a no-op**: the implementation already exists, so
   no feature-developer was dispatched. A fresh 23-path snapshot (now including
   the corrected control) was taken right after `phase.sh set CHAN-003 GREEN`.
+- `bash scripts/gates.sh --fast` by the orchestrator at `3eb8595` (GREEN
+  committed, tree clean): PASS format (164), lint (164), typecheck (28), unit
+  (140 s, `1038 passed, 0 failed`), build (109401), harness (`project-counters:
+  40 passed, 0 failed`); `changes: 4 changed source path(s), all exercised by a
+  required gate`; `All required gates passed (6 ran, 1 unconfigured, 0 known).`
+  The GREEN no-op is confirmed: the source written before the return passes the
+  corrected suite unchanged.
+- Before leaving GREEN: `frozen: OK — 23 path(s) unchanged since the snapshot for CHAN-003`.
+
+### GATES (orchestrator, 2026-10-04)
+
+- Snapshot re-taken right after `phase.sh set CHAN-003 GATES`, same 23 paths.
+  Before leaving GATES: `frozen: OK — 23 path(s) unchanged since the snapshot for CHAN-003`.
+- D-1..D-4 were run before `gates.sh`; their results are pasted under
+  `## Deferred verifications`. Three matched the handoff's control table
+  exactly. D-3 measured two failures where three were predicted, explained
+  there.
+- Full `bash scripts/gates.sh` at `3eb8595`, chained after the mutations and
+  run only once `src` was clean and no `.bak` remained: all required gates
+  passed (6 ran, 3 unconfigured, 0 known; unit 153 s, `observed 1038`). See
+  `## Gate results`. No source change was needed in GATES, so the
+  feature-developer was not dispatched. No gate was added or changed, so there
+  are no `## Gate probes`.
+- GATES - `lead-po` (orchestrator, no subagent) - `claude-opus-5-5`.
