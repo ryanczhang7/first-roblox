@@ -254,6 +254,8 @@ from an upstream story or spike (as noted above), amend it and re-run
 
 - PLANNED - `lead-po` - `claude-opus-5-5` (Opus 5.5, from the session's own model
   identification; the /plan-product dispatch reported no override). 2026-09-30.
+- RED (Return 1) - `test-developer` - `claude-fable-5-1` (Fable 5.1, the
+  agent's own identification; the dispatch named no override). 2026-10-04.
 
 ## Test plan
 
@@ -608,6 +610,149 @@ has none, and nothing sleeps. No CI measurement exists for this story yet.
        * whether GREEN was a no-op, and the command output proving the source
          was untouched and still passes -->
 
+### Return 1: GREEN → RED (2026-10-04)
+
+**Which test.** `tests/net/turn_remote_controls_test.luau`, *"control: a
+definition carrying attemptLimit = 3 fails exactly the attempt-limit check"*
+(PROC-005, DONE). It sets `definition.attemptLimit = 3` after
+`Remotes.define`, then asserts that the Turn contract fires exactly
+`declaresNoAttemptLimit` and nothing else.
+
+**What is wrong with it.** It held only while the wrapper ignored the field:
+
+- `3` is a bare number, not the `RateLimit` (`{ minIntervalSeconds }`) that
+  this story's Contract and `Remotes.RateLimit` type give `attemptLimit`. Now
+  that the wrapper reads the field, `guard()` raises on it, and every check
+  that guards the definition fires.
+- Even a well-formed floor can change Turn's own rate checks, so "exactly the
+  attempt-limit check" depends on the floor sitting below every call gap those
+  checks use.
+
+The control's intent is that a Turn definition carrying an attempt limit is
+caught by the attempt-limit check alone, and that intent is still right. Only
+its input is malformed. RED's existing-test review missed it because, in RED,
+the field had no effect and the control passed.
+
+**How it was found.** GREEN's `lune run test`: `1037 passed, 1 failed`:
+
+    FAIL tests/net/turn_remote_controls_test.luau :: control: a definition carrying attemptLimit = 3 fails exactly the attempt-limit check
+      declaresAttemptLimit fires { declaresNoAttemptLimit, malformedCallsAreRejectedBeforeTheHandler, secondCallInsideTheTurnRateLimitIsRejectedForRate, wellFormedCallInRoundReachesTheHandlerWithExactlyMachineAndSetting, wellFormedCallOutOfRoundIsRejectedForPhase }, expected exactly { declaresNoAttemptLimit }
+      ...src\net\Wrapper:148: attempt to index number with 'minIntervalSeconds'
+
+**Reproduced independently by the orchestrator** with a probe of its own
+(`.claude/state/scratch/po_attempt_probe.luau`, different values, written
+without the feature-developer's script) against GREEN's uncommitted source:
+
+    number attemptLimit: false C:\Users\ryanc\Projects\first-roblox\src\net\Wrapper:148: attempt to index number with 'minIntervalSeconds'
+    well-formed 2 s floor: first accepted | second at +1 s rate / "poProbeTable" is limited to one attempt per 2 s per player
+
+The first line shows a bare-number `attemptLimit` raising. The second shows a
+well-formed floor really refusing a call the send limit alone would allow.
+That is the Contract's stage-5 rule working, and it is why the control's input
+must be chosen against Turn's call gaps. The source is right, and "make the
+wrapper ignore a non-table `attemptLimit`" would shape production code around
+a malformed test input. GREEN declined that, correctly.
+
+**What it should assert now.** The test-developer's remit is this one control,
+and nothing else:
+
+- a **well-formed** `attemptLimit` (`{ minIntervalSeconds = <n> }`);
+- the expected fired set **re-measured** against GREEN's real wrapper: either
+  exactly `declaresNoAttemptLimit`, with `n` below every call gap in Turn's
+  checks, or a wider set with each extra check named and justified;
+- a name that no longer says `= 3`.
+
+**What earns it.** Owed by RED, pasted below this line: a `scripts/mutate.sh`
+probe of the specific behaviour the corrected control pins. The corrected
+assertion will pass on arrival, because the implementation exists.
+
+*RED (return), 2026-10-04, `test-developer` resolved to `claude-fable-5-1`
+(Fable 5.1, the planned `fable` row; the dispatch named no override).*
+
+**The one change.** `tests/net/turn_remote_controls_test.luau`: the `Edits`
+field `attemptLimit` is typed `{ minIntervalSeconds: number }?` instead of
+`number?`, and the control is now
+
+    ["control: a definition carrying a well-formed attemptLimit below every call gap fails exactly the attempt-limit check"]
+        declare("declaresAttemptLimit", { attemptLimit = { minIntervalSeconds = Contract.EPSILON / 2 } })
+        expected exactly { declaresNoAttemptLimit }
+
+`declare` still assigns the field after `Remotes.define`, as before. No other
+test file changed.
+
+**Why `n = EPSILON / 2` (= 0.05 s).** The only Turn check that makes more than
+one call reaching stage 5 through a single guard is the AC-3 rate check:
+calls at `t`, `t + rate - EPSILON`, `t + rate` (rate = `turn_rate_limit_seconds`
+= 1, EPSILON = 0.1). Under the Contract's stage-5 order the attempt floor runs
+first and is never refunded, so the second call is RECORDED by the attempt
+limiter even though the send limiter refuses it, and the third call is only
+EPSILON after the floor's last acceptance. The floor therefore has to sit
+strictly below EPSILON; `EPSILON` itself fails on the float `11 - 10.9 <
+0.1`. Every other check makes one call per guard (positive control, one guard
+per payload) or is rejected before stage 5 (malformed, out of phase), so no
+other gap exists. Expressed as `Contract.EPSILON / 2` so it follows the fixture
+rather than a literal.
+
+**Measured fired sets against GREEN's uncommitted wrapper** (probe
+`.claude/state/scratch/chan003_red2_measure_attempt_floor.luau`, the real
+`Remotes.define` + `TurnRemoteContract.failures`, outside the runner):
+
+    rate = 1 EPSILON = 0.1
+    n = 3      fires: { declaresNoAttemptLimit, secondCallInsideTheTurnRateLimitIsRejectedForRate }
+    n = 1      fires: { declaresNoAttemptLimit }
+    n = 0.5    fires: { declaresNoAttemptLimit, secondCallInsideTheTurnRateLimitIsRejectedForRate }
+    n = 0.2    fires: { declaresNoAttemptLimit, secondCallInsideTheTurnRateLimitIsRejectedForRate }
+    n = 0.1    fires: { declaresNoAttemptLimit, secondCallInsideTheTurnRateLimitIsRejectedForRate }
+    n = 0.05   fires: { declaresNoAttemptLimit }
+    n = 0.01   fires: { declaresNoAttemptLimit }
+
+`n = 1` is quiet only by coincidence - the floor equals the send limit, so
+the floor refuses the second call (reason `rate`, which the check accepts
+without reading the detail) and records nothing, leaving the third call
+exactly one floor after the first. That is not "below every call gap", so it
+was not chosen. Before the fix, the bare `3` fired all five definition-guarding
+checks because `guard()` raised (GREEN's output above); after it, the set is
+exactly `{ declaresNoAttemptLimit }`.
+
+**The probe.** One mutation of `src/net/Wrapper.luau`: the attempt limiter is
+built with ten times its declared floor (0.05 -> 0.5 s), which puts the floor
+the wrapper enforces above the EPSILON gap the control was sized against. The
+corrected control goes red with exactly the AC-3 rate check added, and the
+message names the attempt sentence - the floor, not the send limit, refused the
+third call. Verbatim (`.claude/state/scratch/chan003_red2_mutate.log`):
+
+    === mutate: src/net/Wrapper.luau (1 line(s) changed by s/RateLimiter.new(attemptLimit.minIntervalSeconds)/RateLimiter.new(attemptLimit.minIntervalSeconds * 10)/) ===
+      148 - 		then RateLimiter.new(attemptLimit.minIntervalSeconds)
+      148 + 		then RateLimiter.new(attemptLimit.minIntervalSeconds * 10)
+
+    === mutate: running lune run test ===
+    ...
+            [measured] declaresAttemptLimit fires: { 1 = "declaresNoAttemptLimit", 2 = "secondCallInsideTheTurnRateLimitIsRejectedForRate" }
+      FAIL  tests/net/turn_remote_controls_test.luau :: control: a definition carrying a well-formed attemptLimit below every call gap fails exactly the attempt-limit check
+            declaresAttemptLimit fires { 1 = "declaresNoAttemptLimit", 2 = "secondCallInsideTheTurnRateLimitIsRejectedForRate" }, expected exactly { 1 = "declaresNoAttemptLimit" }:
+    declaresNoAttemptLimit: AC-1: Turn.attemptLimit is { minIntervalSeconds = 0.05 }; the Turn remote declares no attempt limit (PO decision 1: attemptLimit == nil)
+    secondCallInsideTheTurnRateLimitIsRejectedForRate: AC-3 (rate, turn_rate_limit_seconds = 1) failed in 2 step(s):
+      AC-3: the third call at exactly t + 1 -> REJECTED: reason = "rate", detail = ""NetTest_declaresAttemptLimit_2495" is limited to one attempt per 0.05 s per player"
+      AC-3: after the third call the handler ran 1 time(s) in total, expected 2
+    ...
+    1034 passed, 4 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /c/Users/ryanc/Projects/first-roblox/.claude/state/mutations/src_net_Wrapper.luau.20261004T222209Z.11863.bak) ===
+
+The other three failures under the mutant are this story's own
+`tests/net/decline_test.luau` (AC-2, AC-5, Contract step 1), which pin the
+declared floor directly; they are listed in the log and are not this control's
+evidence.
+
+**Unmutated, with GREEN's source restored** (`lune run test`,
+`.claude/state/scratch/chan003_red2_test.log`):
+
+    [measured] declaresAttemptLimit fires: { 1 = "declaresNoAttemptLimit" }
+    1038 passed, 0 failed
+
+`stylua --check tests`: exit 0. `selene tests`: 0 errors, 0 warnings, 0 parse
+errors. GREEN's source was not touched by this return (the mutation was
+restored and verified by `cmp`); GREEN resumes with no source change owed.
+
 ## Gate results
 
 <!-- Written by scripts/gates.sh itself on every full run, stamped with the
@@ -690,3 +835,96 @@ has none, and nothing sleeps. No CI measurement exists for this story yet.
   reading of AC-3 uses the clock as documented. The limiter-level test pins the
   same property with plain numbers. D-1 must turn red in at least one of the
   two.
+- RED committed as `b14a88d` with the story at `phase: RED` (counter baselines
+  160 → 164). `bash scripts/gates.sh --fast` at `b14a88d`: PASS format (164),
+  lint (164), typecheck (28), build, harness (`project-counters: 40 passed, 0
+  failed`); FAIL unit (115 s, `1023 passed, 15 failed`, the fifteen above and
+  nothing else). Admissible.
+
+### GREEN (2026-10-04) - BLOCKED on a stale PROC-005 control; escalated, not worked around
+
+Model: dispatched as `feature-developer`, resolved to **Opus 5.5
+(`claude-opus-5-5`)**, from the session's own model identification. No override
+was reported.
+
+**What changed** (the four files the brief named, and no others; no test file
+touched; `bash scripts/frozen.sh verify` reports `frozen: OK - 23 path(s)
+unchanged`):
+- `src/net/RateLimiter.luau`: each key now holds `{ at, before }`, so each
+  acceptance keeps the timestamp it overwrote (`NEVER` = `false` when there was
+  none). The new `refund(p, k, acceptedAt)` acts only when `last.at ==
+  acceptedAt`. It restores `before`, or removes the key, and removes the player
+  too if that leaves them with no key. A restored acceptance has `before = nil`
+  (history unknown), so refunding it again is a no-op rather than a guess. The
+  type gains only `refund`. `allow`, `forget` and `size` behave as before, and
+  the timestamp still moves on acceptance alone. The header has a new refund
+  paragraph.
+- `src/net/Remotes.luau`: `attemptLimit: RateLimit?` on `RemoteSpec` and
+  `RemoteDefinition`, copied field by field in `define`.
+- `src/net/Wrapper.luau`: `CallControl` is exported, and `Rejection.reason`
+  and the private `Reason` gain `"declined"`. A second limiter is built only
+  when `attemptLimit` is declared. Stage 5 reads `now` once when either limiter
+  exists and zero times when neither does. The attempt limiter runs first, with
+  the attempt sentence, and when it refuses the send limiter is not consulted.
+  Then the send limiter runs, with its detail unchanged. The handler gets a
+  fresh `{ decline }` per call. `decline` is idempotent and refunds only the
+  send limiter, at this call's `now`, and only if it accepted. The result is
+  `declined` when the handler returns having declined, and it goes through the
+  existing telemetry path. The header's check-order entry and a new D18
+  paragraph are updated.
+- `src/net/RejectionReporter.luau`: `Reason` gains `"declined"`, and the header
+  lists it among the uncoalesced reasons.
+
+**`lune run test`, verbatim:** `1037 passed, 1 failed`. All 15 of
+`decline_test.luau` pass, and so do all 22 of `decline_controls_test.luau`. The
+one failure is in an EXISTING suite:
+
+    FAIL  tests/net/turn_remote_controls_test.luau :: control: a definition carrying attemptLimit = 3 fails exactly the attempt-limit check
+        declaresAttemptLimit fires { 1 = "declaresNoAttemptLimit", 2 = "malformedCallsAreRejectedBeforeTheHandler", 3 = "secondCallInsideTheTurnRateLimitIsRejectedForRate", 4 = "wellFormedCallInRoundReachesTheHandlerWithExactlyMachineAndSetting", 5 = "wellFormedCallOutOfRoundIsRejectedForPhase" }, expected exactly { 1 = "declaresNoAttemptLimit" }:
+    declaresNoAttemptLimit: AC-1: Turn.attemptLimit is 3; the Turn remote declares no attempt limit (PO decision 1: attemptLimit == nil)
+    malformedCallsAreRejectedBeforeTheHandler: ...\src\net\Wrapper:148: attempt to index number with 'minIntervalSeconds'
+    (the same raise for the other three)
+
+**Why this is a stale test, not a code defect.** PROC-005 wrote this control
+before `attemptLimit` meant anything. It assigns `definition.attemptLimit = 3`
+after `define`, which is a bare number, not a `RateLimit`. It then pins that
+ONLY `declaresNoAttemptLimit` fires. That was true while the wrapper ignored the
+field. CHAN-003 makes the field live, so the claim cannot hold:
+- with the number `3`, `guard()` indexes `3.minIntervalSeconds` and raises
+  (5 checks fire);
+- with a well-formed limit it still fails. Measured in
+  `.claude/state/scratch/chan003_turn_attempt.luau`, `{ minIntervalSeconds = 3 }`
+  and `{ minIntervalSeconds = 0.5 }` each fire 2 checks:
+  `declaresNoAttemptLimit` and `secondCallInsideTheTurnRateLimitIsRejectedForRate`.
+  The third call at t + 1 is refused by the floor, because the t + 0.9
+  attempt's acceptance stands. That is exactly the Contract's step-2
+  semantics: a live floor changes Turn's AC-3 behaviour.
+
+Neither result is a defect in this story's code. The only source change that
+would turn the control green is to make the wrapper silently ignore a
+non-table `attemptLimit`. That would shape production code to fit a malformed
+fixture, and it would leave a declared floor silently dead. I did not make that
+change. The Contract foresaw this case ("If an existing test pins ... that is a
+corrective RED on a DONE story's test ... in `## Regressions` with a probe").
+RED's exhaustiveness check covered reason lists and `remotes_test.luau:39`, but
+missed this file, which passed in RED only because the field was inert. The
+fix belongs to RED (Test Developer). A corrected control needs a well-formed
+`attemptLimit`, and its expected set must include the AC-3 rate check, or it
+must use a floor that does not bite at t + 1. The correction then needs a
+probe.
+
+**Negative controls confirmed against the shipped modules.** The scratch
+script `.claude/state/scratch/chan003_confirm.luau` runs the
+`decline_controls_test.luau` `DECLINE_CHECKS` (15) and `EARLIER_CHECKS` (15:
+NET-003's eight, TEL-003 wiring, AC-2, no-telemetry and AC-1/AC-3, NET-002
+AC-2, and NET-001 order and define/all) over the real `src/net` bundle. It
+copies the lists from the test's text without editing them. Expected (RED's
+baseline row): 0 failures. Measured: `real bundle: 0 of 30 checks failed`. No
+divergence. The 20 one-defect controls are stubs and do not move with the
+shipped module. All 22 pass under `lune run test`.
+
+**Gates.** `bash scripts/gates.sh --fast` was NOT run: `unit` is known red on
+the stale control above, so I ran the static gates directly instead. They were
+`stylua --check src` (exit 0), `selene src/net` (0 errors, 0 warnings) and
+`luau-lsp analyze` over `src` (no errors). Run `--fast` once the corrective RED
+lands. GREEN adds no file, so the counter baselines (164/164/28) are unaffected.
