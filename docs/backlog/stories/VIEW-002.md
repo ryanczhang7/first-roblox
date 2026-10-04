@@ -4,8 +4,8 @@ title: A player's turn cues name only their own live and next machines
 slug: a-player-s-turn-cues-name-only-their-own
 epic: EPIC-07
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/VIEW-002-a-player-s-turn-cues-name-only-their-own
 depends_on: [PROC-002]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -854,3 +854,12 @@ No acceptance criterion was touched.
   GATES, so no feature-developer dispatch. No gate added or changed, so no
   `## Gate probes`.
 - GATES - `lead-po` (orchestrator, no subagent) - `claude-opus-5-5`.
+
+### DONE (2026-10-04)
+
+- PR [#54](https://github.com/ryanczhang7/first-roblox/pull/54) merged at
+  2026-10-04T01:55:53Z as `da88813`.
+- CI: `boundaries` pass (7 s); `gates` pass (4m35s against `timeout-minutes: 45`)
+  — https://github.com/ryanczhang7/first-roblox/actions/runs/37168535376 —
+  unit 93 s (`959 passed, 0 failed`), harness 16 s (`project-counters: 40
+  passed, 0 failed`). No timing near a limit.
