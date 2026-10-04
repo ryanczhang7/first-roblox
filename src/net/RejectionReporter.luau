@@ -6,8 +6,9 @@
 	IT NEVER READS A CLOCK. `now` is a parameter of `record` and `flush`, as it
 	is of `RateLimiter.allow`, so a 100 Hz flood is an instant test.
 
-	ONLY `rate` IS COALESCED (PO decision 3). `identity`, `shape`, `range` and
-	`phase` each produce one event per call with `count = 1` (AC-1). A `rate`
+	ONLY `rate` IS COALESCED (PO decision 3). `identity`, `shape`, `range`,
+	`phase` and CHAN-003's `declined` each produce one event per call with
+	`count = 1` (AC-1). A `rate`
 	rejection is coalesced per `(playerId, remoteName)`: the first in a window
 	- no window yet, or `now - windowStart >= intervalSeconds`, INCLUSIVE as
 	`RateLimiter` is - returns an event carrying itself plus everything
@@ -35,7 +36,7 @@ local RejectionReporter = {}
 -- game-tuning one, so it lives here and not in `tuning.md`.
 RejectionReporter.INTERVAL_SECONDS = 1
 
-export type Reason = "identity" | "shape" | "range" | "phase" | "rate"
+export type Reason = "identity" | "shape" | "range" | "phase" | "rate" | "declined"
 
 export type RejectionReporter = {
 	record: (

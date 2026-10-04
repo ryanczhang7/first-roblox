@@ -37,17 +37,22 @@ export type Phase = "Lobby" | "Assignment" | "Round" | "Resolution" | "Post"
 
 export type RateLimit = { minIntervalSeconds: number }
 
+-- `rateLimit` is the send limit, which a handler's `decline()` refunds;
+-- `attemptLimit` (CHAN-003, `architecture.md` D18) is the attempt floor,
+-- checked before it in stage 5 and never refunded.
 export type RemoteDefinition = {
 	name: string,
 	args: Schema.Schema,
 	legalPhases: { Phase },
 	rateLimit: RateLimit?,
+	attemptLimit: RateLimit?,
 }
 
 export type RemoteSpec = {
 	args: Schema.Schema,
 	legalPhases: { Phase },
 	rateLimit: RateLimit?,
+	attemptLimit: RateLimit?,
 }
 
 -- Module-level, so a remote is declared once per server and every guard reads
@@ -86,6 +91,7 @@ function Remotes.define(name: string, spec: RemoteSpec): RemoteDefinition
 		args = spec.args,
 		legalPhases = spec.legalPhases,
 		rateLimit = spec.rateLimit,
+		attemptLimit = spec.attemptLimit,
 	}
 	byName[name] = definition
 	table.insert(registry, definition)

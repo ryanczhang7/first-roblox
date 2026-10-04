@@ -53,7 +53,7 @@ type Edits = {
 	legalPhases: { string }?,
 	rateLimitSeconds: number?,
 	noRateLimit: boolean?,
-	attemptLimit: number?,
+	attemptLimit: { minIntervalSeconds: number }?,
 }
 
 -- The reference spec with the named edits, declared under a unique name.
@@ -260,10 +260,24 @@ return {
 		)
 	end,
 
-	["control: a definition carrying attemptLimit = 3 fails exactly the attempt-limit check"] = function()
-		expectFires("declaresAttemptLimit", declare("declaresAttemptLimit", { attemptLimit = 3 }), {
-			ATTEMPT,
-		})
+	-- CHAN-003 Return 1. The floor is a WELL-FORMED `RateLimit` - the wrapper
+	-- now reads it and raises on a bare number - and it sits BELOW every gap
+	-- between calls that reach stage 5 in these checks. The smallest such gap
+	-- is EPSILON: the rate check's second call (t + rate - EPSILON) is recorded
+	-- by the attempt limiter even though the send limiter refuses it (the floor
+	-- runs first and is never refunded), so the third call at t + rate is only
+	-- EPSILON after the floor's last acceptance. MEASURED against GREEN's
+	-- wrapper: EPSILON / 2 fires exactly declaresNoAttemptLimit; EPSILON itself,
+	-- 0.2, 0.5 and 3 also fire the AC-3 rate check (see the story's
+	-- `## Regressions`, Return 1).
+	["control: a definition carrying a well-formed attemptLimit below every call gap fails exactly the attempt-limit check"] = function()
+		expectFires(
+			"declaresAttemptLimit",
+			declare("declaresAttemptLimit", {
+				attemptLimit = { minIntervalSeconds = Contract.EPSILON / 2 },
+			}),
+			{ ATTEMPT }
+		)
 	end,
 
 	["control: a hand-built copy of the reference that was never passed through Remotes.define fails exactly the registry check - all() must list the table itself"] = function()
