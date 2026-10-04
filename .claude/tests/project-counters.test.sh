@@ -264,7 +264,21 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-# LAST SET: VIEW-004 (RED), which adds six test files
+# LAST SET: CHAN-003 (RED), which adds four test files
+# (tests/helpers/DeclineContract.luau, DeclineStubs.luau,
+# tests/net/decline_test.luau, decline_controls_test.luau) and NO source:
+# GREEN edits src/net/Wrapper.luau, RateLimiter.luau, Remotes.luau and
+# RejectionReporter.luau in place and adds no file. VIEW-004's predicted
+# GREEN values (160/160/28) were confirmed on the tree before this story's
+# files were added: `git ls-files` over src tests lune counted 160 .luau
+# files and src alone 28. MEASURED on the uncommitted RED tree with the gate
+# commands out of project.conf: `stylua over 164 files`, `selene over 164
+# files`, `analyze over 28 files` (160 + 4 tests). These are also the
+# post-GREEN counts: 164/164/28, narrow unchanged at 28/28/8. The "no stray
+# .luau files" precondition is the one red line in RED and clears at the RED
+# commit. GREEN confirms, never edits; a new source file is a counter
+# failure GREEN cannot fix.
+# BEFORE THAT: VIEW-004 (RED), which adds six test files
 # (tests/helpers/PositionsContract.luau, PositionsStubs.luau,
 # SessionRoundStubs.luau, tests/server/positions_test.luau,
 # positions_controls_test.luau, session_positions_test.luau) and whose GREEN
@@ -352,8 +366,8 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=160    # stylua  over src tests lune   (160 = 28 src + 132 tests/lune, post VIEW-004 GREEN)
-BASE_LINT=160      # selene  over src tests lune
+BASE_FORMAT=164    # stylua  over src tests lune   (164 = 28 src + 136 tests/lune, post CHAN-003 RED)
+BASE_LINT=164      # selene  over src tests lune
 BASE_TYPECHECK=28  # analyze over src (NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions)
 NARROW_FORMAT=28   # stylua  over src alone
 NARROW_LINT=28     # selene  over src alone
