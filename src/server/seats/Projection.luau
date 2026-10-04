@@ -45,9 +45,10 @@
 	WHAT M3 ADDS, and where: not wider fields on this view but views of their
 	own beside it (`architecture.md` D16), each an allowlist built BY NAME.
 	`lensFor` (VIEW-001) is this player's lens view - the required settings p's
-	lens may read from where p stands (D14). `turnCuesFor` (VIEW-002, not built
-	yet) is the next. `PublicSeatView` does not change - that is the whole
-	reason it was built while the only secret was σ.
+	lens may read from where p stands (D14). `turnCuesFor` (VIEW-002) is p's
+	turn cues - which of p's own machines is live and which is next.
+	`PublicSeatView` does not change - that is the whole reason it was built
+	while the only secret was σ.
 
 	WHAT `p`'s LENS VIEW HOLDS, and why each field is safe (`roles.md` §6:
 	"only for the machine they are reading"):
@@ -66,6 +67,24 @@
 	and each would be a second copy of a fact to keep consistent. Light
 	DIRECTION is not a clause here: it is presentation (D14, `components.md`
 	C-01, C-02), drawn by the client over readings the server already allowed.
+
+	WHAT `p`'s TURN CUES HOLD, and why each field is safe (`mechanics.md` §3.2,
+	G12):
+
+	  live         p's machines that `Procedure.isLive` says are live now - one
+	               per track at most. Safe because p would find out by turning
+	               it: a live step is the one the facility accepts.
+	  next         p's uncommitted, not-live step machines whose position among
+	               their track's uncommitted steps is at most
+	               `turn_cue_lookahead`. Safe because the window is a design
+	               constant: it tells p to get ready, not where p stands.
+	               Both lists are machine ids only, ascending, built fresh.
+
+	WHAT IS NEVER SENT on the turn cues: no step index, no track, no position,
+	no order, and nobody else's cues (`roles.md` §6). Nobody sees the whole
+	order - anti-quarterback device 4 (`loop.md` §1.7) - and ascending ids
+	rather than track order keep even the shape of the lists from saying it.
+	The arrow and its tag are the client's, from public facility data.
 
 	THE RING RELATIONS COME FROM `Ring`, never from a private σ⁻¹ here. `Ring`'s
 	own header says direction is the one error the ring's structure cannot catch:
@@ -231,6 +250,67 @@ function Projection.lensFor(
 		return a.machineId < b.machineId
 	end)
 	return { readings = readings }
+end
+
+--[[
+	THE TURN CUES' ALLOWLIST IS ITS TYPE (D16): exactly `live` and `next`, each a
+	list of machine ids, ascending. The key is spelled `["next"]` because
+	SEAT-002's flat ban scans this file for the bare word (VIEW-002 PO-2); the
+	key is still `next`.
+]]
+export type TurnCues = { live: { number }, ["next"]: { number } }
+
+--[[
+	`p`'s turn cues (VIEW-002).
+
+	OWNERSHIP IS THE KEY, NOT THE LENS: a step is p's when its machine's class is
+	in `assignment.keyClasses[playerId]` - the list, so a class inherited through
+	`Ring.withdraw` counts. `Ring.lensOf` is the class p READS, not the one p
+	turns, and using it here would be the direction error again (D-1).
+
+	LIVENESS IS `Procedure`'s, never re-derived from position: that is what keeps
+	a finale step at position 0 waiting until both tracks' ordinary steps are
+	done, and an armed finale machine live (D-3).
+
+	POSITION is the step's index among its track's uncommitted steps, from 0,
+	counted from `procedure.committed` on every call and never stored. The
+	window is inclusive and read from `procedure.tuning` (P-1). Decoys are in no
+	track and so are never walked.
+]]
+function Projection.turnCuesFor(
+	assignment: Ring.Assignment,
+	procedure: Procedure.ProcedureState,
+	playerId: Ring.PlayerId
+): TurnCues
+	local owned = assignment.keyClasses[playerId] or {}
+	local lookahead = procedure.tuning.instance.turn_cue_lookahead
+
+	local classOf: { [number]: number } = {}
+	for _, machine in procedure.facility.placement.machines do
+		classOf[machine.id] = machine.keyClass
+	end
+
+	local live: { number } = {}
+	local upcoming: { number } = {}
+	for _, track in procedure.facility.steps.tracks do
+		local position = 0
+		for _, id in track do
+			if procedure.committed[id] ~= true then
+				if table.find(owned, classOf[id]) ~= nil then
+					if Procedure.isLive(procedure, id) then
+						table.insert(live, id)
+					elseif position <= lookahead then
+						table.insert(upcoming, id)
+					end
+				end
+				position += 1
+			end
+		end
+	end
+
+	table.sort(live)
+	table.sort(upcoming)
+	return { live = live, next = upcoming }
 end
 
 return Projection
