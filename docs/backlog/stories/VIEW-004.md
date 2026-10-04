@@ -4,8 +4,8 @@ title: An implausible position is not trusted for any range check
 slug: an-implausible-position-is-not-trusted-f
 epic: EPIC-07
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/VIEW-004-an-implausible-position-is-not-trusted-f
 depends_on: [SLICE-005]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -956,3 +956,13 @@ RED committed (`project-counters.test.sh`, `PositionsContract`,
   `## Gate results`. No source change was needed in GATES, so no
   feature-developer dispatch. No gate added or changed, so no `## Gate probes`.
 - GATES - `lead-po` (orchestrator, no subagent) - `claude-opus-5-5`.
+
+### DONE (2026-10-04)
+
+- PR [#55](https://github.com/ryanczhang7/first-roblox/pull/55) merged at
+  2026-10-04T21:06:01Z as `efd54af`.
+- CI: `boundaries` pass (6 s); `gates` pass (4m45s against `timeout-minutes: 45`)
+  — https://github.com/ryanczhang7/first-roblox/actions/runs/37232805960 —
+  unit 102 s (`1001 passed, 0 failed`; VIEW-002's run was 93 s, so walking
+  scripted rounds added about 9 s), harness 16 s (`project-counters: 40 passed,
+  0 failed`). No timing near a limit.
