@@ -4,8 +4,8 @@ title: A player's turn cues name only their own live and next machines
 slug: a-player-s-turn-cues-name-only-their-own
 epic: EPIC-07
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/VIEW-002-a-player-s-turn-cues-name-only-their-own
 depends_on: [PROC-002]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -163,6 +163,64 @@ live) and AC-2 with it. RED cannot run this. Owner: GATES.
 **D-4. `next` excludes `live`.** With the not-live clause removed from `next`,
 AC-3 **must** fail (every live step would also be `next`). RED cannot run this.
 Owner: GATES.
+
+### Results (GATES, orchestrator, 2026-10-04, against `a635f6b`)
+
+All four run with `bash scripts/mutate.sh src/server/seats/Projection.luau
+'<expr>' -- lune run test`, one at a time; baseline `959 passed, 0 failed`.
+Every count matches the handoff's control table for the matching stub
+(`lensNotKey` 7 tests, `strictLookahead` 4, `positionZeroAsLive` 6,
+`nextIncludesLive` 5 — counting AC-3/lookahead-2 and AC-4/hand-built as the
+"both fixtures"). After all four, `src` was clean and no `.bak` was left.
+
+**D-1 — RAN, PASSED (the suite caught it).**
+
+    === mutate: src/server/seats/Projection.luau (1 line(s) changed by s/local owned = assignment.keyClasses\[playerId\] or {}/local owned = { Ring.lensOf(assignment, playerId) }/) ===
+      FAIL  tests/server/turn_cues_test.luau :: AC-1: over 200 generated facilities at each n in 4..6 and every state of three scripted commit orders, every live and next cue names ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-2: over the same states, live is exactly the player's machines for which Procedure.isLive is true ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-3: on a state whose procedure.tuning has turn_cue_lookahead = 2 (shipped 1), ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-3: over the same states, next is exactly the player's uncommitted, not-live step machines ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-4: a finale step whose track's ordinary steps are done while the other track's are not ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-4: on the hand-built fixture at the shipped lookahead, ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-5: after the real Ring.withdraw, the supplier's cues include the transferred class's machines ...
+    952 passed, 7 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_seats_Projection.luau.20261004T010830Z.1943.bak) ===
+
+**D-2 — RAN, PASSED.** A wrong value (`<=` → `<`), caught by four tests,
+including the sample-based AC-3 — unlike VIEW-001's range boundary, the
+generated sample does reach the boundary here.
+
+    === mutate: src/server/seats/Projection.luau (1 line(s) changed by s/elseif position <= lookahead then/elseif position < lookahead then/) ===
+      FAIL  tests/server/turn_cues_test.luau :: AC-3: on a state whose procedure.tuning has turn_cue_lookahead = 2 (shipped 1), ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-3: over the same states, next is exactly ... at position <= turn_cue_lookahead (inclusive) ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-4: on the hand-built fixture at the shipped lookahead, ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-5: after the real Ring.withdraw, ...
+    955 passed, 4 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_seats_Projection.luau.20261004T011041Z.15336.bak) ===
+
+**D-3 — RAN, PASSED.** Liveness re-derived as position 0:
+
+    === mutate: src/server/seats/Projection.luau (1 line(s) changed by s/if Procedure.isLive(procedure, id) then/if position == 0 then/) ===
+      FAIL  tests/server/turn_cues_test.luau :: AC-2: over the same states, live is exactly the player's machines for which Procedure.isLive is true ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-3: on a state whose procedure.tuning has turn_cue_lookahead = 2 (shipped 1), ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-3: over the same states, next is exactly ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-4: a finale step whose track's ordinary steps are done while the other track's are not ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-4: on the hand-built fixture at the shipped lookahead, ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-5: after the real Ring.withdraw, ...
+    953 passed, 6 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_seats_Projection.luau.20261004T011244Z.25983.bak) ===
+
+**D-4 — RAN, PASSED.** The `elseif` split into a second `if`, so a live step is
+also `next`:
+
+    === mutate: src/server/seats/Projection.luau (1 line(s) changed by s/elseif position <= lookahead then/end if position <= lookahead then/) ===
+      FAIL  tests/server/turn_cues_test.luau :: AC-3: on a state whose procedure.tuning has turn_cue_lookahead = 2 (shipped 1), ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-3: over the same states, next is exactly the player's uncommitted, not-live step machines ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-4: a finale step whose track's ordinary steps are done while the other track's are not ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-4: on the hand-built fixture at the shipped lookahead, ...
+      FAIL  tests/server/turn_cues_test.luau :: AC-5: after the real Ring.withdraw, ...
+    954 passed, 5 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_seats_Projection.luau.20261004T011439Z.35352.bak) ===
 
 ## Out of scope
 
@@ -619,10 +677,22 @@ No acceptance criterion was touched.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-04T01:20:09Z
+    commit: a635f6b
+    tree:   d55128ca2b3503b2d4f0a5fbc57aa1e071b4bdab
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 153)
+    PASS         lint (1s, observed 153, floor 1)
+    PASS         typecheck (3s, observed 27)
+    PASS         unit (116s, observed 959, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 103831)
+    PASS         harness (15s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -765,3 +835,22 @@ No acceptance criterion was touched.
   `SourceScan.luau` and `project-counters.test.sh`. Before leaving GREEN:
 
       frozen: OK — 10 path(s) unchanged since the snapshot for VIEW-002
+- `bash scripts/gates.sh --fast` by the orchestrator at `a635f6b` (GREEN
+  committed, tree clean): PASS format (153), lint (153), typecheck (27), unit
+  (105 s, `959 passed, 0 failed`), build (103831), harness (`project-counters:
+  40 passed, 0 failed`); `changes: 1 changed source path(s), all exercised by a
+  required gate`; `All required gates passed (6 ran, 1 unconfigured, 0 known).`
+
+### GATES (orchestrator, 2026-10-04)
+
+- Snapshot re-taken right after `phase.sh set VIEW-002 GATES`, same 10 paths.
+  Before leaving GATES: `frozen: OK — 10 path(s) unchanged since the snapshot for VIEW-002`.
+- D-1..D-4 run before `gates.sh`; results pasted under `## Deferred
+  verifications`. Each count matched the handoff's control table (7, 4, 6, 5),
+  so the table is evidence against the shipped module, not a claim.
+- Full `bash scripts/gates.sh` at `a635f6b`, started only after the mutations
+  finished and `src` was confirmed clean: all required gates passed (6 ran, 3
+  unconfigured, 0 known); see `## Gate results`. No source change was needed in
+  GATES, so no feature-developer dispatch. No gate added or changed, so no
+  `## Gate probes`.
+- GATES - `lead-po` (orchestrator, no subagent) - `claude-opus-5-5`.
