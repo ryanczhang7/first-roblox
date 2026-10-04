@@ -8,17 +8,25 @@
 	instability, or let the clock run out at a chosen penalty level.
 
 	Shared with SLICE-006, which extends it: the DRIVER below is generic
-	(`step`, `tick`, `place`, `turn` and the facility readers), and the three
+	(`step`, `tick`, `walk`, `turn` and the facility readers), and the three
 	scripts at the end are compositions of it. SLICE-006 adds pings and presets
 	as further `step` calls on the same driver; nothing here needs to change for
 	that.
 
-	IT NEVER WRITES `state`. A player is "placed" by stepping a
-	`PositionsSampled` whose sample puts them at a position; the sample always
-	carries EVERY player the driver has placed so far, because the Contract
-	(C-3) says a sample REPLACES the stored positions rather than merging into
-	them. A turn is a `TurnRequested`. Time advances only through `tick`, and a
-	script steps a `Tick` at least once per scripted second it spends.
+	IT NEVER WRITES `state`. A player MOVES by WALKING (VIEW-004, PO-3): `walk`
+	advances every named player at most `walk_speed_studs_per_second` (read
+	from the tuning in use) per simulated second along a straight line to
+	their target, stepping one `PositionsSampled` and one `Tick` per simulated
+	second, until everyone has arrived. The sample always carries EVERY player
+	the driver knows a position for, at the position it last sampled them, so
+	the script is indifferent to whether a sample replaces or merges into the
+	stored positions. SLICE-005's `place`, which teleported by sample, is gone:
+	VIEW-004's Session refuses a sample that could not have been walked to,
+	and a driver that teleported would have been asserting nothing about the
+	check (VIEW-004 D-4 is what earns this rewrite: with every offer refused,
+	nobody leaves the spawn room and the win script must fail). A turn is a
+	`TurnRequested`. Time advances only through `tick`, and a script steps a
+	`Tick` at least once per scripted second it spends.
 
 	THE TRAPS C-7 NAMES. A rejected machine refuses further turns as
 	`resetting` for `actuation_reset_seconds` after the rejection, so wrong
@@ -33,9 +41,21 @@
 	without (a facility after the deal, a turner for every machine). Those
 	raise plain errors; `SessionRoundContract` catches them and names the
 	criterion. Every number a script needs - the lobby length, the round
-	length, the reset window, the dial range, the instability max - is READ
-	from `RoundConfig.fromTuning(Tuning)` and the `MechanicsTuning` in use,
-	never written as a literal.
+	length, the reset window, the dial range, the instability max, the walk
+	speed - is READ from `RoundConfig.fromTuning(Tuning)` and the
+	`MechanicsTuning` in use, never written as a literal.
+
+	SIMULATED-TIME BUDGET (VIEW-004, re-read rather than assumed). On the
+	shipped 3 x 3 grid at pitch 64 a machine sits at most `maxMoveStuds`
+	= sqrt(2) x ((columns - 1) x pitch + pitch / 2) horizontally from any room
+	centre or other machine, so one walk takes at most `maxMoveSeconds` =
+	ceil(maxMoveStuds / walk_speed) simulated seconds (15 at the shipped
+	values). The win script walks a pair per unit and both pairs of the
+	finale, at most `procedure_length + 1` walks; the instability script
+	walks once and then spends `instability_max x (reset + 1)` seconds; the
+	clock script walks once and charges `k` points. All of it fits inside a
+	420 s round with the Procedure's maximum penalty applied; the measured
+	figures are in VIEW-004's handoff.
 ]]
 
 local Deep = require("./Deep")
@@ -64,11 +84,14 @@ export type Driver = {
 	players: { string },
 	state: any,
 	now: number,
-	-- The driver's own view of where everyone is: what the last sample said.
+	-- The driver's own view of where everyone is: where it last sampled them,
+	-- seeded with the spawn centre for every seated player at the deal.
 	positions: { [string]: Vec },
 	-- The `now` of the step that dealt - the Procedure's `startedAt`.
 	startedAt: number?,
 	steps: number,
+	-- Simulated seconds spent walking, summed over every `walk`.
+	walkSeconds: number,
 }
 
 export type TurnRecord = {
@@ -91,6 +114,22 @@ ScriptedRound.SESSION_ID = "scripted-session"
 
 function ScriptedRound.config(): RoundConfig.RoundConfig
 	return RoundConfig.fromTuning(Tuning)
+end
+
+-- The longest horizontal move a script can ask for on this tuning's grid: a
+-- room centre to the far quadrant slot of the diagonally opposite room.
+function ScriptedRound.maxMoveStuds(tuning: any): number
+	local pitch = tuning.instance.room_pitch_studs
+	local span = math.max(tuning.instance.layout_grid_columns, tuning.instance.layout_grid_rows)
+	local axis = (span - 1) * pitch + pitch / 2
+	return math.sqrt(2) * axis
+end
+
+-- Whole simulated seconds one walk can take at the tuning's walk speed.
+function ScriptedRound.maxMoveSeconds(tuning: any): number
+	return math.ceil(
+		ScriptedRound.maxMoveStuds(tuning) / tuning.instance.walk_speed_studs_per_second
+	)
 end
 
 --[[ ------------------------------------------------------------------------
@@ -128,6 +167,7 @@ function ScriptedRound.new(S: Session, seed: number, n: number, options: Options
 		positions = {},
 		startedAt = nil,
 		steps = 0,
+		walkSeconds = 0,
 	}
 end
 
@@ -182,8 +222,22 @@ function ScriptedRound.join(d: Driver)
 	end
 end
 
+-- The spawn room's centre, per `Machines.luau`'s header and C-2.
+function ScriptedRound.spawnCentre(facility: any, tuning: any): Vec
+	local pitch = tuning.instance.room_pitch_studs
+	for _, room in facility.layout.rooms do
+		if room.id == facility.spawnRoom then
+			return { x = (room.column - 1) * pitch, y = 0, z = (room.row - 1) * pitch }
+		end
+	end
+	error(`spawn room {facility.spawnRoom} is not in the layout`, 0)
+end
+
 -- The dealing Tick, at `lobbySeconds` after the lobby was entered. Returns
--- the step's effects; records `startedAt`.
+-- the step's effects; records `startedAt`, and seeds the driver's own map
+-- from the step's `Placed` effects - where the server SAID it put each
+-- player, which is where a walk has to start from - falling back to the
+-- spawn centre for a seated player the step placed nowhere.
 function ScriptedRound.deal(d: Driver): { any }
 	local effects = ScriptedRound.tickAt(d, d.state.round.phaseEnteredAt + d.config.lobbySeconds)
 	if d.state.round.phase ~= "Round" then
@@ -193,6 +247,23 @@ function ScriptedRound.deal(d: Driver): { any }
 		)
 	end
 	d.startedAt = d.now
+	if d.state.facility ~= nil and d.state.assignment ~= nil then
+		local centre = ScriptedRound.spawnCentre(d.state.facility, d.tuning)
+		d.positions = {}
+		for _, p in d.state.assignment.players do
+			d.positions[p] = { x = centre.x, y = centre.y, z = centre.z }
+		end
+		for _, e in effects do
+			if
+				typeof(e) == "table"
+				and e.kind == "Placed"
+				and typeof(e.playerId) == "string"
+				and typeof(e.position) == "table"
+			then
+				d.positions[e.playerId] = { x = e.position.x, y = e.position.y, z = e.position.z }
+			end
+		end
+	end
 	return effects
 end
 
@@ -218,13 +289,73 @@ function ScriptedRound.start(
 	return d, effects
 end
 
--- Move players: `moves` is merged into the driver's own map, and the WHOLE
--- map is sampled, because a sample replaces the stored positions (C-3).
-function ScriptedRound.place(d: Driver, moves: { [string]: Vec }): { any }
-	for p, v in moves do
-		d.positions[p] = { x = v.x, y = v.y, z = v.z }
-	end
+-- A `PositionsSampled` carrying every position the driver knows.
+function ScriptedRound.sample(d: Driver): { any }
 	return ScriptedRound.step(d, { kind = "PositionsSampled", samples = Deep.copy(d.positions) })
+end
+
+local function horizontal(a: Vec, b: Vec): number
+	local dx = b.x - a.x
+	local dz = b.z - a.z
+	return math.sqrt(dx * dx + dz * dz)
+end
+
+--[[
+	Walk players to `targets`: every named player advances at most
+	`walk_speed_studs_per_second` per simulated second along the straight line
+	to their target - one Tick, then one PositionsSampled (the whole map) at
+	the positions reached in that second - until everyone named has arrived. A player with no known position
+	(nobody, after the deal) starts from their target. A player already at
+	their target walks for zero seconds; if nobody has to move, one sample is
+	still stepped so the Session sees everyone where they are. `twin`, when
+	given, is ticked in lockstep so two sessions keep the same `now`.
+	Returns the effects of every PositionsSampled stepped, in order.
+]]
+function ScriptedRound.walk(d: Driver, targets: { [string]: Vec }, twin: Driver?): { { any } }
+	local speed = d.tuning.instance.walk_speed_studs_per_second
+	local goals: { [string]: Vec } = {}
+	local pending = 0
+	for p, v in targets do
+		goals[p] = { x = v.x, y = v.y, z = v.z }
+		if d.positions[p] == nil then
+			d.positions[p] = { x = v.x, y = v.y, z = v.z }
+		elseif horizontal(d.positions[p], goals[p]) > 0 or d.positions[p].y ~= v.y then
+			pending += 1
+		end
+	end
+	local sampled: { { any } } = {}
+	if pending == 0 then
+		table.insert(sampled, ScriptedRound.sample(d))
+		return sampled
+	end
+	-- The second passes FIRST, then the position reached in it is sampled: a
+	-- sample at the same `now` as the last one has had no time to be walked
+	-- to, and a Session that checks plausibility is right to refuse it.
+	while pending > 0 do
+		ScriptedRound.tick(d, 1)
+		d.walkSeconds += 1
+		if twin then
+			ScriptedRound.tick(twin, 1)
+		end
+		pending = 0
+		for p, goal in goals do
+			local at = d.positions[p]
+			local left = horizontal(at, goal)
+			if left <= speed then
+				d.positions[p] = { x = goal.x, y = goal.y, z = goal.z }
+			else
+				local f = speed / left
+				d.positions[p] = {
+					x = at.x + (goal.x - at.x) * f,
+					y = goal.y,
+					z = at.z + (goal.z - at.z) * f,
+				}
+				pending += 1
+			end
+		end
+		table.insert(sampled, ScriptedRound.sample(d))
+	end
+	return sampled
 end
 
 -- The TurnResult payload a step addressed to `playerId`, or nil.
@@ -316,17 +447,6 @@ function ScriptedRound.machinePosition(d: Driver, machine: any): Vec
 	return Machines.positionOf(d.state.facility.layout, machine, d.tuning)
 end
 
--- The spawn room's centre, per `Machines.luau`'s header and C-2.
-function ScriptedRound.spawnCentre(facility: any, tuning: any): Vec
-	local pitch = tuning.instance.room_pitch_studs
-	for _, room in facility.layout.rooms do
-		if room.id == facility.spawnRoom then
-			return { x = (room.column - 1) * pitch, y = 0, z = (room.row - 1) * pitch }
-		end
-	end
-	error(`spawn room {facility.spawnRoom} is not in the layout`, 0)
-end
-
 -- `Par`'s canonical order: ordinary steps interleaved T1[1], T2[1], T1[2],
 -- T2[2], ..., the rest of the longer track in order, then the finale as one
 -- unit.
@@ -370,6 +490,10 @@ export type WinRun = {
 	completing: TurnRecord,
 	-- After the Tick that follows the completing turn.
 	afterNextTick: { phase: string, outcome: any? },
+	-- Simulated seconds the script spent walking, and the whole script's span
+	-- from the deal to the Tick after the completing turn.
+	walkSeconds: number,
+	elapsed: number,
 	-- For the control only: the ticks that end the round by the clock.
 	clock: {
 		deadline: number,
@@ -380,7 +504,7 @@ export type WinRun = {
 }
 
 --[[
-	For each unit in canonical order, place the helper and the turner at the
+	For each unit in canonical order, walk the helper and the turner to the
 	machine (or, with `fromSpawn`, leave everyone at the spawn room's centre)
 	and turn it to its required setting. The finale's two turners turn at the
 	same `now`. With `fromSpawn`, after every turn has been refused the clock
@@ -404,29 +528,29 @@ local function playThrough(
 		for _, p in d.players do
 			everyone[p] = centre
 		end
-		ScriptedRound.place(d, everyone)
+		ScriptedRound.walk(d, everyone)
 	end
 
-	local function placePair(id: number): (any, string)
+	local function walkPair(id: number): (any, string)
 		local m = ScriptedRound.machineOf(facility, id)
 		local turner = ScriptedRound.turnerOf(assignment, m)
 		local helper = ScriptedRound.helperOf(assignment, turner)
 		if not fromSpawn then
 			local at = ScriptedRound.machinePosition(d, m)
-			ScriptedRound.place(d, { [turner] = at, [helper] = at })
+			ScriptedRound.walk(d, { [turner] = at, [helper] = at })
 		end
 		return m, turner
 	end
 
 	for _, unit in ScriptedRound.canonicalOrder(facility.steps) do
 		if unit.kind == "step" then
-			local m, turner = placePair(unit.id)
+			local m, turner = walkPair(unit.id)
 			ScriptedRound.tick(d, 1)
 			table.insert(turns, ScriptedRound.turn(d, turner, unit.id, m.requiredSetting))
 		else
 			local pairs_: { { any } } = {}
 			for _, id in unit.ids do
-				local m, turner = placePair(id)
+				local m, turner = walkPair(id)
 				table.insert(pairs_, { m, turner })
 			end
 			ScriptedRound.tick(d, 1)
@@ -440,6 +564,7 @@ local function playThrough(
 	local completing = turns[#turns]
 	ScriptedRound.tick(d, 1)
 	local afterNextTick = ScriptedRound.outcome(d)
+	local elapsed = d.now - (d.startedAt :: number)
 
 	local clock = nil
 	if fromSpawn then
@@ -462,6 +587,8 @@ local function playThrough(
 		turns = turns,
 		completing = completing,
 		afterNextTick = afterNextTick,
+		walkSeconds = d.walkSeconds,
+		elapsed = elapsed,
 		clock = clock,
 	}
 end
@@ -491,11 +618,14 @@ export type LoseRun = {
 	turner: string,
 	wrongTurns: { WrongTurn },
 	final: { phase: string, outcome: any? },
+	walkSeconds: number,
+	elapsed: number,
 }
 
 -- Charge `k` points: `k` wrong turns on the first live step by its turner,
 -- spaced `actuation_reset_seconds` apart with a Tick every second between.
--- `onTurn` sees each record; `twin`, when given, is ticked in lockstep.
+-- `onTurn` sees each record; `twin`, when given, is ticked in lockstep,
+-- through the walk included.
 local function chargeWrongTurns(
 	d: Driver,
 	k: number,
@@ -506,7 +636,7 @@ local function chargeWrongTurns(
 	local id = facility.steps.tracks[1][1]
 	local m = ScriptedRound.machineOf(facility, id)
 	local turner = ScriptedRound.turnerOf(d.state.assignment, m)
-	ScriptedRound.place(d, { [turner] = ScriptedRound.machinePosition(d, m) })
+	ScriptedRound.walk(d, { [turner] = ScriptedRound.machinePosition(d, m) }, twin)
 	local wrong = ScriptedRound.wrongSetting(d, m.requiredSetting)
 	local reset = d.tuning.actuation.actuation_reset_seconds
 	for j = 1, k do
@@ -574,6 +704,8 @@ function ScriptedRound.loseByInstability(
 		turner = turner,
 		wrongTurns = wrongTurns,
 		final = ScriptedRound.outcome(d),
+		walkSeconds = d.walkSeconds,
+		elapsed = d.now - (d.startedAt :: number),
 	}
 end
 
@@ -593,6 +725,9 @@ export type ClockRun = {
 	phaseAtResolution: string?,
 	outcome: any?,
 	reachedBackstop: boolean,
+	walkSeconds: number,
+	-- The `now` at which the charging (walk and wrong turns) was done.
+	chargedAt: number,
 }
 
 --[[
@@ -612,6 +747,7 @@ function ScriptedRound.clockOut(
 	if k > 0 then
 		chargeWrongTurns(d, k, nil, nil)
 	end
+	local chargedAt = d.now
 	local backstopAt = startedAt + d.config.roundSeconds
 	local resolvedAt: number? = nil
 	local phaseBefore: string? = nil
@@ -639,6 +775,8 @@ function ScriptedRound.clockOut(
 		phaseAtResolution = phaseAtResolution,
 		outcome = Deep.copy(d.state.round.outcome),
 		reachedBackstop = reachedBackstop,
+		walkSeconds = d.walkSeconds,
+		chargedAt = chargedAt,
 	}
 end
 

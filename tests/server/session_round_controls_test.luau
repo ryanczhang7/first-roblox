@@ -11,10 +11,13 @@
 	modules, so what is asserted here is MEASURED in RED rather than claimed
 	for GREEN. The story's handoff carries the table.
 
-	THE STAND-INS. `standIn(defects)` is a small implementation of the Contract
-	(SLICE-003's behaviour plus C-2..C-5) with named defects switched on. With
-	none it is the REFERENCE, the positive control: every check must ACCEPT it
-	- SLICE-003's battery included, which is where C-6's narrowed
+	THE STAND-INS live in `tests/helpers/SessionRoundStubs.luau` (moved there
+	by VIEW-004, which aims the same stand-ins at its own session-level
+	checks). `standIn(defects)` is a small implementation of the Contract
+	(SLICE-003's behaviour plus C-2..C-5, and VIEW-004's Positions wiring
+	through `PositionsStubs.reference`) with named defects switched on. With
+	none it is the REFERENCE, the positive control: every check must ACCEPT
+	it - SLICE-003's battery included, which is where C-6's narrowed
 	`passThroughOf` is seen to tolerate `Placed` - or the check (or the plan)
 	is wrong and the fix belongs HERE, in RED. Each control is the reference
 	with EXACTLY ONE defect, and pins the set of checks that fire EXACTLY.
@@ -28,6 +31,14 @@
 	seed that is not the AssignSeats effect's, one that emits Placed at the
 	wrong place. D-1..D-4 THEMSELVES mutate the real module and stay with GATES.
 
+	VIEW-004 REWROTE THE SAMPLE CONTROLS. SLICE-005's `mergesSamples` defect
+	is gone - a merge IS the rule now - and its place is taken by
+	`replacesSamples` (SLICE-005's own store, which VIEW-004's rewritten C-3
+	check must refuse) and `storesRawSamples` (D-3's shape, a store past the
+	plausibility rule; on the tolerance-free lifecycle it is caught only by
+	the empty-Lobby sample, which has no baseline). The rest of VIEW-004's
+	session-level controls are in `tests/server/positions_controls_test.luau`.
+
 	WHAT THE REFERENCE IS NOT: `src/server/session/Session.luau`, or a sketch
 	of one. GREEN writes the module from the story's Contract; nothing here is
 	to be copied.
@@ -37,410 +48,17 @@ local Deep = require("../helpers/Deep")
 local Generator = require("../../src/server/facility/Generator")
 local Machines = require("../../src/server/facility/Machines")
 local MechanicsTuning = require("../../src/shared/MechanicsTuning")
-local PhaseMachine = require("../../src/server/round/PhaseMachine")
-local Procedure = require("../../src/server/procedure/Procedure")
-local Projection = require("../../src/server/seats/Projection")
 local Ring = require("../../src/server/seats/Ring")
 local Rng = require("../../src/shared/Rng")
 local RoundContract = require("../helpers/SessionRoundContract")
 local ScriptedRound = require("../helpers/ScriptedRound")
 local SessionContract = require("../helpers/SessionContract")
-local TurnRequests = require("../../src/server/procedure/TurnRequests")
+local SessionRoundStubs = require("../helpers/SessionRoundStubs")
 
-type Defects = {
-	-- Routing (C-3 step 5)
-	routesTickOutcomeOnNextTickOnly: boolean?, -- the story's: feeds RoundResolved one tick late
-	skipsRoutingOnTick: boolean?, -- D-1's shape: a Tick never feeds RoundResolved
-	skipsRoutingOnTurn: boolean?, -- D-2's shape: a turn never feeds it; the next Tick does
-	procedureBeforeMachine: boolean?, -- the Procedure ticked before the machine takes the Tick
-	-- C-5
-	secondsLeftFromConfig: boolean?, -- D-3's shape
-	-- AC-3
-	turnsWithEmptyPositions: boolean?, -- passes {} to the turn
-	turnsWithPlacedPositions: boolean?, -- passes the Placed centres, ignoring every sample
-	sendsTurnResultToEveryone: boolean?,
-	broadcastsOnEveryTurn: boolean?,
-	-- C-3 samples
-	mergesSamples: boolean?,
-	storesSamplesByReference: boolean?,
-	-- AC-1
-	generatesFromTheSessionSeed: boolean?, -- every round from the initial seed
-	generatesFromAFixedSeed: boolean?, -- seed 0
-	placesAtTheFirstMachine: boolean?, -- the wrong place
-	aliasesPlacedPositions: boolean?, -- one centre table for every Placed and state.positions
-	startsTheProcedureAtTimeZero: boolean?,
-	-- AC-2
-	ignoresThePredicate: boolean?,
-	staysInRoundOnGenerationFailure: boolean?,
-	-- Clearing
-	keepsFacilityAndProcedureInLobby: boolean?,
-	-- SLICE-003's pass-through, on a session that emits Placed (D-4's shape)
-	dropsEmits: boolean?,
-	-- Purity
-	mutatesStateOnSample: boolean?, -- writes the new positions into the input state
-	mutatesTurnEvent: boolean?, -- marks the TurnRequested's args handled
-}
+local standIn = SessionRoundStubs.standIn
 
 local function contains(list: { string }, item: string): boolean
 	return table.find(list, item) ~= nil
-end
-
-local function standIn(defects: Defects): any
-	local S = {}
-	local initialSeed = 0
-
-	function S.new(
-		config: any,
-		seed: number,
-		roundId: string,
-		sessionId: string,
-		options: any?
-	): any
-		initialSeed = seed
-		return {
-			round = PhaseMachine.initial(config, seed, roundId, sessionId),
-			assignment = nil,
-			facility = nil,
-			procedure = nil,
-			positions = {},
-			tuning = if options and options.tuning then options.tuning else MechanicsTuning,
-			generatorPredicate = if options then options.generatorPredicate else nil,
-		}
-	end
-
-	local function seatView(assignment: any, p: string): any
-		return {
-			kind = "SendTo",
-			playerId = p,
-			payloadKind = "SeatView",
-			payload = Projection.forPlayer(assignment, p),
-		}
-	end
-
-	local function pass(into: { any }, effects: { any })
-		for _, e in effects do
-			if e.kind == "AssignSeats" or (defects.dropsEmits and e.kind == "Emit") then
-				continue
-			end
-			table.insert(into, e)
-		end
-	end
-
-	local function next_(
-		state: any,
-		round: any,
-		assignment: any,
-		facility: any,
-		procedure: any,
-		positions: any
-	): any
-		return {
-			round = round,
-			assignment = assignment,
-			facility = facility,
-			procedure = procedure,
-			positions = positions,
-			tuning = state.tuning,
-			generatorPredicate = state.generatorPredicate,
-		}
-	end
-
-	local function secondsLeft(_state: any, round: any, procedure: any, now: number): number?
-		local config = round.config
-		if round.phase == "Round" and procedure ~= nil and not defects.secondsLeftFromConfig then
-			return math.ceil(Procedure.deadline(procedure) - now)
-		end
-		local duration: number? = nil
-		if round.phase == "Lobby" and #round.players >= config.playersMin then
-			duration = config.lobbySeconds
-		elseif round.phase == "Round" then
-			duration = config.roundSeconds
-		elseif round.phase == "Post" then
-			duration = config.postRoundSeconds
-		end
-		if duration == nil then
-			return nil
-		end
-		return math.ceil(duration - (now - round.phaseEnteredAt))
-	end
-
-	local function roundView(state: any, round: any, procedure: any, now: number): any
-		return {
-			kind = "Broadcast",
-			payloadKind = "RoundView",
-			payload = {
-				phase = round.phase,
-				secondsLeft = secondsLeft(state, round, procedure, now),
-				players = table.clone(round.players),
-				playersMin = round.config.playersMin,
-				playersMax = round.config.playersMax,
-			},
-		}
-	end
-
-	local placedMap: { [string]: any } = {}
-
-	function S.step(state: any, event: any, now: number): (any, { any })
-		if event.kind == "SeatsAssigned" then
-			return state, {}
-		end
-		if event.kind == "PositionsSampled" then
-			local positions
-			if defects.storesSamplesByReference then
-				positions = event.samples
-			elseif defects.mergesSamples then
-				positions = table.clone(state.positions)
-				for p, v in event.samples do
-					positions[p] = Deep.copy(v)
-				end
-			else
-				positions = Deep.copy(event.samples)
-			end
-			if defects.mutatesStateOnSample then
-				state.positions = positions
-			end
-			return next_(
-				state,
-				state.round,
-				state.assignment,
-				state.facility,
-				state.procedure,
-				positions
-			),
-				{}
-		end
-		if event.kind == "TurnRequested" then
-			if defects.mutatesTurnEvent then
-				event.args.handled = true
-			end
-			if state.procedure == nil or state.round.phase ~= "Round" then
-				return state, {}
-			end
-			local positions = state.positions
-			if defects.turnsWithEmptyPositions then
-				positions = {}
-			elseif defects.turnsWithPlacedPositions then
-				positions = placedMap
-			end
-			local procedure, result = TurnRequests.handle(
-				state.procedure,
-				state.assignment,
-				event.playerId,
-				event.args,
-				now,
-				positions
-			)
-			local round = state.round
-			local effects: { any } = {}
-			if
-				state.procedure.outcome == nil
-				and procedure.outcome ~= nil
-				and not defects.skipsRoutingOnTurn
-			then
-				local resolved, more = PhaseMachine.step(
-					round,
-					{ kind = "RoundResolved", outcome = procedure.outcome },
-					now
-				)
-				round = resolved
-				pass(effects, more)
-			end
-			local reply = TurnRequests.reply(result)
-			if defects.sendsTurnResultToEveryone then
-				for _, p in state.assignment.players do
-					table.insert(effects, {
-						kind = "SendTo",
-						playerId = p,
-						payloadKind = "TurnResult",
-						payload = reply,
-					})
-				end
-			else
-				table.insert(effects, {
-					kind = "SendTo",
-					playerId = event.playerId,
-					payloadKind = "TurnResult",
-					payload = reply,
-				})
-			end
-			if round.phase ~= state.round.phase or defects.broadcastsOnEveryTurn then
-				table.insert(effects, roundView(state, round, procedure, now))
-			end
-			return next_(state, round, state.assignment, state.facility, procedure, state.positions),
-				effects
-		end
-
-		local before = state.round
-		local assignment, facility, procedure, positions =
-			state.assignment, state.facility, state.procedure, state.positions
-		local effects: { any } = {}
-		local tickedEarly = false
-
-		-- Defect: the Procedure first, then the machine.
-		if
-			defects.procedureBeforeMachine
-			and event.kind == "Tick"
-			and procedure ~= nil
-			and procedure.outcome == nil
-		then
-			procedure = Procedure.tick(procedure, assignment, now, positions)
-			tickedEarly = true
-			if procedure.outcome ~= nil then
-				local resolved, more = PhaseMachine.step(
-					before,
-					{ kind = "RoundResolved", outcome = procedure.outcome },
-					now
-				)
-				before = resolved
-				pass(effects, more)
-			end
-		end
-
-		local round, machineEffects = PhaseMachine.step(before, event, now)
-		pass(effects, machineEffects)
-		local placed: { any } = {}
-		local sends: { any } = {}
-
-		local deal: any = nil
-		for _, e in machineEffects do
-			if e.kind == "AssignSeats" then
-				deal = e
-			end
-		end
-
-		if deal ~= nil then
-			local dealt = Ring.assign(deal.players, Rng.fromSeed(deal.seed))
-			local seated, more = PhaseMachine.step(round, { kind = "SeatsAssigned" }, now)
-			round = seated
-			pass(effects, more)
-			assignment = dealt
-			local genSeed = if defects.generatesFromTheSessionSeed
-				then initialSeed
-				elseif defects.generatesFromAFixedSeed then 0
-				else deal.seed
-			local predicate = if defects.ignoresThePredicate then nil else state.generatorPredicate
-			local result = Generator.generate(dealt, genSeed, state.tuning, predicate)
-			if result.kind == "facility" then
-				facility = result.facility
-				procedure = Procedure.start(
-					facility,
-					if defects.startsTheProcedureAtTimeZero then 0 else now,
-					state.tuning,
-					deal.seed,
-					round.config.roundSeconds
-				)
-				local centre = ScriptedRound.spawnCentre(facility, state.tuning)
-				if defects.placesAtTheFirstMachine then
-					centre = Machines.positionOf(
-						facility.layout,
-						facility.placement.machines[1],
-						state.tuning
-					)
-				end
-				positions = {}
-				placedMap = {}
-				for _, p in dealt.players do
-					local mine = if defects.aliasesPlacedPositions
-						then centre
-						else { x = centre.x, y = centre.y, z = centre.z }
-					positions[p] = mine
-					placedMap[p] = { x = centre.x, y = centre.y, z = centre.z }
-					table.insert(placed, {
-						kind = "Placed",
-						playerId = p,
-						position = if defects.aliasesPlacedPositions
-							then centre
-							else { x = centre.x, y = centre.y, z = centre.z },
-					})
-				end
-			elseif not defects.staysInRoundOnGenerationFailure then
-				local resolved, third = PhaseMachine.step(round, {
-					kind = "RoundResolved",
-					outcome = { result = "no_contest", reason = "generation_failed" },
-				}, now)
-				round = resolved
-				pass(effects, third)
-			end
-			for _, p in dealt.players do
-				table.insert(sends, seatView(dealt, p))
-			end
-		elseif
-			event.kind == "PlayerLeft"
-			and assignment ~= nil
-			and contains(before.players, event.playerId)
-			and not contains(round.players, event.playerId)
-		then
-			local old = assignment
-			local withdrawn = Ring.withdraw(old, event.playerId)
-			for _, p in withdrawn.players do
-				if
-					not Deep.equal(Projection.forPlayer(withdrawn, p), Projection.forPlayer(old, p))
-				then
-					table.insert(sends, seatView(withdrawn, p))
-				end
-			end
-			assignment = withdrawn
-		end
-
-		if event.kind == "Tick" and procedure ~= nil and not tickedEarly then
-			if defects.routesTickOutcomeOnNextTickOnly or defects.skipsRoutingOnTurn then
-				-- An outcome already held (from an earlier tick or an unrouted
-				-- turn) is fed now, late.
-				if procedure.outcome ~= nil and round.phase == "Round" then
-					local resolved, more = PhaseMachine.step(
-						round,
-						{ kind = "RoundResolved", outcome = procedure.outcome },
-						now
-					)
-					round = resolved
-					pass(effects, more)
-				end
-			end
-			if procedure.outcome == nil then
-				local ticked = Procedure.tick(procedure, assignment, now, positions)
-				if
-					ticked.outcome ~= nil
-					and not defects.skipsRoutingOnTick
-					and not defects.routesTickOutcomeOnNextTickOnly
-				then
-					local resolved, more = PhaseMachine.step(
-						round,
-						{ kind = "RoundResolved", outcome = ticked.outcome },
-						now
-					)
-					round = resolved
-					pass(effects, more)
-				end
-				procedure = ticked
-			end
-		end
-
-		if round.phase == "Lobby" and before.phase ~= "Lobby" then
-			assignment = nil
-			if not defects.keepsFacilityAndProcedureInLobby then
-				facility = nil
-				procedure = nil
-			end
-		end
-
-		for _, e in placed do
-			table.insert(effects, e)
-		end
-		for _, e in sends do
-			table.insert(effects, e)
-		end
-		local timed = round.phase == "Lobby" or round.phase == "Round" or round.phase == "Post"
-		if
-			round.phase ~= before.phase
-			or #round.players ~= #before.players
-			or (event.kind == "Tick" and timed)
-		then
-			table.insert(effects, roundView(state, round, procedure, now))
-		end
-		return next_(state, round, assignment, facility, procedure, positions), effects
-	end
-
-	return S
 end
 
 local reference = standIn({})
@@ -496,7 +114,7 @@ local GEN = "generatesTheFacilityFromTheDealSeedAndStartsTheProcedureAtThatStep"
 local PLACED = "placesEverySeatedPlayerAtTheSpawnRoomCentreInSeatOrder"
 local GENFAIL = "resolvesAFailedGenerationAsNoContestInTheDealingStep"
 local TURN = "handlesATurnAgainstTheStoredPositionsAndRepliesToTheCallerAlone"
-local SAMPLES = "storesPositionSamplesAsAReplacingCopyAndEmitsNothing"
+local SAMPLES = "mergesAcceptedSamplesAndEmitsOnlyResyncPlacements"
 local IGNORES = "ignoresATurnOutsideRoundOrWithoutAProcedure"
 local CLEARS = "clearsFacilityAndProcedureOnEnteringLobbyAndKeepsPositions"
 local ORDER = "ordersPassThroughPlacedSeatViewsTurnResultThenRoundViewLast"
@@ -786,19 +404,35 @@ return {
 	end,
 
 	--[[ ================================================================
-	     C-3: samples.
+	     C-3: samples (rewritten by VIEW-004).
 	     ================================================================ ]]
 
-	["control: a session that MERGES samples into the stored positions fails the samples check, the follows check and the turn check (the omitted turner is still in reach)"] = function()
+	["control (SLICE-005's own store): a session that REPLACES the accepted positions with the batch fails the samples check (players absent from a batch are dropped) and the follows check; the turn check holds, because the lifecycle's out_of_reach turn is reached by walking away rather than by omission"] = function()
 		local messages = expectFires(
-			"mergesSamples",
-			standIn({ mergesSamples = true }),
-			{ SAMPLES, FOLLOWS, TURN }
+			"replacesSamples",
+			standIn({ replacesSamples = true }),
+			{ SAMPLES, FOLLOWS }
 		)
-		assert(string.find(messages[TURN], "out_of_reach", 1, true) ~= nil, messages[TURN])
+		assert(
+			string.find(messages[SAMPLES], "absent from the batch", 1, true) ~= nil
+				or string.find(messages[SAMPLES], "merged", 1, true) ~= nil,
+			messages[SAMPLES]
+		)
 	end,
 
-	["control: a session that stores event.samples by reference fails exactly the samples check"] = function()
+	["control (D-3's shape): a session that stores every sample past the plausibility rule fails the samples check and the follows check on the empty-Lobby sample alone (no baseline, yet stored); every Round sample in the lifecycle is walkable, which is why VIEW-004's implausible cases live in positions_controls_test"] = function()
+		local messages = expectFires(
+			"storesRawSamples",
+			standIn({ storesRawSamples = true }),
+			{ SAMPLES, FOLLOWS }
+		)
+		assert(
+			string.find(messages[SAMPLES], "sample in an empty Lobby", 1, true) ~= nil,
+			messages[SAMPLES]
+		)
+	end,
+
+	["control: a session that stores event.samples' tables by reference fails exactly the samples check"] = function()
 		expectFires(
 			"storesSamplesByReference",
 			standIn({ storesSamplesByReference = true }),
