@@ -9,9 +9,9 @@
 	`src/` through the classifier and refuses `os.clock`, `tick` and
 	`math.random` here, which is the mechanical half of the same rule.
 
-	ONE ENTRY PER PLAYER, holding a timestamp per key:
+	ONE ENTRY PER PLAYER, holding an acceptance per key:
 
-	    entries: { [PlayerId]: { [string]: number } }
+	    entries: { [PlayerId]: { [string]: Acceptance } }
 
 	so `size()` counts PLAYERS and not `(player, key)` pairs, and `forget`
 	drops a player's whole entry. AC-6 is phrased against this shape: "the
@@ -31,6 +31,19 @@
 	THE COMPARISON IS INCLUSIVE: `now - lastAccepted >= minIntervalSeconds`.
 	Exactly at the interval the call goes through.
 
+	A REFUND UNDOES ONE ACCEPTANCE (CHAN-003, `architecture.md` D18). Each
+	acceptance keeps the timestamp it overwrote - one level of history, and
+	no more - so `refund(playerId, key, acceptedAt)` can put the key back to
+	what it held before. It acts only when the key's LAST acceptance is
+	`acceptedAt`: a later acceptance has replaced it, and unwinding that one
+	instead would hand back a call nobody declined. An acceptance that
+	overwrote nothing is refunded by removing the key, and a player left
+	holding no key is removed with it, so `size()` still counts only players
+	the limiter holds (AC-6). A restored acceptance carries no history of its
+	own - what preceded it was overwritten long ago - so refunding it is a
+	no-op rather than a guess, and a second refund of the same instant is one
+	for the same reason. `refund` never raises.
+
 	`PlayerId` IS RE-DECLARED rather than imported from `Wrapper`: `Wrapper`
 	requires this module, and the reverse edge would be a cycle. It is the same
 	string alias. `minIntervalSeconds` arrives from the remote's own
@@ -47,7 +60,16 @@ export type RateLimiter = {
 	allow: (self: RateLimiter, playerId: PlayerId, key: string, now: number) -> boolean,
 	forget: (self: RateLimiter, playerId: PlayerId) -> (),
 	size: (self: RateLimiter) -> number,
+	refund: (self: RateLimiter, playerId: PlayerId, key: string, acceptedAt: number) -> (),
 }
+
+-- `at` is the instant accepted. `before` is what that acceptance overwrote:
+-- a timestamp, `NEVER` when the key was empty, or nil when it is not known
+-- (a restored acceptance), in which case it cannot be refunded.
+type Acceptance = { at: number, before: (number | false)? }
+
+-- "Never accepted", as distinct from nil's "not known".
+local NEVER: false = false
 
 --[[
 	A limiter permitting one call per `minIntervalSeconds` per player per key.
@@ -56,23 +78,50 @@ export type RateLimiter = {
 	handed can reach in and move a timestamp.
 ]]
 function RateLimiter.new(minIntervalSeconds: number): RateLimiter
-	local entries: { [PlayerId]: { [string]: number } } = {}
+	local entries: { [PlayerId]: { [string]: Acceptance } } = {}
 
 	local limiter: RateLimiter = {
 		--[[
 			True when this player has never been served on this key, or when at
 			least `minIntervalSeconds` have passed since the last call that was
-			ACCEPTED. Records `now` only on the true path.
+			ACCEPTED. Records `now` only on the true path, keeping what it
+			overwrote for `refund`.
 		]]
 		allow = function(_self: RateLimiter, playerId: PlayerId, key: string, now: number): boolean
-			local keys: { [string]: number } = entries[playerId] or {}
-			local lastAccepted = keys[key]
-			if lastAccepted ~= nil and now - lastAccepted < minIntervalSeconds then
+			local keys: { [string]: Acceptance } = entries[playerId] or {}
+			local last = keys[key]
+			if last ~= nil and now - last.at < minIntervalSeconds then
 				return false
 			end
-			keys[key] = now
+			keys[key] = { at = now, before = if last ~= nil then last.at else NEVER }
 			entries[playerId] = keys
 			return true
+		end,
+
+		--[[
+			Undoes the acceptance at `acceptedAt`, if it is still this key's
+			last: the key goes back to the timestamp it held before, or is
+			removed if it held none - and an emptied player with it. Anything
+			else is a no-op; see the header.
+		]]
+		refund = function(_self: RateLimiter, playerId: PlayerId, key: string, acceptedAt: number)
+			local keys = entries[playerId]
+			local last = if keys ~= nil then keys[key] else nil
+			if keys == nil or last == nil or last.before == nil then
+				return
+			end
+			if last.at ~= acceptedAt then
+				return
+			end
+			local before = last.before
+			if before == NEVER then
+				keys[key] = nil
+				if next(keys) == nil then
+					entries[playerId] = nil
+				end
+			else
+				keys[key] = { at = before :: number, before = nil }
+			end
 		end,
 
 		--[[

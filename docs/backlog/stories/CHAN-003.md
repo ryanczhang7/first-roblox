@@ -5,7 +5,7 @@ slug: a-call-its-handler-declines-costs-the-at
 epic: EPIC-06
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/CHAN-003-a-call-its-handler-declines-costs-the-at
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -928,3 +928,17 @@ the stale control above, so I ran the static gates directly instead. They were
 `stylua --check src` (exit 0), `selene src/net` (0 errors, 0 warnings) and
 `luau-lsp analyze` over `src` (no errors). Run `--fast` once the corrective RED
 lands. GREEN adds no file, so the counter baselines (164/164/28) are unaffected.
+
+### Return 1, back to GREEN (orchestrator, 2026-10-04)
+
+- The first GREEN (`feature-developer`, `claude-opus-5-5`) wrote the four
+  source files and stopped at the PROC-005 control, correctly. Its freeze held:
+  `frozen: OK — 23 path(s) unchanged since the snapshot for CHAN-003`. Its
+  source stayed in the working tree, uncommitted and untouched, through the
+  return to RED.
+- Return-1 RED (`test-developer`, `claude-fable-5-1`) changed only
+  `turn_remote_controls_test.luau` (one control), committed as `f5e5969` with
+  `phase: RED`.
+- GREEN after the return **is a no-op**: the implementation already exists, so
+  no feature-developer was dispatched. A fresh 23-path snapshot (now including
+  the corrected control) was taken right after `phase.sh set CHAN-003 GREEN`.

@@ -13,6 +13,9 @@
 	    3. range    - numeric domains
 	    4. phase    - is the action legal in the round's current phase?
 	    5. rate     - has this player called this remote too recently?
+	                  First the attempt floor (`attemptLimit`), then the send
+	                  limit (`rateLimit`); a refusal by the first never
+	                  consults the second.
 
 	So an unseated player sending a malformed payload is rejected for
 	`identity`, and nothing after the failed check runs - the schema is not
@@ -40,6 +43,20 @@
 	at construction. The one exception is TEL-003's: with `telemetry` in the
 	context, a REJECTED call reads the clock to stamp its event.
 
+	A HANDLER MAY DECLINE THE CALL (CHAN-003, `architecture.md` D18). The rate
+	stage runs before the handler, so by the time a handler learns that a
+	call is not a send - a ping refused for its target, a preset refused by
+	its own phase list, a filter that failed - the send limit has already
+	recorded it. So the handler is given a fresh `CallControl` per call, and
+	`call.decline()` refunds the SEND limiter's acceptance at this call's own
+	`now`, if it made one. The attempt floor is never refunded: it is what
+	keeps a declined flood rate-limited once refunds exist. A decline during
+	the handler - including after the handler yielded, since this call is
+	still waiting on it - makes the result `declined`, which is recorded like
+	every other rejection. A decline after this call has returned still
+	refunds, and changes nothing else, because the result has already gone.
+	Declining twice is a no-op the second time.
+
 	`PlayerId` and `Phase` are re-declared rather than imported, per
 	`architecture.md` section 1: `src/net/` may not require `src/server/`, and
 	there is no alias that would spell it. `Clock` comes from `@shared/Clock`,
@@ -57,9 +74,12 @@ local Wrapper = {}
 export type PlayerId = string
 
 export type Rejection = {
-	reason: "identity" | "shape" | "range" | "phase" | "rate",
+	reason: "identity" | "shape" | "range" | "phase" | "rate" | "declined",
 	detail: string,
 }
+
+-- CHAN-003. Handed to the handler as its third argument, fresh per call.
+export type CallControl = { decline: () -> () }
 
 export type GuardContext = {
 	isSeated: (playerId: PlayerId) -> boolean,
@@ -75,7 +95,7 @@ export type GuardContext = {
 	}?,
 }
 
-type Reason = "identity" | "shape" | "range" | "phase" | "rate"
+type Reason = "identity" | "shape" | "range" | "phase" | "rate" | "declined"
 
 --[[
 	A caller id in a rejection detail. The parameter is typed `PlayerId`, but
@@ -112,17 +132,21 @@ end
 function Wrapper.guard(
 	definition: Remotes.RemoteDefinition,
 	context: GuardContext,
-	handler: (playerId: PlayerId, args: any) -> ()
+	handler: (playerId: PlayerId, args: any, call: CallControl) -> ()
 ): (playerId: PlayerId, rawArgs: any) -> Rejection?
-	-- ONE LIMITER PER `guard()` CALL, here in the enclosing scope of the
-	-- returned closure rather than inside it: a limiter built per call would
-	-- be new every time and could never refuse anything. It is built when and
-	-- only when the remote declares a `rateLimit` - a remote that declares
-	-- none gets no limiter, never consults the clock, and is never limited
-	-- (AC-4). No clock is read here; the value compared is the one the call
-	-- itself reads.
+	-- ONE LIMITER PER `guard()` CALL AND PER LIMIT, here in the enclosing
+	-- scope of the returned closure rather than inside it: a limiter built per
+	-- call would be new every time and could never refuse anything. Each is
+	-- built when and only when the remote declares its limit - a remote that
+	-- declares neither gets no limiter, never consults the clock, and is
+	-- never limited (AC-4). No clock is read here; the value compared is the
+	-- one the call itself reads.
 	local rateLimit = definition.rateLimit
 	local limiter = if rateLimit ~= nil then RateLimiter.new(rateLimit.minIntervalSeconds) else nil
+	local attemptLimit = definition.attemptLimit
+	local attemptLimiter = if attemptLimit ~= nil
+		then RateLimiter.new(attemptLimit.minIntervalSeconds)
+		else nil
 
 	local function check(playerId: PlayerId, rawArgs: any): Rejection?
 		-- 1. identity. First, and short-circuiting: an unseated caller never
@@ -188,8 +212,32 @@ function Wrapper.guard(
 		-- behind a rate rejection. The clock is read HERE, at the moment of
 		-- the call: a value captured when `guard` was called sees zero seconds
 		-- elapsed forever and refuses every call after the first.
-		if limiter ~= nil and rateLimit ~= nil then
-			if limiter:allow(playerId, definition.name, context.clock.now()) ~= true then
+		-- The clock is read ONCE, and that one value serves both limiters and
+		-- the refund (CHAN-003): a second read would let the two limits
+		-- judge one call at two instants.
+		local now: number? = nil
+		if limiter ~= nil or attemptLimiter ~= nil then
+			now = context.clock.now()
+		end
+
+		-- The attempt floor first. A refusal here is not recorded in the
+		-- send limiter, which is never consulted.
+		if attemptLimiter ~= nil and attemptLimit ~= nil and now ~= nil then
+			if attemptLimiter:allow(playerId, definition.name, now) ~= true then
+				local rejection: Rejection = {
+					reason = "rate",
+					detail = `"{definition.name}" is limited to one attempt per `
+						.. `{attemptLimit.minIntervalSeconds} s per player`,
+				}
+				return rejection
+			end
+		end
+
+		-- Then the send limit. The attempt acceptance above stands when this
+		-- refuses: the floor is never refunded.
+		local sentAt: number? = nil
+		if limiter ~= nil and rateLimit ~= nil and now ~= nil then
+			if limiter:allow(playerId, definition.name, now) ~= true then
 				-- No `"rate: "` prefix, for the reason the phase detail gives
 				-- above. What an operator reading a spike needs is the remote
 				-- and the interval it is held to; how long this caller
@@ -202,9 +250,34 @@ function Wrapper.guard(
 				}
 				return rejection
 			end
+			sentAt = now
 		end
 
-		handler(playerId, rawArgs)
+		-- A fresh control per call, closing over THIS call's acceptance. Only
+		-- the send limiter is refunded, and only once.
+		local declined = false
+		local call: CallControl = {
+			decline = function()
+				if declined then
+					return
+				end
+				declined = true
+				if limiter ~= nil and sentAt ~= nil then
+					limiter:refund(playerId, definition.name, sentAt)
+				end
+			end,
+		}
+
+		handler(playerId, rawArgs, call)
+		-- Read once the handler has returned: a decline after this point
+		-- refunds, but the result has already gone.
+		if declined then
+			local rejection: Rejection = {
+				reason = "declined",
+				detail = `"{definition.name}" declined the call`,
+			}
+			return rejection
+		end
 		return nil
 	end
 
