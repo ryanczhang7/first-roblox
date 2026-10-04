@@ -4,8 +4,8 @@ title: A call its handler declines costs the attempt floor but not the send cool
 slug: a-call-its-handler-declines-costs-the-at
 epic: EPIC-06
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/CHAN-003-a-call-its-handler-declines-costs-the-at
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -1032,3 +1032,12 @@ lands. GREEN adds no file, so the counter baselines (164/164/28) are unaffected.
   feature-developer was not dispatched. No gate was added or changed, so there
   are no `## Gate probes`.
 - GATES - `lead-po` (orchestrator, no subagent) - `claude-opus-5-5`.
+
+### DONE (2026-10-04)
+
+- PR [#56](https://github.com/ryanczhang7/first-roblox/pull/56) merged at
+  2026-10-04T23:08:11Z as `658c74d`.
+- CI: `boundaries` pass (7 s); `gates` pass (4m46s against `timeout-minutes: 45`)
+  — https://github.com/ryanczhang7/first-roblox/actions/runs/37242259821 —
+  unit 103 s (`1038 passed, 0 failed`; VIEW-004's run was 102 s), harness 16 s
+  (`project-counters: 40 passed, 0 failed`). No timing near a limit.
