@@ -4,8 +4,8 @@ title: An implausible position is not trusted for any range check
 slug: an-implausible-position-is-not-trusted-f
 epic: EPIC-07
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/VIEW-004-an-implausible-position-is-not-trusted-f
 depends_on: [SLICE-005]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -242,6 +242,86 @@ RED cannot run this. Owner: GATES.
 **D-5. Resync is strict.** With `needsResync`'s `>` changed to `>=`, AC-4's
 "refused for exactly `RESYNC_SECONDS`, nothing is placed" case **must** go red.
 RED cannot run this. Owner: GATES.
+
+### Results (GATES, orchestrator, 2026-10-04, against `ed0aff4`)
+
+All five run with `bash scripts/mutate.sh <file> '<expr>' -- lune run test`,
+one at a time; baseline `1001 passed, 0 failed`. Every one went red where its
+entry said it must, and each file was restored and verified. Afterwards
+`src` was clean and no `.bak` was left; the full `gates.sh` ran only after
+that check.
+
+**D-1 — RAN, PASSED.** `TOLERANCE` × 100. AC-1's settled 200-stud control went
+red, as required. The inclusive-bound and `dt` tests stayed green, because they
+read the constant (RED's handoff predicted exactly this).
+
+    === mutate: src/server/session/Positions.luau (1 line(s) changed by s/^Positions.TOLERANCE = 1.5$/Positions.TOLERANCE = 1.5 * 100/) ===
+      FAIL  tests/server/positions_test.luau :: AC-1: from a placement at the origin, a candidate 200 studs away 0.1 s later is refused ...
+      FAIL  tests/server/positions_test.luau :: AC-2: placed(track, at, now) is the new baseline ...
+      FAIL  tests/server/positions_test.luau :: AC-4: needsResync(track, now) is true only for an accepted track whose refusal run is STRICTLY longer ...
+      FAIL  tests/server/session_positions_test.luau :: AC-2: the deal's placement is the baseline ...
+      FAIL  tests/server/session_positions_test.luau :: AC-4: in Round, refused continuously for longer than RESYNC_SECONDS ...
+      FAIL  tests/server/session_positions_test.luau :: AC-5: the turner of T1[1], last accepted at the spawn centre, sends an implausible sample AT the machine ...
+      FAIL  tests/server/session_positions_test.luau :: Contract: state.tracks is {} from new; the deal replaces it ...
+    994 passed, 7 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_session_Positions.luau.20261004T201134Z.71368.bak) ===
+
+**D-2 — RAN, PASSED.** A wrong value (`<=` → `<`), caught by the exact-bound
+test and the clamp test, as the control table predicted for `exclusiveBound`.
+
+    === mutate: src/server/session/Positions.luau (1 line(s) changed by s/if d <= bound then/if d < bound then/) ===
+      FAIL  tests/server/positions_test.luau :: AC-1: a candidate at EXACTLY walkSpeed x TOLERANCE x dt + SLACK_STUDS is accepted and one a hair past it is refused - the bound is inclusive
+      FAIL  tests/server/positions_test.luau :: AC-1: a now before acceptedAt clamps dt to 0 ...
+    999 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_session_Positions.luau.20261004T201455Z.80630.bak) ===
+
+**D-3 — RAN, PASSED.** `Session` stores each raw sample as accepted
+(`Positions.offer` replaced by `Positions.placed`). AC-5's out-of-reach turn
+and AC-3's "absent until placed" both went red, as required, along with the
+rewritten C-3 checks.
+
+    === mutate: src/server/session/Session.luau (1 line(s) changed by s/tracks\[playerId\] = (Positions.offer(tracks\[playerId\], sample, now, walkSpeed))/tracks[playerId] = Positions.placed(tracks[playerId], sample, now)/) ===
+      FAIL  tests/server/session_positions_test.luau :: AC-2: the deal's placement is the baseline ...
+      FAIL  tests/server/session_positions_test.luau :: AC-3: a player with no accepted sample is absent from state.positions ...
+      FAIL  tests/server/session_positions_test.luau :: AC-4: in Round, refused continuously for longer than RESYNC_SECONDS ...
+      FAIL  tests/server/session_positions_test.luau :: AC-5: the turner of T1[1], last accepted at the spawn centre, sends an implausible sample AT the machine; their turn is refused out_of_reach ...
+      FAIL  tests/server/session_positions_test.luau :: Contract: state.tracks is {} from new; the deal replaces it ...
+      FAIL  tests/server/session_positions_test.luau :: Contract: the walk speed is state.tuning.instance.walk_speed_studs_per_second ...
+      FAIL  tests/server/session_round_test.luau :: Contract (C-3): after every step of a two-round lifecycle ...
+      FAIL  tests/server/session_round_test.luau :: Contract (C-3, rewritten by VIEW-004): PositionsSampled in Lobby, Round and Resolution merges the batch into the ACCEPTED positions ...
+    993 passed, 8 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_session_Session.luau.20261004T201822Z.91669.bak) ===
+
+**D-4 — RAN, PASSED. This is what earns the walking `ScriptedRound`.** With
+every candidate refused, SLICE-005's scripted **win** (AC-4) went red, and so
+did its instability (AC-5) and penalised-clock (AC-6) scripts and the stored-
+positions turn (AC-3). The walking scripts depend on the check accepting real
+walks; they no longer pass on arrival.
+
+    === mutate: src/server/session/Positions.luau (1 line(s) changed by s/if d <= bound then/if false then/) ===
+      ... 8 positions_test and 5 session_positions_test failures, then:
+      FAIL  tests/server/session_round_test.luau :: AC-1: on each of two deals state.facility deep-equals Generator.generate(...) ...
+      FAIL  tests/server/session_round_test.luau :: AC-1: the dealing step emits one Placed { playerId, position } per seated player ...
+      FAIL  tests/server/session_round_test.luau :: AC-3: a TurnRequested in Round is TurnRequests.handle(procedure, assignment, caller, args, now, STORED positions) ...
+      FAIL  tests/server/session_round_test.luau :: AC-4: over 50 seeds at each n in {4, 5, 6} the canonical-order script wins every round ...
+      FAIL  tests/server/session_round_test.luau :: AC-5: instability_max wrong turns on the live step ...
+      FAIL  tests/server/session_round_test.luau :: AC-6: with k points charged for each k in 0 .. instability_max - 1 ...
+      FAIL  tests/server/session_round_test.luau :: Contract (C-3): a TurnRequested in Lobby, Resolution, Post ...
+      FAIL  tests/server/session_round_test.luau :: Contract (C-3): after every step of a two-round lifecycle ...
+      FAIL  tests/server/session_round_test.luau :: Contract (C-3): the step that enters Lobby clears facility and procedure ...
+      FAIL  tests/server/session_round_test.luau :: Contract (C-3, rewritten by VIEW-004): PositionsSampled ... merges the batch into the ACCEPTED positions ...
+      FAIL  tests/server/session_round_test.luau :: Contract (C-5): every RoundView in Round carries secondsLeft ...
+    977 passed, 24 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_session_Positions.luau.20261004T202043Z.104052.bak) ===
+
+**D-5 — RAN, PASSED.** `>` → `>=` in `needsResync`; both "exactly
+`RESYNC_SECONDS`" cases went red and nothing else.
+
+    === mutate: src/server/session/Positions.luau (1 line(s) changed by s/> Positions.RESYNC_SECONDS/>= Positions.RESYNC_SECONDS/) ===
+      FAIL  tests/server/positions_test.luau :: AC-4: needsResync(track, now) is true only for an accepted track whose refusal run is STRICTLY longer than RESYNC_SECONDS ...
+      FAIL  tests/server/session_positions_test.luau :: AC-4: in Round, refused continuously for longer than RESYNC_SECONDS ...
+    999 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/src_server_session_Positions.luau.20261004T202428Z.117570.bak) ===
 
 ## Out of scope
 
@@ -680,10 +760,22 @@ a timeout, a config error or a lint rule.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-04T20:33:25Z
+    commit: ed0aff4
+    tree:   61fdf912f60e4af361ad579d0a31767381450015
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 160)
+    PASS         lint (1s, observed 160, floor 1)
+    PASS         typecheck (4s, observed 28)
+    PASS         unit (191s, observed 1001, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 106829)
+    PASS         harness (34s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -844,3 +936,23 @@ RED committed (`project-counters.test.sh`, `PositionsContract`,
 - The orchestrator read `Positions.offer` and `needsResync` against the
   Contract: inclusive bound measured from the last accepted sample, `dt`
   clamped at 0, no baseline is not a refusal, strict `>` for resync.
+- `bash scripts/gates.sh --fast` by the orchestrator at `ed0aff4` (GREEN
+  committed, tree clean): PASS format (160), lint (160), typecheck (28), unit
+  (130 s, `1001 passed, 0 failed`), build (106829), harness (`project-counters:
+  40 passed, 0 failed` — RED's eleven post-GREEN count predictions now hold);
+  `changes: 2 changed source path(s), all exercised by a required gate`;
+  `All required gates passed (6 ran, 1 unconfigured, 0 known).`
+
+### GATES (orchestrator, 2026-10-04)
+
+- Snapshot re-taken right after `phase.sh set VIEW-004 GATES`, same 14 paths.
+  Before leaving GATES: `frozen: OK — 14 path(s) unchanged since the snapshot for VIEW-004`.
+- D-1..D-5 run before `gates.sh`; results pasted under `## Deferred
+  verifications`. All five went red where required. D-4 also earns RED's
+  walking `ScriptedRound`.
+- Full `bash scripts/gates.sh` at `ed0aff4`, chained after the mutations and
+  run only once `src` was clean and no `.bak` remained: all required gates
+  passed (6 ran, 3 unconfigured, 0 known; unit 191 s, `observed 1001`); see
+  `## Gate results`. No source change was needed in GATES, so no
+  feature-developer dispatch. No gate added or changed, so no `## Gate probes`.
+- GATES - `lead-po` (orchestrator, no subagent) - `claude-opus-5-5`.
