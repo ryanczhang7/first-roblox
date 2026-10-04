@@ -42,7 +42,7 @@ end
 return {
 	--[[ C-1, C-3: the state's shape and provenance ]]
 
-	["Contract (C-1): Session.new holds facility = nil, procedure = nil and positions = {}, and accepts an optional fifth options argument carrying generatorPredicate"] = function()
+	["Contract (C-1): Session.new holds facility = nil, procedure = nil, positions = {} and (VIEW-004) tracks = {}, and accepts an optional fifth options argument carrying generatorPredicate"] = function()
 		Contract.newHoldsNoFacilityNoProcedureEmptyPositionsAndAcceptsOptions(Session())
 	end,
 
@@ -68,14 +68,14 @@ return {
 
 	--[[ AC-3 ]]
 
-	["AC-3: a TurnRequested in Round is TurnRequests.handle(procedure, assignment, caller, args, now, STORED positions) - committed when the sample put the turner in reach, out_of_reach after a sample that omitted them - and the caller alone receives one SendTo/TurnResult carrying TurnRequests.reply(result)"] = function()
+	["AC-3: a TurnRequested in Round is TurnRequests.handle(procedure, assignment, caller, args, now, STORED positions) - committed when the sample put the turner in reach, out_of_reach after they walked back to the spawn centre - and the caller alone receives one SendTo/TurnResult carrying TurnRequests.reply(result)"] = function()
 		Contract.handlesATurnAgainstTheStoredPositionsAndRepliesToTheCallerAlone(Session())
 	end,
 
 	--[[ C-3: samples, ignored turns, clearing ]]
 
-	["Contract (C-3): PositionsSampled in Lobby, Round and Resolution replaces state.positions with a copy of the samples (not merged, not aliased), emits nothing, and leaves round, assignment, facility and procedure as they were"] = function()
-		Contract.storesPositionSamplesAsAReplacingCopyAndEmitsNothing(Session())
+	["Contract (C-3, rewritten by VIEW-004): PositionsSampled in Lobby, Round and Resolution merges the batch into the ACCEPTED positions as fresh copies - a player with no placement absent, players absent from the batch kept - emits nothing but a due Placed (none here: every sample is walkable), and leaves round, assignment, facility and procedure as they were"] = function()
+		Contract.mergesAcceptedSamplesAndEmitsOnlyResyncPlacements(Session())
 	end,
 
 	["Contract (C-3): a TurnRequested in Lobby, Resolution, Post, the next Lobby, and Resolution after a failed generation returns the same state with {} effects"] = function()

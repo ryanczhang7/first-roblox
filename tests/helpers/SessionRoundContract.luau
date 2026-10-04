@@ -159,7 +159,58 @@ export type Oracle = {
 	facility: any?,
 	procedure: any?,
 	positions: { [string]: any },
+	-- VIEW-004: the last accepted sample or placement per player, and when.
+	-- Internal to the oracle; `tracks` on the subject is pinned by
+	-- `PositionsContract`, not here.
+	baselines: { [string]: { at: any, now: number } },
 }
+
+--[[
+	VIEW-004: the oracle's sample rule, TOLERANCE-FREE. A sample is accepted
+	iff the player has a baseline (the deal placed them) and the horizontal
+	move from it is reachable at BARE walk speed over the elapsed time -
+	`distance <= walkSpeed x dt`, no tolerance, no slack. That is strictly
+	tighter than the Contract's bound for any TOLERANCE >= 1 and SLACK_STUDS
+	>= 0, so every sample the plans below offer is accepted under the real
+	constants whatever they are, and the oracle never needs to read them. A
+	plan sample that is NOT reachable at bare walk speed is a precondition
+	failure, not a refusal: the implausible cases live in `PositionsContract`,
+	where the constants are read from the module. Players absent from a batch
+	keep their position (a merge); a player with no baseline is absent.
+]]
+local function horizontalDistance(a: any, b: any): number
+	local dx = b.x - a.x
+	local dz = b.z - a.z
+	return math.sqrt(dx * dx + dz * dz)
+end
+
+local function acceptSamples(
+	o: Oracle,
+	samples: { [string]: any },
+	now: number,
+	tuning: any
+): ({ [string]: any }, { [string]: { at: any, now: number } })
+	local walkSpeed = tuning.instance.walk_speed_studs_per_second
+	local positions = Deep.copy(o.positions)
+	local baselines = table.clone(o.baselines)
+	for p, v in samples do
+		local base = baselines[p]
+		if base == nil then
+			continue
+		end
+		local dt = math.max(0, now - base.now)
+		local d = horizontalDistance(base.at, v)
+		if d > walkSpeed * dt then
+			error(
+				`plan precondition: the sample for {p} at {now} moves {d} studs in {dt} s, which is not reachable at bare walk speed {walkSpeed}; the plans must stay tolerance-free`,
+				0
+			)
+		end
+		positions[p] = { x = v.x, y = v.y, z = v.z }
+		baselines[p] = { at = { x = v.x, y = v.y, z = v.z }, now = now }
+	end
+	return positions, baselines
+end
 
 export type Meta = {
 	assign: any?, -- the AssignSeats effect on a dealing step
@@ -271,12 +322,14 @@ local function oracleStep(
 
 	if event.kind == "PositionsSampled" then
 		meta.sampled = true
+		local positions, baselines = acceptSamples(o, event.samples, now, tuning)
 		return {
 			round = o.round,
 			assignment = o.assignment,
 			facility = o.facility,
 			procedure = o.procedure,
-			positions = Deep.copy(event.samples),
+			positions = positions,
+			baselines = baselines,
 		},
 			meta
 	end
@@ -326,6 +379,7 @@ local function oracleStep(
 			facility = o.facility,
 			procedure = procedure,
 			positions = o.positions,
+			baselines = o.baselines,
 		}
 		meta.wantsRoundView = round.phase ~= o.round.phase
 		if meta.wantsRoundView then
@@ -346,6 +400,7 @@ local function oracleStep(
 
 	local assignment, facility, procedure, positions =
 		o.assignment, o.facility, o.procedure, o.positions
+	local baselines = o.baselines
 	local sends: { any } = {}
 
 	local deal: any = nil
@@ -372,8 +427,10 @@ local function oracleStep(
 			local centre = ScriptedRound.spawnCentre(facility, tuning)
 			meta.centre = centre
 			positions = {}
+			baselines = {}
 			for _, p in dealt.players do
 				positions[p] = { x = centre.x, y = centre.y, z = centre.z }
+				baselines[p] = { at = { x = centre.x, y = centre.y, z = centre.z }, now = now }
 				table.insert(meta.placed, {
 					kind = "Placed",
 					playerId = p,
@@ -450,6 +507,7 @@ local function oracleStep(
 		facility = facility,
 		procedure = procedure,
 		positions = positions,
+		baselines = baselines,
 	}
 	local timed = round.phase == "Lobby" or round.phase == "Round" or round.phase == "Post"
 	meta.wantsRoundView = round.phase ~= before.phase
@@ -539,6 +597,7 @@ function SessionRoundContract.run(
 		facility = nil,
 		procedure = nil,
 		positions = {},
+		baselines = {},
 	}
 	local steps: { Step } = {}
 
@@ -642,13 +701,13 @@ local function machinePosition(o: Oracle, m: any): any
 	return Machines.positionOf((o.facility :: any).layout, m, SessionRoundContract.tuning())
 end
 
--- Everyone at the spawn centre except `moves`.
+-- Everyone where the oracle last accepted them, except `moves` - what a
+-- driver sampling every character would send (VIEW-004: a sample must be
+-- walkable from the last accepted one, so nobody is sent back to the centre).
 local function everyoneAt(o: Oracle, moves: { [string]: any }): { [string]: any }
-	local facility = o.facility :: any
-	local centre = ScriptedRound.spawnCentre(facility, SessionRoundContract.tuning())
 	local samples: { [string]: any } = {}
-	for _, p in (o.assignment :: any).players do
-		samples[p] = { x = centre.x, y = centre.y, z = centre.z }
+	for p, v in o.positions do
+		samples[p] = { x = v.x, y = v.y, z = v.z }
 	end
 	for p, v in moves do
 		samples[p] = { x = v.x, y = v.y, z = v.z }
@@ -656,26 +715,43 @@ local function everyoneAt(o: Oracle, moves: { [string]: any }): { [string]: any 
 	return samples
 end
 
+-- The whole seconds a walk between any two points of the layout can take at
+-- bare walk speed; the lifecycle spaces its moves by this so that every
+-- sample it offers is reachable without tolerance (VIEW-004).
+local function walkSeconds(): number
+	return ScriptedRound.maxMoveSeconds(SessionRoundContract.tuning())
+end
+
 --[[
 	Two rounds with every kind of step the Contract names, at `playersMin`:
 
 	  Lobby: a sample and a turn before anyone joined (stored / ignored), the
 	  joins, the DEAL (facility, Procedure, Placed).
-	  Round: a tick; the turner of T1[1] placed at it and a CORRECT turn
-	  (committed); the turner of T2[1] placed at it and a WRONG turn (rejected,
-	  one point charged - the penalty every later secondsLeft shows); a tick
-	  whose RoundView differs from the config formula by that penalty; a
-	  stranger's turn (not_key_holder) and an unknown machine; a sample that
-	  OMITS the turner of T2[1] followed by that turner's now-correct turn
-	  (out_of_reach - a merge would have committed it); a fractional tick; a
-	  seated leave (quorum kept); the tick a second before the Procedure's
-	  penalised deadline (still Round) and the tick ON it (lost / clock,
-	  routed from the Procedure, before the machine's own backstop).
-	  Resolution: a turn (ignored), a sample (stored), the tick into Post.
+	  Round: a tick; after a whole walk's worth of seconds (W, the longest
+	  move on the layout at bare walk speed) the turner of T1[1] sampled at
+	  it and a CORRECT turn (committed); the turner of T2[1] sampled at it
+	  and a WRONG turn (rejected, one point charged - the penalty every later
+	  secondsLeft shows); a tick whose RoundView differs from the config
+	  formula by that penalty; a stranger's turn (not_key_holder) and an
+	  unknown machine; the turner of T2[1] sampled BACK at the spawn centre
+	  (a walk away, W seconds later) followed by that turner's now-correct
+	  turn (out_of_reach: the turn reads the stored position); a fractional
+	  tick; a seated leave (quorum kept); the tick a second before the
+	  Procedure's penalised deadline (still Round) and the tick ON it (lost /
+	  clock, routed from the Procedure, before the machine's own backstop).
+	  Resolution: a turn (ignored), a sample (accepted: the player has a
+	  baseline and the clock has run), the tick into Post.
 	  Post: a turn (ignored), the tick into Lobby (facility and procedure
 	  cleared, positions kept).
 	  Lobby again: a turn (ignored), a replacement joins, the second DEAL from
 	  a different seed.
+
+	  VIEW-004: every sample here is reachable at BARE walk speed from the
+	  player's last accepted sample, so the oracle needs no tolerance; the
+	  first sample, in the empty Lobby, has no baseline and is NOT stored.
+	  SLICE-005's "sample that OMITS the turner" is gone: a batch merges, so
+	  omission no longer moves anybody, and the out_of_reach turn is reached
+	  by walking away instead.
 ]]
 function SessionRoundContract.lifecycle(): Plan
 	local c = SessionRoundContract.config()
@@ -683,6 +759,7 @@ function SessionRoundContract.lifecycle(): Plan
 	local P = SessionRoundContract.PLAYERS
 	local penalty = t.actuation.instability_clock_penalty_seconds
 	local reset = t.actuation.actuation_reset_seconds
+	local W = walkSeconds()
 	local plan: Plan = {}
 
 	table.insert(plan, sample("sample in an empty Lobby", { [P[1]] = { x = 5, y = 0, z = 5 } }, 0))
@@ -694,9 +771,10 @@ function SessionRoundContract.lifecycle(): Plan
 	table.insert(plan, tick("DEAL 1", L))
 	table.insert(plan, tick("tick in Round", L + 1))
 
+	local atT1 = L + 1 + W
 	table.insert(plan, {
-		label = "place the turner of T1[1] at it",
-		now = L + 1,
+		label = "the turner of T1[1] sampled at it, a walk after the deal",
+		now = atT1,
 		event = function(o: Oracle)
 			local m, turner = stepMachine(o, 1, 1)
 			return {
@@ -707,7 +785,7 @@ function SessionRoundContract.lifecycle(): Plan
 	})
 	table.insert(plan, {
 		label = "correct turn on T1[1] (committed)",
-		now = L + 2,
+		now = atT1 + 1,
 		event = function(o: Oracle)
 			local m, turner = stepMachine(o, 1, 1)
 			return {
@@ -717,9 +795,11 @@ function SessionRoundContract.lifecycle(): Plan
 			}
 		end,
 	})
+	-- A whole walk after the T1[1] sample: the same player may hold both.
+	local atT2 = atT1 + 1 + W
 	table.insert(plan, {
-		label = "place the turner of T2[1] at it",
-		now = L + 2,
+		label = "the turner of T2[1] sampled at it, a walk later",
+		now = atT2,
 		event = function(o: Oracle)
 			local m, turner = stepMachine(o, 2, 1)
 			return {
@@ -728,7 +808,7 @@ function SessionRoundContract.lifecycle(): Plan
 			}
 		end,
 	})
-	local wrongAt = L + 3
+	local wrongAt = atT2 + 1
 	table.insert(plan, {
 		label = "wrong turn on T2[1] (rejected, one point)",
 		now = wrongAt,
@@ -742,10 +822,10 @@ function SessionRoundContract.lifecycle(): Plan
 			}
 		end,
 	})
-	table.insert(plan, tick("tick after the penalty", L + 4))
+	table.insert(plan, tick("tick after the penalty", wrongAt + 1))
 	table.insert(plan, {
 		label = "stranger's turn (not_key_holder)",
-		now = L + 5,
+		now = wrongAt + 2,
 		event = function(o: Oracle)
 			local m = stepMachine(o, 1, 2)
 			return {
@@ -757,7 +837,7 @@ function SessionRoundContract.lifecycle(): Plan
 	})
 	table.insert(plan, {
 		label = "turn on an unknown machine",
-		now = L + 5,
+		now = wrongAt + 2,
 		event = function(o: Oracle)
 			local _, turner = stepMachine(o, 1, 2)
 			return {
@@ -767,19 +847,20 @@ function SessionRoundContract.lifecycle(): Plan
 			}
 		end,
 	})
+	-- A whole walk after the T2[1] sample, and past the reset window.
+	local backAt = math.max(wrongAt + reset, atT2 + W)
 	table.insert(plan, {
-		label = "sample that OMITS the turner of T2[1]",
-		now = wrongAt + reset,
+		label = "the turner of T2[1] sampled back at the spawn centre (walked away), alone in the batch",
+		now = backAt,
 		event = function(o: Oracle)
 			local _, turner = stepMachine(o, 2, 1)
-			local samples = everyoneAt(o, {})
-			samples[turner] = nil
-			return { kind = "PositionsSampled", samples = samples }
+			local centre = ScriptedRound.spawnCentre(o.facility, SessionRoundContract.tuning())
+			return { kind = "PositionsSampled", samples = { [turner] = centre } }
 		end,
 	})
 	table.insert(plan, {
-		label = "correct turn on T2[1] after the omitting sample (out_of_reach)",
-		now = wrongAt + reset,
+		label = "correct turn on T2[1] after walking away (out_of_reach)",
+		now = backAt,
 		event = function(o: Oracle)
 			local m, turner = stepMachine(o, 2, 1)
 			return {
@@ -789,8 +870,9 @@ function SessionRoundContract.lifecycle(): Plan
 			}
 		end,
 	})
-	table.insert(plan, tick("fractional tick in Round", L + 100.25))
-	table.insert(plan, leave(`{P[3]} leaves the Round (quorum kept)`, P[3], L + 101))
+	local late = math.max(L + 100, backAt + 1)
+	table.insert(plan, tick("fractional tick in Round", late + 0.25))
+	table.insert(plan, leave(`{P[3]} leaves the Round (quorum kept)`, P[3], late + 1))
 
 	local deadline = L + c.roundSeconds - penalty
 	table.insert(plan, tick("tick one second before the penalised deadline", deadline - 1))
@@ -862,9 +944,10 @@ end
      --------------------------------------------------------------------- ]]
 
 --[[
-	C-1: `new` holds no facility, no procedure and `positions = {}`; it also
-	accepts an optional fifth `options` argument carrying `generatorPredicate`
-	without raising, and still holds PhaseMachine.initial's round.
+	C-1: `new` holds no facility, no procedure, `positions = {}` and (VIEW-004)
+	`tracks = {}`; it also accepts an optional fifth `options` argument
+	carrying `generatorPredicate` without raising, and still holds
+	PhaseMachine.initial's round.
 ]]
 function SessionRoundContract.newHoldsNoFacilityNoProcedureEmptyPositionsAndAcceptsOptions(
 	S: Session
@@ -900,6 +983,12 @@ function SessionRoundContract.newHoldsNoFacilityNoProcedureEmptyPositionsAndAcce
 			`state.positions is {Deep.show(state.positions)} from new, expected \{} (C-1)`
 		)
 	end
+	if not Deep.equal(state.tracks, {}) then
+		table.insert(
+			problems,
+			`state.tracks is {Deep.show(state.tracks)} from new, expected \{} (VIEW-004)`
+		)
+	end
 	local ok5, state5 = pcall(
 		S.new,
 		config,
@@ -918,7 +1007,7 @@ function SessionRoundContract.newHoldsNoFacilityNoProcedureEmptyPositionsAndAcce
 	end
 	fewProblems(
 		"Contract",
-		"Session.new must hold facility = nil, procedure = nil, positions = {} and accept options",
+		"Session.new must hold facility = nil, procedure = nil, positions = {}, tracks = {} and accept options",
 		problems
 	)
 end
@@ -1264,9 +1353,9 @@ end
 	TurnResult, payload deep-equal to `TurnRequests.reply(result)`; no Placed;
 	a Broadcast only if the phase changed. The plan's turns resolve (asserted
 	on the oracle) to committed, wrong_setting, not_key_holder,
-	unknown_machine and - after a sample that omitted the turner -
-	out_of_reach: a session passing `{}`, the Placed centres, or a merged map
-	disagrees on at least one.
+	unknown_machine and - after the turner walked back to the spawn centre -
+	out_of_reach: a session passing `{}`, the Placed centres, or a map that
+	drops the players absent from a batch disagrees on at least one.
 ]]
 function SessionRoundContract.handlesATurnAgainstTheStoredPositionsAndRepliesToTheCallerAlone(
 	S: Session
@@ -1376,36 +1465,77 @@ end
      --------------------------------------------------------------------- ]]
 
 --[[
-	Every PositionsSampled, in every phase: `state.positions` deep-equals the
-	samples and is not the same table; nothing is emitted; `round`,
-	`assignment`, `facility` and `procedure` are deep-equal to what they were.
+	VIEW-004's rewrite of SLICE-005's C-3 check. Every PositionsSampled, in
+	every phase: `state.positions` deep-equals the oracle's ACCEPTED
+	positions - the batch merged into what was stored, a player with no
+	baseline absent (the empty-Lobby sample), nobody dropped for being absent
+	from a batch - and no stored entry is the event's own table; nothing is
+	emitted (every sample in the plan is plausible, so no resync placement
+	is due; in Round the only effect a sample may ever emit is `Placed`);
+	`round`, `assignment`, `facility` and `procedure` are deep-equal to what
+	they were. Against SLICE-005's Session, which stored every sample
+	unfiltered and replaced the map, this fails on the empty-Lobby sample
+	(stored without a baseline) and on every Round sample (the players
+	absent from the batch are dropped).
 ]]
-function SessionRoundContract.storesPositionSamplesAsAReplacingCopyAndEmitsNothing(S: Session)
+function SessionRoundContract.mergesAcceptedSamplesAndEmitsOnlyResyncPlacements(S: Session)
 	local steps = SessionRoundContract.run(S, "Contract", SessionRoundContract.lifecycle())
 	local problems: { string } = {}
-	local sampled = 0
+	local sampled, unplaced, partial = 0, 0, 0
 	for _, step in steps do
 		if not step.meta.sampled then
 			continue
 		end
 		sampled += 1
-		if not Deep.equal(step.after.positions, step.event.samples) then
+		local samples = step.event.samples
+		local want = step.oracleAfter.positions
+		local batch = 0
+		for p in samples do
+			batch += 1
+			if step.oracleBefore.baselines[p] == nil then
+				unplaced += 1
+			end
+		end
+		local stored = 0
+		for _ in want do
+			stored += 1
+		end
+		if batch < stored then
+			partial += 1
+		end
+		if not Deep.equal(step.after.positions, want) then
 			table.insert(
 				problems,
-				`"{step.label}": state.positions is {Deep.show(step.after.positions)}, expected exactly the samples {Deep.show(
-					step.event.samples
-				)} (replaced, not merged)`
+				`"{step.label}": state.positions is {Deep.show(step.after.positions)}, expected the accepted positions {Deep.show(
+					want
+				)} (the batch merged into the stored map; a player with no placement absent)`
 			)
-		elseif rawequal(step.afterLive.positions, step.event.samples) then
-			table.insert(
-				problems,
-				`"{step.label}": state.positions IS event.samples (the same table); the Contract wants a copy`
-			)
+		end
+		local live = step.afterLive.positions
+		if typeof(live) == "table" then
+			for p, v in samples do
+				if rawequal(live[p], v) then
+					table.insert(
+						problems,
+						`"{step.label}": state.positions[{p}] IS event.samples[{p}] (the same table); the Contract wants a copy`
+					)
+				end
+			end
+		end
+		for i, effect in step.effects do
+			if typeof(effect) ~= "table" or effect.kind ~= "Placed" then
+				table.insert(
+					problems,
+					`"{step.label}": effect #{i} is {Deep.show(
+						if typeof(effect) == "table" then effect.kind else effect
+					)}; the only effect a PositionsSampled may emit is Placed`
+				)
+			end
 		end
 		if #step.effects ~= 0 then
 			table.insert(
 				problems,
-				`"{step.label}": {Deep.show(Deep.kinds(step.effects))} emitted on a PositionsSampled, expected \{}`
+				`"{step.label}": {Deep.show(Deep.kinds(step.effects))} emitted on a PositionsSampled whose every sample was plausible, expected \{} (no resync is due)`
 			)
 		end
 		for _, field in { "round", "assignment", "facility", "procedure" } do
@@ -1417,12 +1547,14 @@ function SessionRoundContract.storesPositionSamplesAsAReplacingCopyAndEmitsNothi
 			end
 		end
 	end
-	if sampled < 5 then
-		Contract.fail(`Contract precondition: only {sampled} PositionsSampled steps in the plan`)
+	if sampled < 5 or unplaced < 1 or partial < 2 then
+		Contract.fail(
+			`Contract precondition: {sampled} PositionsSampled steps, {unplaced} unplaced players sampled, {partial} partial batches in the plan; too few`
+		)
 	end
 	fewProblems(
 		"Contract",
-		"PositionsSampled must replace state.positions with a copy of the samples, in every phase, and emit nothing",
+		"PositionsSampled must merge the batch into the accepted positions as fresh copies, keep players absent from the batch, store nobody without a placement, and emit nothing but a due Placed",
 		problems
 	)
 end
@@ -2145,9 +2277,9 @@ SessionRoundContract.CHECKS = {
 		run = SessionRoundContract.handlesATurnAgainstTheStoredPositionsAndRepliesToTheCallerAlone,
 	},
 	{
-		name = "storesPositionSamplesAsAReplacingCopyAndEmitsNothing",
+		name = "mergesAcceptedSamplesAndEmitsOnlyResyncPlacements",
 		ac = "Contract",
-		run = SessionRoundContract.storesPositionSamplesAsAReplacingCopyAndEmitsNothing,
+		run = SessionRoundContract.mergesAcceptedSamplesAndEmitsOnlyResyncPlacements,
 	},
 	{
 		name = "ignoresATurnOutsideRoundOrWithoutAProcedure",
