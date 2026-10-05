@@ -4,8 +4,8 @@ title: Each player has at most one live ping and it clears when it should
 slug: each-player-has-at-most-one-live-ping-an
 epic: EPIC-06
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/CHAN-006-each-player-has-at-most-one-live-ping-an
 depends_on: [CHAN-005, PROC-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -151,6 +151,49 @@ Owner: GATES.
 
 **D-4. `shown` leaks nothing.** Use `scripts/mutate.sh` to make `shown` include
 `at` (or return the active entry itself). AC-6 **must** fail. Owner: GATES.
+
+**Results, GATES, 2026-10-05 (lead-po, against `5f1ab2f`).** One
+`scripts/mutate.sh src/server/channel/Pings.luau EXPR -- lune run test` run
+each; every run restored the file "verified byte-for-byte", and
+`git diff --stat src` was empty afterwards.
+
+**D-1 - RAN, PASSED.** `active[senderId] = {` → `active[senderId .. "#" ..
+#state.log] = {` (the old entry survives under its own key).
+
+    FAIL  ping_lifecycle_test.luau :: AC-1 ...  AC-1: 5 violation(s) for replacement
+    FAIL  ping_lifecycle_test.luau :: AC-2 ...  AC-2: 6 violation(s) for expiry at ping_display_seconds
+    FAIL  ping_lifecycle_test.luau :: AC-3 ...  AC-3: 4 violation(s) for commit clears
+    FAIL  ping_lifecycle_test.luau :: AC-4 ...  AC-4: 2 violation(s) for two senders on one target
+    1129 passed, 4 failed
+    === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+Matches the handoff's `appendsUnderDistinctKey` row exactly (AC-1..AC-4, not C-2).
+
+**D-2 - RAN, PASSED.** `now >= ping.at + duration` → `now > ping.at + duration`.
+
+    FAIL  ping_lifecycle_test.luau :: AC-2 ...  AC-2: 4 violation(s) for expiry at ping_display_seconds
+    1132 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+Matches `strictExpiry` (AC-2 only).
+
+**D-3 - RAN, PASSED.** `local onMachine = ping.kind == "setting" or ping.kind
+== "machine"` → `local onMachine = true`.
+
+    FAIL  ping_lifecycle_test.luau :: AC-3 ...  AC-3: 1 violation(s) for commit clears
+    1132 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+Matches `commitIgnoresKind` (AC-3 only; the one violation is the doorway
+numbered like the committed machine).
+
+**D-4 - RAN, PASSED.** `shown`'s entry gains `at = ping.at`.
+
+    FAIL  ping_lifecycle_test.luau :: AC-6 ...  AC-6: 1 violation(s) for shown
+    1132 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+Matches `shownLeaksAt` (AC-6 only).
 
 ## Out of scope
 
@@ -515,10 +558,22 @@ hits are the four new test files. No existing export's signature changes.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-05T18:56:55Z
+    commit: 5f1ab2f
+    tree:   65749e1a8169daa80f95e188b81087bf570c38a9
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 176)
+    PASS         lint (1s, observed 176, floor 1)
+    PASS         typecheck (3s, observed 29)
+    PASS         unit (137s, observed 1133, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 115815)
+    PASS         harness (16s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -651,3 +706,10 @@ D-4 (`shownLeaksAt`; expected AC-6 only):
   lint, typecheck, unit (`1133`, 136s), build, harness (`40`) all PASS;
   "1 changed source path(s), all exercised by a required gate". Not recorded,
   as a `--fast` run never is. GATES owns D-1 … D-4 and the full run.
+
+**GATES verification (lead-po, 2026-10-05).** D-1 … D-4 run and pasted under
+`## Deferred verifications`, before the full run. `bash scripts/gates.sh`:
+all required gates passed (6 ran, 3 unconfigured), recorded by the script in
+`## Gate results` against `5f1ab2f`. Freeze through GATES:
+`frozen: OK — 9 path(s) unchanged since the snapshot for CHAN-006`. No source
+change was needed in GATES, so no feature-developer dispatch.
