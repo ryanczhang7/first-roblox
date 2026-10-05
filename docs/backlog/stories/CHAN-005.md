@@ -4,8 +4,8 @@ title: A ping is accepted only at a real target in range and in sight
 slug: a-ping-is-accepted-only-at-a-real-target
 epic: EPIC-06
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/CHAN-005-a-ping-is-accepted-only-at-a-real-target
 depends_on: [CHAN-003, PROC-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -762,3 +762,10 @@ path(s) unchanged since the snapshot for CHAN-005` (every tracked file under
 (in place) and `src/server/channel/Pings.luau` (new), nothing else. The
 "suite discriminates" mutations are D-2..D-4, run in GATES against the
 predicted fire-sets in the handoff's control table.
+
+**DONE, 2026-10-05.** Merged as
+[ryanczhang7/first-roblox#57](https://github.com/ryanczhang7/first-roblox/pull/57)
+(merge commit `f8838c9`). CI timings read from the first run:
+`gates` 4m06s (unit 88 s, 1099 passed; harness 14 s;
+https://github.com/ryanczhang7/first-roblox/actions/runs/37333352666) and
+`boundaries` 7 s; `gates.yml` sets no `timeout-minutes`, so no limit is near.
