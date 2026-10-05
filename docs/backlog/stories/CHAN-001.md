@@ -4,8 +4,8 @@ title: Confirm the preset delivery route and the filter call shape
 slug: confirm-the-preset-delivery-route-and-th
 epic: EPIC-06
 type: spike
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/CHAN-001-confirm-the-preset-delivery-route-and-th
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -242,3 +242,15 @@ the API reference. Suggest recording it as **CA-9** with the operator's decision
 3. **PO-3 — `PublicChat` context.** Set for honesty about the audience; the
    reference says the context does not change the filtered result, so nothing
    tests it.
+
+### DONE (2026-10-05)
+
+- PR [#59](https://github.com/ryanczhang7/first-roblox/pull/59) merged at
+  2026-10-05T21:19:35Z as `ff2de20`.
+- CI: `boundaries` pass (6 s) —
+  https://github.com/ryanczhang7/first-roblox/actions/runs/37374205723 ;
+  `gates` pass (3m29s) —
+  https://github.com/ryanczhang7/first-roblox/actions/runs/37374205676 . A
+  docs-only spike; no timing near a limit.
+- PO-1 (build presets now, or wait for Roblox's preset service) is still open
+  for the operator; it gates `CHAN-004` leaving PLANNED, not this spike.
