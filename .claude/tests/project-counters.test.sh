@@ -264,7 +264,30 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-# LAST SET: CHAN-006 (RED), which adds four test files
+# LAST SET: CHAN-002 (RED), which adds five test files
+# (tests/helpers/PresetSpec.luau, PresetContract.luau, PresetStubs.luau,
+# tests/shared/presets_test.luau, presets_controls_test.luau) and whose GREEN
+# adds ONE source file, src/shared/channel/Presets.luau, under src/shared
+# (story `## Contract` P-6). CHAN-006's values (176/176/29, narrow 29/29/8)
+# were confirmed on the tree before this story's files were added: `git
+# ls-files` over src tests lune counted 176 .luau files, src alone 29,
+# src/shared alone 8. MEASURED on the uncommitted RED tree with `bash
+# scripts/gates.sh --fast`: `stylua over 181 files`, `selene over 181 files`,
+# `analyze over 29 files` (176 + 5 tests). PREDICTED post-GREEN, which is what
+# is pinned below: 181 + 1 = 182/182/30, narrow 29/29/8 -> 30/30/9 - this
+# time NARROW_TYPECHECK moves too, because the new module is under
+# src/shared/. THE BASELINES BELOW ARE SET TO THOSE PREDICTED GREEN VALUES
+# NOW, IN RED, as CHAN-005 and VIEW-004 did and for the same reason:
+# check-boundaries refuses a .claude/tests/** change from any other phase
+# (TUNE-001 R-1). The suite is red in RED by design - the "no stray .luau
+# files" precondition until the RED commit, and the counters by the one
+# source file until GREEN writes it: expected red under `bash scripts/gates.sh
+# --fast` on RED's tree is `expected count: 182 / actual count: 181` for
+# format and lint, `30 / 29` for typecheck and both narrow src cases, `9 / 8`
+# for the narrow typecheck, `183 / 182` and `31 / 30` for the untracked-file
+# cases. GREEN confirms, never edits; a second source file, or one outside
+# src/shared/, is a counter failure GREEN cannot fix.
+# BEFORE THAT: CHAN-006 (RED), which adds four test files
 # (tests/helpers/PingLifecycleContract.luau, PingLifecycleStubs.luau,
 # tests/server/ping_lifecycle_test.luau, ping_lifecycle_controls_test.luau)
 # and NO source: GREEN extends src/server/channel/Pings.luau in place and
@@ -401,12 +424,12 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=176    # stylua  over src tests lune   (176 = 29 src + 147 tests/lune, measured in CHAN-006 RED, no source added)
-BASE_LINT=176      # selene  over src tests lune
-BASE_TYPECHECK=29  # analyze over src (NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings)
-NARROW_FORMAT=29   # stylua  over src alone
-NARROW_LINT=29     # selene  over src alone
-NARROW_TYPECHECK=8 # analyze over src/shared alone (moved by TUNE-001's MechanicsTuning)
+BASE_FORMAT=182    # stylua  over src tests lune   (182 = 30 src + 152 tests/lune: CHAN-002's 5 tests + predicted 1 src)
+BASE_LINT=182      # selene  over src tests lune
+BASE_TYPECHECK=30  # analyze over src (NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets, predicted)
+NARROW_FORMAT=30   # stylua  over src alone
+NARROW_LINT=30     # selene  over src alone
+NARROW_TYPECHECK=9 # analyze over src/shared alone (moved by TUNE-001's MechanicsTuning; + CHAN-002's channel/Presets, predicted)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`
 # rather than `source` - rules.md's probe convention - and so every guard that
