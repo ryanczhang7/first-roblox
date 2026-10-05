@@ -557,3 +557,20 @@ hits are the four new test files. No existing export's signature changes.
    `origin/main`; CHAN-005 had already been merged (PR #57) and closed
    (`f637de1`). Fast-forwarded `main`; no `--force`.
 
+
+**RED verification (lead-po, 2026-10-05, against `e47efb5`).** Independently
+re-run, not taken from the handoff:
+
+- `lune run test` → `1123 passed, 10 failed`. All 10 are
+  `tests/server/ping_lifecycle_test.luau`, each `<AC>: Pings.new is nil,
+  expected a function` - the export is absent, the right failure. The 24
+  `ping_lifecycle_controls_test.luau` tests and every CHAN-005 suite pass.
+- `bash scripts/gates.sh --fast` (after the RED commit, so the harness stray-file
+  precondition is clear): `PASS format (176)`, `PASS lint (176)`, `PASS
+  typecheck (29)`, `FAIL unit (114s)` on exactly those 10, `PASS build`, `PASS
+  harness (40)`. Admissible: no timeout, config or lint failure.
+- Read the AC-2 check: exact `Deep.equal` of the active map at `10`, `10 + d −
+  1e-6`, `10 + d` and `10 + d + 1` for `d = 15` and a substituted `d = 4`.
+- `rg "Pings\.(new|accept|tick|onCommitted|shown)" src` → no hits. No caller of a
+  changed signature exists.
+- D-1 … D-4 remain open, owner GATES; RED declined them in its handoff.
