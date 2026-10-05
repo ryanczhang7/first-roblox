@@ -5,7 +5,7 @@ slug: the-preset-table-obeys-the-countable-pre
 epic: EPIC-06
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/CHAN-002-the-preset-table-obeys-the-countable-pre
 depends_on: [TUNE-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -187,6 +187,8 @@ from an upstream story or spike (as noted above), amend it and re-run
 - RED - `test-developer` - `claude-fable-5-1` (Fable 5.1), from an **explicit
   `model: fable` in the dispatch**, per the plan; the agent reported the same id.
   2026-10-05.
+- GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5), from an **explicit
+  `model: opus` in the dispatch**, per the plan. 2026-10-05.
 
 ## Test plan
 
@@ -551,3 +553,73 @@ above.
   fixed string in the test name, not the measured count.)
 - Read `presets_test.luau` (one test per AC-1 … AC-5, P-3, P-4, P-5) and the
   denylist (`one` excluded with the T12 citation, as the contract decided).
+
+**GREEN control confirmation (feature-developer, `claude-opus-5-5`, 2026-10-05).**
+`src/shared/channel/Presets.luau` written; `lune run test` → `1172 passed, 0 failed`.
+D-1, D-2 and D-3 were run against the shipped module through `scripts/mutate.sh`
+(each restored and verified). The failing set in every case is exactly the
+handoff's stub row for that shape, with the same message text; no divergence.
+
+D-1 (`wordChanged` row: expected AC-1 only):
+
+    === mutate: src/shared/channel/Presets.luau (1 line(s) changed by s/"Go"/"Go now"/) ===
+    === mutate: running lune run test ===
+      FAIL  tests/shared/presets_test.luau :: AC-1: Presets.ALL agrees row for row with mechanics.md §4.2 read off disk - ...
+            AC-1: 1 violation(s) for Presets.ALL against docs/wiki/game/mechanics.md §4.2:
+      row 3: the module's word is "Go now", mechanics.md §4.2 says "Go"
+    1171 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_shared_channel_Presets.luau.20261005T230658Z.184114.bak) ===
+
+D-3 (`terminalPunctuation` row: expected AC-1 + AC-4):
+
+    === mutate: src/shared/channel/Presets.luau (1 line(s) changed by s/"Help"/"Help!"/) ===
+    === mutate: running lune run test ===
+      FAIL  tests/shared/presets_test.luau :: AC-1: Presets.ALL agrees row for row with mechanics.md §4.2 read off disk - ...
+            AC-1: 1 violation(s) for Presets.ALL against docs/wiki/game/mechanics.md §4.2:
+      row 4: the module's word is "Help!", mechanics.md §4.2 says "Help"
+      FAIL  tests/shared/presets_test.luau :: AC-4: no preset word ends in '.', '!' or '?' (C6)
+            AC-4: 1 violation(s) for the last character of every preset word (C6):
+      row 4 "Help!": ends in "!", terminal punctuation (C6)
+    1170 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_shared_channel_Presets.luau.20261005T230849Z.198646.bak) ===
+
+D-2 (`phaseDropped` row, expression leaves `{}`: expected AC-1 + AC-5):
+
+    === mutate: src/shared/channel/Presets.luau (1 line(s) changed by s/{ "Post" }/{}/) ===
+    === mutate: running lune run test ===
+      FAIL  tests/shared/presets_test.luau :: AC-1: Presets.ALL agrees row for row with mechanics.md §4.2 read off disk - ...
+            AC-1: 1 violation(s) for Presets.ALL against docs/wiki/game/mechanics.md §4.2:
+      row 10 "Well played": the module's phases are {  }, mechanics.md §4.2 says { 1 = "Post" }
+      FAIL  tests/shared/presets_test.luau :: AC-5: every preset's phase list is non-empty and every entry is one of the phases Remotes.Phase declares, ...
+            AC-5: 1 violation(s) for every preset's phase list against Remotes.Phase:
+      row 10 "Well played": the phase list is empty
+    1170 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_shared_channel_Presets.luau.20261005T231030Z.211619.bak) ===
+
+(Test titles abbreviated with `...` above; the full lines are in the runs. The
+three D-n items are owned by GATES; these runs are offered as their evidence if
+GATES accepts them, otherwise they repeat cleanly.)
+
+**GREEN verification (lead-po, 2026-10-05).**
+
+- Freeze: `frozen: OK — 8 path(s) unchanged since the snapshot for CHAN-002`.
+- One source file, `src/shared/channel/Presets.luau`, read in full: ten rows in
+  §4.2 order, keys per P-3, phases in document order, three levels frozen,
+  `byId` type-guarded with no coercion, no requires.
+- Two independent mutations, not the feature-developer's, against the
+  handoff's control table (`scripts/mutate.sh ... -- lune run test`):
+  - `unfrozenPhases` (`phases = table.freeze(phases)` → `phases = phases`):
+    predicted P-5 only; measured P-5 only, `10 violation(s)`, `1171 passed, 1
+    failed`; restored, verified byte-for-byte.
+  - `byIdReturnsCopy` (`return ALL[id]` → `return ALL[id] and
+    table.clone(ALL[id])`): predicted P-4 only, 10; measured P-4 only, `10
+    violation(s)`, `1171 passed, 1 failed`; restored, verified byte-for-byte.
+- **Escalation from GREEN, reproduced independently.** The harness
+  precondition "the working tree carries no stray .luau files" runs `git
+  status --porcelain -- src tests lune | grep -E '\.luau$'`, and default
+  porcelain collapses a new untracked directory to `?? src/shared/channel/`,
+  so a `.luau` file in a new directory is never seen. Reproduced on this tree:
+  default porcelain printed `?? src/shared/channel/`; with
+  `--untracked-files=all` it printed `?? src/shared/channel/Presets.luau`.
+  Harmless to this story (the counters themselves use `ls-files --others` and
+  counted correctly), but out of its scope: flagged as a separate harness task.
