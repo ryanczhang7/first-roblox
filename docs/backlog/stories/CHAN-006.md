@@ -647,3 +647,7 @@ D-4 (`shownLeaksAt`; expected AC-6 only):
   - `shownUnsorted` (`<` → `>` in the sort): predicted AC-6 only; measured
     AC-6 only, `1132 passed, 1 failed`; restored, verified byte-for-byte.
   Matching counts: the table is evidence, not a claim.
+- `bash scripts/gates.sh --fast` after the GREEN commit (`adfe2ba`): format,
+  lint, typecheck, unit (`1133`, 136s), build, harness (`40`) all PASS;
+  "1 changed source path(s), all exercised by a required gate". Not recorded,
+  as a `--fast` run never is. GATES owns D-1 … D-4 and the full run.
