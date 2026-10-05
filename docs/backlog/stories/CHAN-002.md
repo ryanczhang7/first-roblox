@@ -4,8 +4,8 @@ title: The preset table obeys the countable preset-guideline rules
 slug: the-preset-table-obeys-the-countable-pre
 epic: EPIC-06
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/CHAN-002-the-preset-table-obeys-the-countable-pre
 depends_on: [TUNE-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -142,6 +142,34 @@ expression produces). AC-1 **must** fail naming `Well played`. Owner: GATES.
 
 **D-3. AC-4 reads the real words.** Use `scripts/mutate.sh` to make `"Help"`
 `"Help!"`. AC-4 **must** fail naming it. Owner: GATES.
+
+**Results, GATES, 2026-10-05 (lead-po, against `99ba105`).** One
+`scripts/mutate.sh src/shared/channel/Presets.luau EXPR -- lune run test` run
+each; every run restored the file "verified byte-for-byte", and `git status
+--short src` was empty afterwards.
+
+**D-1 - RAN, PASSED.** `s/"Go"/"Go now"/`.
+
+    FAIL  presets_test.luau :: AC-1 ...  AC-1: 1 violation(s) for Presets.ALL against docs/wiki/game/mechanics.md §4.2
+    1171 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+**D-2 - RAN, PASSED.** `s/{ "Post" }/{}/` (Well played's phases emptied).
+
+    FAIL  presets_test.luau :: AC-1 ...  AC-1: 1 violation(s) for Presets.ALL against docs/wiki/game/mechanics.md §4.2
+    FAIL  presets_test.luau :: AC-5 ...  AC-5: 1 violation(s) for every preset's phase list against Remotes.Phase
+    1170 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+**D-3 - RAN, PASSED.** `s/"Help"/"Help!"/`.
+
+    FAIL  presets_test.luau :: AC-1 ...  AC-1: 1 violation(s) for Presets.ALL against docs/wiki/game/mechanics.md §4.2
+    FAIL  presets_test.luau :: AC-4 ...  AC-4: 1 violation(s) for the last character of every preset word (C6)
+    1170 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+Each fire set matches the handoff's stub row (`wordChanged`, `phaseDropped`,
+`terminalPunctuation`).
 
 ## Out of scope
 
@@ -495,10 +523,22 @@ above.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-05T23:30:57Z
+    commit: 99ba105
+    tree:   46a1c4bc2d2a29818dadee8e240d118cae30c3ba
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 182)
+    PASS         lint (1s, observed 182, floor 1)
+    PASS         typecheck (2s, observed 30)
+    PASS         unit (93s, observed 1172, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 117327)
+    PASS         harness (13s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -623,3 +663,9 @@ GATES accepts them, otherwise they repeat cleanly.)
   `--untracked-files=all` it printed `?? src/shared/channel/Presets.luau`.
   Harmless to this story (the counters themselves use `ls-files --others` and
   counted correctly), but out of its scope: flagged as a separate harness task.
+
+**GATES verification (lead-po, 2026-10-05).** D-1 … D-3 run and pasted under
+`## Deferred verifications` before the full run. `bash scripts/gates.sh`: all
+required gates passed (6 ran, 3 unconfigured), recorded by the script in
+`## Gate results` against `99ba105`. Freeze through GATES: `frozen: OK — 8 path(s) unchanged since the snapshot for CHAN-002`. No source
+change was needed in GATES, so no feature-developer dispatch.
