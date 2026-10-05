@@ -4,8 +4,8 @@ title: A ping is accepted only at a real target in range and in sight
 slug: a-ping-is-accepted-only-at-a-real-target
 epic: EPIC-06
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/CHAN-005-a-ping-is-accepted-only-at-a-real-target
 depends_on: [CHAN-003, PROC-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -208,6 +208,66 @@ fail. Owner: GATES.
 
 **D-4. The refusal declines.** Use `scripts/mutate.sh` to remove the
 `call.decline()` in `request`. AC-4 **must** fail for `rate`. Owner: GATES.
+
+**Results, GATES, 2026-10-05 (orchestrator, against `2884c35`).** One
+`scripts/mutate.sh` run each, command `lune run test`; every run restored the
+file "verified byte-for-byte", and `git diff --stat src` was empty afterwards.
+
+**D-1 - RAN, PASSED.**
+
+    === mutate: src/net/GameRemotes.luau (1 line(s) changed by s/MechanicsTuning.channel.ping_rate_limit_seconds }/3 }/) ===
+      FAIL  tests/net/ping_remote_test.luau :: AC-1: Ping's rateLimit.minIntervalSeconds equals the value RateLimitSpec reads for ping_rate_limit_seconds from tuning.md, ...
+      Ping.rateLimit is { minIntervalSeconds = 3 }, expected { minIntervalSeconds = 10 } - the value RateLimitSpec reads for ping_rate_limit_seconds from docs/wiki/game/tuning.md (10), ...
+      Ping.rateLimit.minIntervalSeconds is 3, below RateLimitSpec.FLOOR_SECONDS = 10 ...
+      FAIL  tests/net/ping_remote_test.luau :: AC-2: a second well-formed Ping inside channel_attempt_min_interval_seconds is rejected for rate ...
+      FAIL  tests/net/ping_remote_test.luau :: AC-2: after an accepted Ping, a second past the attempt floor and a third inside ping_rate_limit_seconds are rejected ...
+    1096 passed, 3 failed
+    === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+Matches the handoff's `rateLiteral3` row (the rate check plus both rate
+sequences, naming 3 and 10).
+
+**D-2 - RAN, PASSED.**
+
+    === mutate: src/server/channel/Pings.luau (1 line(s) changed by s/at) > range then/at) >= range then/) ===
+      FAIL  tests/server/pings_test.luau :: AC-3: range is horizontal and inclusive - exactly ping_range_studs along x or z, at any y, is accepted ...
+      FAIL  tests/server/pings_test.luau :: AC-3: range is procedure.tuning.channel.ping_range_studs - a procedure whose tuning fixes 20 accepts exactly 20 ...
+    1097 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+Matches `strictRange` exactly (boundary + tuning-range).
+
+**D-3 - RAN, PASSED.**
+
+    === mutate: src/server/channel/Pings.luau (1 line(s) changed by s/if horizontalDistance(senderPosition, at) > range then/if lineOfSight(senderPosition, at) and horizontalDistance(senderPosition, at) > range then/) ===
+      FAIL  tests/server/pings_test.luau :: AC-3: first failure wins in the Contract's order - ... range before sight
+      FAIL  tests/server/pings_test.luau :: AC-5: for an otherwise-valid machine, setting or doorway, lineOfSight is called exactly once ...
+      FAIL  tests/server/pings_test.luau :: AC-5: lineOfSight is never called for a target that fails setting_mismatch, no_such_target, committed_machine, no_position or out_of_range
+    1096 passed, 3 failed
+    === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+`sightBeforeRange` predicted the order and never-asked checks; this mutation
+also fires the called-exactly-once check because it asks the port twice for an
+in-range target (once in the range line, once at the sight line), which the
+stub variant does not.
+
+**D-4 - RAN, PASSED.**
+
+    === mutate: src/server/channel/Pings.luau (29 line(s) changed by /^\tcall.decline()$/d) ===
+      FAIL  tests/net/ping_remote_test.luau :: AC-4: through the guarded Ping, a refused target at t is declined ...
+      AC-4: the refused ping at t -> the guard answered nil, expected { detail = ""Ping" declined the call", reason = "declined" }
+      AC-4: the valid ping at t + 1.1 (past the attempt floor 1, inside the send limit 10) -> the guard answered { detail = ""Ping" is limited to one call per 10 s per player", reason = "rate" }, expected nil (accepted)
+      FAIL  tests/server/pings_test.luau :: AC-4: on every refusal request calls call.decline() exactly once ...
+      AC-4: machine 3, an id no machine carries -> call.decline() was called 0 time(s), expected exactly once
+    1097 passed, 2 failed
+    === mutate: command exited 1; restored (verified byte-for-byte ...) ===
+
+"29 line(s) changed" is a deleted line shifting the file's last 29 lines
+(the decline was line 171 of 200), not 29 edits. Matches `noDecline` at both
+levels: the second ping is refused for `rate`.
+
+These four also stand as the orchestrator's "suite discriminates" check: each
+predicted fire-set in the handoff's control table matched on the shipped module.
 
 ## Amendments
 
@@ -596,10 +656,22 @@ AC-4 (`rate` on the second ping) and `pings_test` AC-4 "decline exactly once".
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-05T15:14:39Z
+    commit: 2884c35
+    tree:   6bef32752b056534a27ef2276823c6007ed141c8
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (2s, observed 172)
+    PASS         lint (1s, observed 172, floor 1)
+    PASS         typecheck (3s, observed 29)
+    PASS         unit (241s, observed 1099, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 113649)
+    PASS         harness (30s, observed 40)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
