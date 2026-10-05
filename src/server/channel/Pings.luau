@@ -48,11 +48,23 @@
 	declines the call, so the guard refunds the send limit and only the
 	attempt floor applies (G9, `CHAN-003`), and it returns a fresh
 	`PingRefused` for the caller to send to the sender alone (`SLICE-006`).
-	An accepted ping returns nil and leaves the call alone. Recording the
-	ping is `CHAN-006`'s.
+	An accepted ping returns nil and leaves the call alone.
+
+	CHAN-006: WHAT HAPPENS TO A PING THAT LANDS (`mechanics.md` §4.1, §8).
+	`accept` records it in a `PingState`: the ACTIVE set, keyed by sender so
+	each player has at most one live ping and a new one replaces the old at
+	once, and the LOG, one entry per accepted ping, append-only, with the
+	target's position and whether its room was lit (a doorway always is) for
+	the trace's "read helper ping" (§7, G12). A ping leaves the active set
+	when `tick` reaches `at + ping_display_seconds` (half-open) or when
+	`onCommitted` clears the setting and machine pings on its machine;
+	neither touches the log. `shown` is the public payload: sender, kind,
+	target and setting, never a position or a time. All of it is pure and
+	returns a new state; `SLICE-006` holds the state and wires the calls.
 ]]
 
 local Machines = require("../facility/Machines")
+local MechanicsTuning = require("@shared/MechanicsTuning")
 local Procedure = require("../procedure/Procedure")
 
 local Pings = {}
@@ -195,6 +207,131 @@ function Pings.request(
 		return refuse(call, reason :: Refusal)
 	end
 	return nil
+end
+
+--[[
+	CHAN-006: an accepted ping's lifecycle. `PingState` holds the ACTIVE set,
+	at most one ping per sender (`active_pings_per_player` = 1 is derived, so
+	it is the map's key rather than a number read), and the LOG the trace
+	reads. Every function returns a new state and never writes into the one
+	it was given (the `Procedure` copy idiom).
+]]
+export type ActivePing = {
+	senderId: string,
+	kind: string,
+	target: number,
+	setting: number?,
+	at: number,
+}
+export type PingLogEntry = {
+	senderId: string,
+	kind: string,
+	target: number,
+	setting: number?,
+	position: Vec,
+	at: number,
+	roomLit: boolean,
+}
+export type PingState = { active: { [string]: ActivePing }, log: { PingLogEntry } }
+export type PingShown = { senderId: string, kind: string, target: number, setting: number? }
+
+-- A new outer table and a new active map; the log is shared until written.
+local function withActive(state: PingState, active: { [string]: ActivePing }): PingState
+	return { active = active, log = state.log }
+end
+
+function Pings.new(): PingState
+	return { active = {}, log = {} }
+end
+
+--[[
+	Records an accepted ping. Does not validate: `request` has. Replaces the
+	sender's active ping at once and appends one log entry. `position` is the
+	TARGET's (`targetPosition`), never the sender's; `roomLit` is the caller's
+	`Procedure.isDark` answer for the target's room, and a doorway is always
+	logged lit.
+]]
+function Pings.accept(
+	state: PingState,
+	senderId: string,
+	target: PingTarget,
+	position: Vec,
+	now: number,
+	roomLit: boolean
+): PingState
+	-- Widened to the Contract's `string`: table fields are invariant.
+	local kind: string = target.kind
+	local setting = if kind == "setting" then target.setting else nil
+	local active = table.clone(state.active)
+	active[senderId] = {
+		senderId = senderId,
+		kind = kind,
+		target = target.target,
+		setting = setting,
+		at = now,
+	}
+	local log = table.clone(state.log)
+	local entry: PingLogEntry = {
+		senderId = senderId,
+		kind = kind,
+		target = target.target,
+		setting = setting,
+		position = { x = position.x, y = position.y, z = position.z },
+		at = now,
+		roomLit = kind == "doorway" or roomLit,
+	}
+	table.insert(log, entry)
+	return { active = active, log = log }
+end
+
+-- Expiry is half-open: a ping made at `at` is gone at `now >= at + d`,
+-- `d` being `channel.ping_display_seconds`. The log is untouched.
+function Pings.tick(
+	state: PingState,
+	now: number,
+	tuning: MechanicsTuning.MechanicsTuning
+): PingState
+	local duration = tuning.channel.ping_display_seconds
+	local active: { [string]: ActivePing } = {}
+	for senderId, ping in state.active do
+		local expired = now >= ping.at + duration
+		if not expired then
+			active[senderId] = ping
+		end
+	end
+	return withActive(state, active)
+end
+
+-- Machine `machineId` committed: its setting and machine pings clear. A
+-- doorway with the same number is a different thing (doorway ids index
+-- `layout.doors`) and stays. The log is untouched.
+function Pings.onCommitted(state: PingState, machineId: number): PingState
+	local active: { [string]: ActivePing } = {}
+	for senderId, ping in state.active do
+		local onMachine = ping.kind == "setting" or ping.kind == "machine"
+		if not (onMachine and ping.target == machineId) then
+			active[senderId] = ping
+		end
+	end
+	return withActive(state, active)
+end
+
+-- The public payload: who pinged what, sorted by sender. No position, no
+-- time, no expiry; `setting` only on a setting ping.
+function Pings.shown(state: PingState): { PingShown }
+	local shown: { PingShown } = {}
+	for _, ping in state.active do
+		local entry: PingShown =
+			{ senderId = ping.senderId, kind = ping.kind, target = ping.target }
+		if ping.kind == "setting" then
+			entry.setting = ping.setting
+		end
+		table.insert(shown, entry)
+	end
+	table.sort(shown, function(a: PingShown, b: PingShown): boolean
+		return a.senderId < b.senderId
+	end)
+	return shown
 end
 
 return table.freeze(Pings)

@@ -5,7 +5,7 @@ slug: each-player-has-at-most-one-live-ping-an
 epic: EPIC-06
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/CHAN-006-each-player-has-at-most-one-live-ping-an
 depends_on: [CHAN-005, PROC-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -197,6 +197,9 @@ from an upstream story or spike (as noted above), amend it and re-run
 - RED - `test-developer` - `claude-fable-5-1` (Fable 5.1), from an **explicit
   `model: fable` in the dispatch**, per the plan's `fable` row; the agent
   reported the same id. 2026-10-05.
+- GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5), from an
+  **explicit `model: opus` in the dispatch**, per the plan; the agent reported
+  the same id. 2026-10-05.
 
 ## Test plan
 
@@ -574,3 +577,73 @@ re-run, not taken from the handoff:
 - `rg "Pings\.(new|accept|tick|onCommitted|shown)" src` → no hits. No caller of a
   changed signature exists.
 - D-1 … D-4 remain open, owner GATES; RED declined them in its handoff.
+
+**GREEN control confirmation (feature-developer, `claude-opus-5-5`, 2026-10-05).**
+Against the shipped `src/server/channel/Pings.luau` (uncommitted GREEN tree),
+each through `bash scripts/mutate.sh src/server/channel/Pings.luau '<expr>' --
+lune run test`. Unmutated: `1133 passed, 0 failed`. Every measured fire set
+equals the handoff's stub row; no divergence. D-2 and D-3 below were re-run
+after the final format/typecheck edits; D-1 and D-4 ran on the pre-format
+module, whose `accept` key and `shown` entry lines were unchanged by those
+edits except a stylua line-wrap. These are confirmations, not GATES' formal
+D-1..D-4.
+
+D-2 (`strictExpiry`; expected AC-2 only):
+
+    === mutate: src/server/channel/Pings.luau (1 line(s) changed by s/now >= ping.at + duration/now > ping.at + duration/) ===
+      297 - 		local expired = now >= ping.at + duration
+      297 + 		local expired = now > ping.at + duration
+      FAIL  tests/server/ping_lifecycle_test.luau :: AC-2: a ping made at 10 is active at 10 + ping_display_seconds - 1e-6 and gone at exactly 10 + ping_display_seconds, ...
+            AC-2: 4 violation(s) for expiry at ping_display_seconds:
+      AC-2: the module's tuning (d = 15), gone at exactly 10 + 15 = 25 -> the active set holds 1 ping(s), expected exactly 0:
+        value.kim: unexpected { at = 10, kind = "machine", senderId = "kim", target = 1 }
+    1132 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_server_channel_Pings.luau.20261005T174243Z.140826.bak) ===
+
+D-3 (`commitIgnoresKind`; expected AC-3 only, on the doorway):
+
+    === mutate: src/server/channel/Pings.luau (1 line(s) changed by s/ping.kind == "setting" or ping.kind == "machine"/true/) ===
+      311 - 		local onMachine = ping.kind == "setting" or ping.kind == "machine"
+      311 + 		local onMachine = true
+      FAIL  tests/server/ping_lifecycle_test.luau :: AC-3: onCommitted(state, m) clears the setting and machine pings on m and nothing else - ...
+            AC-3: 1 violation(s) for commit clears:
+      AC-3: machine 1 commits: kim's setting and lee's machine ping go; ann's doorway 1 (the same number, a doorway) and both pings on machine 2 stay -> the active set holds 2 ping(s), expected exactly 3:
+        value.ann: expected { at = 13, kind = "doorway", senderId = "ann", target = 1 }, got nil
+    1132 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_server_channel_Pings.luau.20261005T174517Z.149306.bak) ===
+
+D-1 (`appendsUnderDistinctKey`; expected AC-1, AC-2, AC-3, AC-4, not C-2):
+
+    === mutate: src/server/channel/Pings.luau (1 line(s) changed by s/active\[senderId\] = {/active[senderId .. "#" .. #state.log] = {/) ===
+      FAIL  tests/server/ping_lifecycle_test.luau :: AC-1: a second accepted ping by the same sender replaces the first at once - ...
+      AC-1: after kim's second ping (doorway 1 at 12) -> the active set holds 2 ping(s), expected exactly 1:
+      FAIL  tests/server/ping_lifecycle_test.luau :: AC-2: ...
+      FAIL  tests/server/ping_lifecycle_test.luau :: AC-3: ...
+      FAIL  tests/server/ping_lifecycle_test.luau :: AC-4: ...
+    1129 passed, 4 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_server_channel_Pings.luau.20261005T171855Z.64237.bak) ===
+
+D-4 (`shownLeaksAt`; expected AC-6 only):
+
+    === mutate: src/server/channel/Pings.luau (1 line(s) changed by s/target = ping.target }/target = ping.target, at = ping.at }/) ===
+      FAIL  tests/server/ping_lifecycle_test.luau :: AC-6: shown(state) is exactly { senderId, kind, target, setting? } per active ping, ...
+      AC-6: shown is not exactly { senderId, kind, target, setting? } per ping sorted by senderId (an at, a position or an expiry is a leak):
+        value.1.at: unexpected 11
+    1132 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_server_channel_Pings.luau.20261005T172127Z.74285.bak) ===
+
+**GREEN verification (lead-po, 2026-10-05).**
+
+- Freeze: `frozen: OK — 9 path(s) unchanged since the snapshot for CHAN-006`
+  (the four CHAN-006 test files, the four CHAN-005 pings test/helper files,
+  `.claude/tests/project-counters.test.sh`).
+- `lune run test` → `1133 passed, 0 failed` (was `1123 passed, 10 failed`).
+  Only `src/server/channel/Pings.luau` changed in source; no new file.
+- Two independent mutations, not the feature-developer's, against the handoff
+  table, via `scripts/mutate.sh ... -- lune run test`:
+  - `doorwayLogsRoomLitAsGiven` (`roomLit = kind == "doorway" or roomLit` →
+    `roomLit = roomLit`): predicted AC-5 (doorway) + AC-5 (log); measured
+    exactly those two, `1131 passed, 2 failed`; restored, verified byte-for-byte.
+  - `shownUnsorted` (`<` → `>` in the sort): predicted AC-6 only; measured
+    AC-6 only, `1132 passed, 1 failed`; restored, verified byte-for-byte.
+  Matching counts: the table is evidence, not a claim.
