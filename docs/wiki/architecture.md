@@ -689,12 +689,126 @@ emitted on leaving `Post`, dismisses it. There is no lobby ready-up.
   declines. One remote and one limiter per player spans the wheel, which is what
   C4 ("per send", across the whole wheel) requires (D17).
 - **Filtering is a port** (`filter(playerId, text) -> (ok, text?)`, §9.6), called
-  per send unless `CHAN-001` finds otherwise. **Fail closed**: nothing is sent,
-  the sender is told, and the call is declined.
-- **Delivery route**: presets are broadcast with their sender and sender position
-  for the in-world bubble and beacon; whether they also appear as
-  `TextChatService` system messages labelled "system preset" (CA-6) is settled by
-  the spike `CHAN-001` before any preset reaches a client.
+  **once per send** (settled by `CHAN-001`, below). **Fail closed**: nothing is
+  sent, the sender is told, and the call is declined.
+- **Delivery route** (settled by `CHAN-001`, below): presets are broadcast by the
+  server, already filtered, with their sender and sender position, for the
+  in-world bubble and beacon; **each client** then also writes the chat line
+  (C-13) itself, as a `TextChatService` system message labelled "system preset".
+  The server cannot put a system message on anyone's screen.
+
+#### 9.5.1 Filtering and the chat route — `CHAN-001`'s findings (2026-10-05)
+
+Read from Roblox's documentation source, `Roblox/creator-docs` at `9f840b1`
+(the published pages are generated from it). **Authority** is the API reference
+and the creator guides; **corroboration only** is marked as such.
+
+**The filter call (AC-1).** On the server, once per send:
+
+    local result = TextService:FilterStringAsync(word, sender.UserId, Enum.TextFilterContext.PublicChat)
+    local text = result:GetNonChatStringForBroadcastAsync()
+
+- `FilterStringAsync(stringToFilter, fromUserId, textContext = PrivateChat)`
+  ([API](https://create.roblox.com/docs/reference/engine/classes/TextService#FilterStringAsync)).
+  `fromUserId` is the **sender's** `UserId`: a preset is filtered on the behalf
+  of the player who sent it. `textContext` is `PublicChat`, the enum's value for
+  text "visible to all players or a broad public audience"
+  ([enum](https://create.roblox.com/docs/reference/engine/enums/TextFilterContext));
+  the reference says it "does not impact the filtered result … and is only used
+  to improve Roblox's text filtering", so it is correctness-neutral and set for
+  honesty. The adapter maps the session's `playerId` to the `Player` and reads its
+  `UserId`.
+- The broadcast form is `TextFilterResult:GetNonChatStringForBroadcastAsync()`,
+  "the text in a properly filtered manner for all users"
+  ([API](https://create.roblox.com/docs/reference/engine/classes/TextFilterResult)).
+  It is the **only** non-deprecated all-audience method: `GetChatForUserAsync` is
+  deprecated and "returns an empty string". The docs do not reconcile the
+  method's "non-chat" name with a line that is later shown in the chat window;
+  the preset guideline's requirement ("All presets must go through
+  `TextService:FilterStringAsync()`") is met either way, and this is the form
+  the text-filtering guide prescribes for text "visible to all users in a game"
+  ([guide](https://create.roblox.com/docs/ui/text-filtering)).
+- **Both calls yield** (`FilterStringAsync` "always yields"; the result method
+  is tagged `Yields`). The handler therefore runs off the wrapper's synchronous
+  path or accepts the yield; `SLICE-006` decides which.
+- **Failure modes.** `FilterStringAsync` "may throw if there is a service error
+  … do not retry the request, as this method implements its own retry logic",
+  and "currently throws if `fromUserId` is not online on the current server".
+  The result method can also throw (the guide wraps it in `pcall`). The
+  reference: "If it fails, do not display the text to any user." So the adapter
+  wraps both in `pcall`, returns `(false, nil)` on any raise, and never retries.
+  A filtered string may come back altered (hashed); what is broadcast is the
+  returned string, never the table's word.
+
+**The chat route (AC-2).** `TextChannel:DisplaySystemMessage(systemMessage,
+metadata)` "Can only be used in a `LocalScript`, or in a `Script` with
+`RunContext` of `Enum.RunContext.Client`. Messages are only visible to that
+user and aren't automatically filtered or localized"
+([API](https://create.roblox.com/docs/reference/engine/classes/TextChannel#DisplaySystemMessage)).
+So:
+
+- the server **cannot** display a system message to every client;
+- each client calls `TextChatService.TextChannels.RBXGeneral:DisplaySystemMessage(line, "system_preset")`
+  when the `PresetShown` broadcast arrives, which is the documented pattern for a
+  system message ([chat window guide, "System"](https://create.roblox.com/docs/chat/chat-window#system));
+- because the call does not filter, **only the server-filtered text** may reach
+  it, which the broadcast already guarantees.
+
+**The "system preset" label (C6).** The guideline requires "All UI of presets
+must be properly labeled as **system preset** when displaying within chat"
+([guidelines](https://create.roblox.com/docs/chat/preset-system-guidelines#requirements)).
+It is written into the line itself (C-13's model), and the `metadata` argument
+(`"system_preset"`) lets a `TextChatService.OnIncomingMessage` callback restyle
+those lines without parsing them — the guide's own pattern for system messages
+identified by `Metadata`.
+
+**Rich text.** "The default `TextChatService` UI relies on rich text to format
+and customize how messages are displayed"
+([guide](https://create.roblox.com/docs/chat/in-experience-text-chat#customize-message-display));
+`<b>` and `<font face="…">` are both supported tags
+([rich text](https://create.roblox.com/docs/ui/rich-text#supported-tags)). The
+documented chat examples put rich text in `PrefixText` and `Text` through
+`OnIncomingMessage`; none states in so many words that a `DisplaySystemMessage`
+body is parsed as rich text. C-13 therefore keeps its markup and its Studio
+check (SC-C1, `HUD-004`) is where the body's rendering is observed.
+
+**Escaping a player name.** Rich text's five escape forms: `<` → `&lt;`,
+`>` → `&gt;`, `"` → `&quot;`, `'` → `&apos;`, `&` → `&amp;`
+([rich text, "Escape forms"](https://create.roblox.com/docs/ui/rich-text#escape-forms)).
+`&` is replaced **first**, or the other four's ampersands are escaped twice.
+
+**Per send, not once per session (AC-3).** Decided by the API reference: "This
+method should be called once each time a user submits a message"
+([FilterStringAsync](https://create.roblox.com/docs/reference/engine/classes/TextService#FilterStringAsync)).
+A preset send is a user submitting a message, so a cached result per sender per
+session is not permitted. This matches the stricter reading `CHAN-004` already
+held.
+
+**Open risk — a Roblox preset service.** Roblox staff announced on 2026-03-26:
+"In June, we'll add support for a Roblox-defined preset service … Once
+released, all creators will need to migrate their own systems to using
+Roblox's preset service", and "We advise against building your own system now,
+unless it's necessary for your experience to function"
+([announcement](https://devforum.roblox.com/t/march-26-2026-an-update-on-our-age-check-to-chat-fast-follow-roadmap/4539685)).
+The Spring 2026 roadmap lists "Customizable Chat Presets across age groups" —
+"Integrate tooling into TextChatService for creators to build and customize
+tools for chat presets" — for mid-2026
+([roadmap](https://devforum.roblox.com/t/creator-roadmap-2026-spring-update/4625473)).
+**As of `9f840b1` the API reference contains no preset class, enum or guide**
+beyond the guidelines page, so nothing has shipped to build on. The design is
+kept migratable by the existing seams: the preset table is data
+(`Presets.ALL`), filtering is a port, and the chat line is a client model; the
+remote and the in-world bubble and beacon are game state the service would not
+replace. Whether to build `CHAN-004` now or wait is a product decision recorded
+in `CHAN-001`'s `## Notes`.
+
+**Corroboration only.** A 2026 DevForum answer recommends `DisplaySystemMessage`
+for a preset wheel's chat line "for consistency"
+([thread](https://devforum.roblox.com/t/is-preset-chat-must-be-recived-with-displaysystemmessage/4542175));
+the brief's "forum-reported, effective 2026-01-09" claim that system messages
+are *the* sanctioned route was **not found** in any official page, and nothing
+official requires the chat route — the guideline only requires the label *when*
+presets display within chat.
 - **Pings carry no text** and are broadcast with the sender's id; the client
   colours them. A setting-ping deliberately reveals that setting to everyone —
   that is the verb (`loop.md` §1.1), not a leak.
@@ -706,7 +820,7 @@ emitted on leaving `Post`, dismisses it. There is no lobby ready-up.
 | `clock` | `Clock.real()` | `Clock.manual` | — (M1) |
 | positions | sample each character's root part each tick | a table | positions match where the avatars stand |
 | `lineOfSight(from, to) -> boolean` | `workspace:Raycast` against the blockout | a predicate | a wall blocks a ping; a doorway does not |
-| `filter(playerId, text)` | `TextService:FilterStringAsync` + broadcast form, per CHAN-001 | a function | a filtered preset is delivered; a forced failure is not |
+| `filter(playerId, text)` | `TextService:FilterStringAsync(text, UserId, PublicChat)` + `GetNonChatStringForBroadcastAsync()`, both under `pcall`, never retried (§9.5.1) | a function | a filtered preset is delivered; a forced failure is not |
 | transport | `Transport` over `RemoteEvent`s | a recording fake | four clients each receive only their own secrets |
 | telemetry | `Sink.noop()` in M3 (the live sink is M5) | `Sink.recording()` | — |
 

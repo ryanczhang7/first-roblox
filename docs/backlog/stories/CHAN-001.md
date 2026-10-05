@@ -4,8 +4,8 @@ title: Confirm the preset delivery route and the filter call shape
 slug: confirm-the-preset-delivery-route-and-th
 epic: EPIC-06
 type: spike
-status: todo
-phase: PLANNED
+status: in-review
+phase: REVIEW
 branch: story/CHAN-001-confirm-the-preset-delivery-route-and-th
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -107,6 +107,8 @@ GREEN dispatch exists for a spike.
 
 - PLANNED - `lead-po` - `claude-opus-5-5` (Opus 5.5, from the session's own model
   identification; the /plan-product dispatch reported no override). 2026-09-30.
+- PLANNED → REVIEW (spike) - `lead-po` - `claude-opus-5-5` (this session's own model;
+  no dispatch: a spike is run by the Lead PO). 2026-10-05.
 
 ## Test plan
 
@@ -185,3 +187,58 @@ GREEN dispatch exists for a spike.
 
 ## Notes
 
+
+**Spike run (lead-po, 2026-10-05).** Sources read from `Roblox/creator-docs` at
+`9f840b1` (raw files: `chat/preset-system-guidelines.md`,
+`reference/engine/classes/TextService.yaml`, `TextFilterResult.yaml`,
+`TextChannel.yaml`, `TextChatService.yaml`, `TextChatMessage.yaml`,
+`enums/TextFilterContext.yaml`, `chat/in-experience-text-chat.md`,
+`chat/chat-window.md`, `chat/guidelines.md`, `ui/text-filtering.md`,
+`ui/rich-text.md`), plus two staff DevForum posts and one community thread. The
+findings, with links and quotes, are `architecture.md` §9.5.1.
+
+| AC | Result |
+|---|---|
+| AC-1 | `FilterStringAsync(word, sender.UserId, Enum.TextFilterContext.PublicChat)` → `GetNonChatStringForBroadcastAsync()`; both yield; either may throw; "If it fails, do not display the text to any user"; never retry. §9.5.1 |
+| AC-2 | `DisplaySystemMessage` is client-only and per-viewer, and does not filter: the server broadcasts filtered text, each client writes the line. Label in the line, `metadata = "system_preset"`. Rich text is how the chat UI renders; `<b>` and `face` are supported tags; five escape forms, `&` first. §9.5.1 |
+| AC-3 | **Per send**, quoted: "This method should be called once each time a user submits a message." §9.5.1 |
+| AC-4 | `CHAN-004` and `HUD-004` `## Contract` amended (both still PLANNED, so no `## Amendments` entry is due there; their acceptance criteria are untouched). Game Designer note below |
+| AC-5 | **Not triggered.** AC-5 runs "if the documentation leaves AC-2 open"; the reference settles both halves of AC-2 (client-only, per-viewer). The one thing the docs do not state outright — that a `DisplaySystemMessage` *body* renders rich text — affects C-13's markup, not the route, and is already observed by `HUD-004`'s SC-C1 (its D-1, owner REVIEW). No Studio check was run; no probe code exists |
+
+**Note for the Game Designer — CA-6's status (`mechanics.md` §4.6).** CA-6's
+filtering half is **confirmed**: `TextService:FilterStringAsync` with the sender's
+`UserId`, the broadcast form `GetNonChatStringForBroadcastAsync`, called once per
+send — the API reference says so in as many words, and the preset guideline
+requires every preset to go through `FilterStringAsync`. CA-6's delivery half is
+**confirmed in shape, but not as a mandate**: system messages are possible only
+client-side (`DisplaySystemMessage` shows a line to one client), so each client
+writes its own "system preset" line from the server's filtered broadcast; the
+guideline requires the label only *when* presets display within chat, and the
+"forum-reported, effective 2026-01-09" claim that system messages are *the*
+sanctioned route was not found in any official source. §4.2's presentation
+change (presets in chat, labelled) therefore stands as a design choice C-13
+already makes, not as a compliance requirement. One new fact belongs in §4.6:
+Roblox staff announced (2026-03-26) a Roblox-defined preset service, due June
+2026, that "all creators will need to migrate" to, and advised against building
+custom systems "unless it's necessary"; as of 2026-10-05 nothing has appeared in
+the API reference. Suggest recording it as **CA-9** with the operator's decision
+(PO-1 below). Owner of the edit: the Game Designer.
+
+**PO decisions (lead-po, 2026-10-05).**
+
+1. **PO-1 — the announced preset service: OPEN, for the operator.** Building
+   `CHAN-004`/`HUD-004` now is a custom preset system of exactly the kind Roblox
+   advised against building before its own service ships. The spike does not
+   decide this; it records it (§9.5.1) and keeps the design migratable (preset
+   table as data, filtering as a port, chat line as a client model). The
+   operator chooses before `CHAN-004` leaves PLANNED: build now (the presets are
+   "necessary for the experience to function" — the design's communication is
+   presets plus pings, with no free chat), or hold the preset stories until the
+   service's shape is known.
+2. **PO-2 — filter after the phase check.** `CHAN-004`'s contract now says a
+   preset refused for its phase never reaches the filter. Its AC-4 and AC-6
+   already imply it (a refusal is decided before anything is shown); the
+   contract makes it testable.
+3. **PO-3 — `PublicChat` context.** Set for honesty about the audience; the
+   reference says the context does not change the filtered result, so nothing
+   tests it.
