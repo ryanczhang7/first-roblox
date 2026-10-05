@@ -5,7 +5,7 @@ slug: a-ping-is-accepted-only-at-a-real-target
 epic: EPIC-06
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/CHAN-005-a-ping-is-accepted-only-at-a-real-target
 depends_on: [CHAN-003, PROC-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -650,3 +650,43 @@ AC-4 (`rate` on the second ping) and `pings_test` AC-4 "decline exactly once".
 - **Session.** Nothing in this story's proofs depends on `Session`: AC-4 is
   proven through `Wrapper.guard` with the test's own adapter. `Session` gains
   pings in `SLICE-006`.
+
+**GREEN, 2026-10-05 (Feature Developer, `claude-opus-5-5`, no override reported).**
+
+- **Files.** `src/net/GameRemotes.luau` gains `Ping` beside `Turn`, the
+  Contract's block verbatim; every number read from `MechanicsTuning`
+  (`instance.actuator_count`, `instance.dial_settings`,
+  `channel.ping_rate_limit_seconds`, `channel.channel_attempt_min_interval_seconds`),
+  header extended. `src/server/channel/Pings.luau` is the one new source file
+  (counters 172/172/29 hold). No test, wrapper or other source touched.
+- **Shape.** `validate` runs the Contract's checks 1-6 in order; check 2 is
+  `targetPosition(...) == nil`, so existence and position share one lookup.
+  Machines are found by their `id` field; doorways by indexing `layout.doors`
+  (never searched, so 0 and `> #doors` are `nil` without a raise); a door
+  naming a room absent from the layout is also `nil` (not driven). Range is
+  `horizontalDistance(...) > range` on its own line (D-2 flips that `>`);
+  `lineOfSight` is called on its own line after it (D-3). `request` declines
+  through a two-line `refuse` helper whose `call.decline()` is its own line
+  (D-4 deletes it; it covers both refusal paths, including `procedure == nil`).
+  No dark or live check (PO-5). `Pings` requires `Procedure` for types only
+  and imports nothing from `net`.
+- **Controls measured against the shipped module** (scratch `lune` script under
+  the gitignored `build/`, deleted after): machine 1 at (-16,0,-16), 2 at
+  (16,0,16), 5 at (48,0,-16), 9 at (16,0,48); doorway 1 (32,0,0), doorway 2
+  (0,0,32); doorways 0, 3, 12 -> `nil`; exactly 12 along +x -> `(true, nil)`,
+  12.01 -> `(false, "out_of_range")`, 12 along +z at y + 500 -> accepted;
+  `lineOfSight` called once with (sender, machine position) on acceptance, 0
+  times on an out-of-range target, `false` -> `out_of_sight`; `request`
+  refused -> `{ reason = "out_of_range" }`, declined 1; `procedure == nil` ->
+  `{ reason = "no_such_target" }`, declined 1; accepted -> `nil`, declined 0;
+  `Ping` rate 10, attempt 1, phases `Round`. All equal RED's table; no divergence.
+- **Run.** `lune run test`: `1099 passed, 0 failed`.
+
+**GREEN verified by the orchestrator, 2026-10-05.** `feature-developer`
+resolved to `claude-opus-5-5` (dispatched with `model: opus`). `lune run test`
+-> `1099 passed, 0 failed`. `bash scripts/frozen.sh verify` -> `frozen: OK — 164
+path(s) unchanged since the snapshot for CHAN-005` (every tracked file under
+`tests/` and `.claude/tests/`). Source changed: `src/net/GameRemotes.luau`
+(in place) and `src/server/channel/Pings.luau` (new), nothing else. The
+"suite discriminates" mutations are D-2..D-4, run in GATES against the
+predicted fire-sets in the handoff's control table.

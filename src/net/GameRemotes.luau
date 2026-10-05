@@ -13,9 +13,22 @@
 	limited to one call per `turn_rate_limit_seconds`; a call refused for rate
 	never reaches the Procedure and costs nothing.
 
+	`Ping` (CHAN-005, B4, `mechanics.md` §4.1 G9, `tuning.md` §3). A client's
+	claim to point at one dial setting, one machine or one doorway. Like
+	`Turn`, the target is a CLAIM and the schema has no field for a position:
+	`target` is bounded by `actuator_count` (a 3 x 3 grid has at most 12
+	doorways, so every doorway id is inside it too) and `setting` by
+	`dial_settings`; whether the target exists, is in range of the server's
+	accepted position and is in sight is `server/channel/Pings`' to judge.
+	Legal only in `Round`. Two limits (CHAN-003): one SEND per
+	`ping_rate_limit_seconds` - the stricter reading of CA-1 - and one ATTEMPT
+	per `channel_attempt_min_interval_seconds`. A ping refused for its target
+	declines the call, so it costs the attempt floor and not the send limit.
+
 	TUNING IS READ THROUGH `@shared`. `architecture.md` section 1 forbids
 	`net` -> `server`, and `MechanicsTuning` lives in `src/shared/`, so the
-	bounds come from the constants rather than from literals that could drift.
+	bounds and the limits come from the constants rather than from literals
+	that could drift.
 ]]
 
 local MechanicsTuning = require("@shared/MechanicsTuning")
@@ -31,6 +44,20 @@ local Turn = Remotes.define("Turn", {
 	rateLimit = { minIntervalSeconds = MechanicsTuning.actuation.turn_rate_limit_seconds },
 })
 
+local Ping = Remotes.define("Ping", {
+	args = Schema.shape({
+		kind = Schema.literal("setting", "machine", "doorway"),
+		target = Schema.integer(1, MechanicsTuning.instance.actuator_count),
+		setting = Schema.optional(Schema.integer(1, MechanicsTuning.instance.dial_settings)),
+	}),
+	legalPhases = { "Round" },
+	rateLimit = { minIntervalSeconds = MechanicsTuning.channel.ping_rate_limit_seconds },
+	attemptLimit = {
+		minIntervalSeconds = MechanicsTuning.channel.channel_attempt_min_interval_seconds,
+	},
+})
+
 return {
 	Turn = Turn,
+	Ping = Ping,
 }
