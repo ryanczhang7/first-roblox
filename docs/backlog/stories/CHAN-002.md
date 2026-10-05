@@ -534,3 +534,20 @@ above.
 3. **CHAN-001's PO-1** (build presets now, or wait for Roblox's announced preset
    service) does not gate this story: the table is the design's content, which
    any delivery route — this project's or Roblox's — needs. It gates `CHAN-004`.
+
+**RED verification (lead-po, 2026-10-05, against `357e89f`).**
+
+- `lune run test` → `1164 passed, 8 failed` in 108 s. All 8 are
+  `tests/shared/presets_test.luau`, each `src/shared/channel/Presets.luau did not
+  load` - the module is missing, the right failure. The 31 controls pass. (RED
+  reported 469 s for `unit` under the gate; re-measured at 108 s plain and 111 s
+  under `--fast`, so that was machine load, not the suite.)
+- `bash scripts/gates.sh --fast` after the RED commit: `PASS format (181)`,
+  `PASS lint (181)`, `PASS typecheck (29)`, `FAIL unit (111s)` on exactly those
+  8, `PASS build`, `FAIL harness` with `project-counters: 28 passed, 12 failed`
+  - every failure `expected 182 / actual 181`, `30/29` or `9/8` and their
+  untracked/ignored variants: the predicted post-GREEN baselines (P-6). The
+  stray-file precondition passes. (The suite's labels say "92 files"; that is a
+  fixed string in the test name, not the measured count.)
+- Read `presets_test.luau` (one test per AC-1 … AC-5, P-3, P-4, P-5) and the
+  denylist (`one` excluded with the T12 citation, as the contract decided).
