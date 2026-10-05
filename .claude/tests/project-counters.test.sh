@@ -264,7 +264,20 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-# LAST SET: CHAN-005 (RED), which adds seven test files
+# LAST SET: CHAN-006 (RED), which adds four test files
+# (tests/helpers/PingLifecycleContract.luau, PingLifecycleStubs.luau,
+# tests/server/ping_lifecycle_test.luau, ping_lifecycle_controls_test.luau)
+# and NO source: GREEN extends src/server/channel/Pings.luau in place and
+# adds no file. CHAN-005's predicted GREEN values (172/172/29) were
+# confirmed on the tree before this story's files were added: `git ls-files`
+# over src tests lune counted 172 .luau files and src alone 29. MEASURED on
+# the uncommitted RED tree with `bash scripts/gates.sh --fast`: `stylua over
+# 176 files`, `selene over 176 files`, `analyze over 29 files` (172 + 4
+# tests). These are also the post-GREEN counts: 176/176/29, narrow unchanged
+# at 29/29/8. The "no stray .luau files" precondition is the one red line in
+# RED and clears at the RED commit. GREEN confirms, never edits; a new source
+# file is a counter failure GREEN cannot fix.
+# BEFORE THAT: CHAN-005 (RED), which adds seven test files
 # (tests/helpers/PingRemoteContract.luau, PingsContract.luau, PingsStubs.luau,
 # tests/net/ping_remote_test.luau, ping_remote_controls_test.luau,
 # tests/server/pings_test.luau, pings_controls_test.luau) and whose GREEN adds
@@ -388,8 +401,8 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=172    # stylua  over src tests lune   (172 = 29 src + 143 tests/lune, predicted post CHAN-005 GREEN)
-BASE_LINT=172      # selene  over src tests lune
+BASE_FORMAT=176    # stylua  over src tests lune   (176 = 29 src + 147 tests/lune, measured in CHAN-006 RED, no source added)
+BASE_LINT=176      # selene  over src tests lune
 BASE_TYPECHECK=29  # analyze over src (NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings)
 NARROW_FORMAT=29   # stylua  over src alone
 NARROW_LINT=29     # selene  over src alone
