@@ -111,8 +111,20 @@ remote is declared with.
   server thread.
 - `position` is the server's accepted sample (`architecture.md` §9.8), passed in
   by the session. This module never reads a client-supplied position.
-- The filter port's exact shape, and whether filtering is per send, come from
-  `CHAN-001`. **Amend this block from its result before RED.**
+- **Amended from `CHAN-001` (2026-10-05; `architecture.md` §9.5.1).** The
+  `Filter` type above stands. `filter` is called **exactly once per `send`
+  that reaches it** — never cached per sender or per session: the API reference
+  says `FilterStringAsync` "should be called once each time a user submits a
+  message". It is not called for a preset refused for its phase (that refusal
+  comes first). `PresetShown.text` is the string the filter **returned**, which
+  may differ from the table's word (a hashed result is shown as returned);
+  `send` never substitutes the table's word. `(false, _)` and a raise are both
+  `failed` with reason `"filter"`, shown to no one. The real adapter
+  (`src/server/ports/`, built with the session in `SLICE-006`, not here) is
+  `TextService:FilterStringAsync(text, UserId, Enum.TextFilterContext.PublicChat)`
+  then `:GetNonChatStringForBroadcastAsync()`, both yielding, both under
+  `pcall`, never retried; this story tests only the port's contract through a
+  stand-in function.
 - `Schema.shape` already rejects unknown keys as `shape` (NET-001). Confirm this
   with a test rather than assuming it, and amend this block if it does not.
 
