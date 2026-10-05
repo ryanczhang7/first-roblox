@@ -4,8 +4,8 @@ title: Each player has at most one live ping and it clears when it should
 slug: each-player-has-at-most-one-live-ping-an
 epic: EPIC-06
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/CHAN-006-each-player-has-at-most-one-live-ping-an
 depends_on: [CHAN-005, PROC-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -713,3 +713,18 @@ all required gates passed (6 ran, 3 unconfigured), recorded by the script in
 `## Gate results` against `5f1ab2f`. Freeze through GATES:
 `frozen: OK — 9 path(s) unchanged since the snapshot for CHAN-006`. No source
 change was needed in GATES, so no feature-developer dispatch.
+
+### DONE (2026-10-05)
+
+- PR [#58](https://github.com/ryanczhang7/first-roblox/pull/58) merged at
+  2026-10-05T20:29:40Z as `b391cd8`.
+- CI: the first attempts of both jobs were cancelled with "The job was not
+  acquired by Runner of type hosted even after multiple attempts" (0 steps ran
+  - a GitHub capacity failure, not a code one). Re-run: `gates` pass (4m57s;
+  the workflow sets no `timeout-minutes`, so the 360-min default applies) —
+  https://github.com/ryanczhang7/first-roblox/actions/runs/37364861566 — unit
+  106 s (`1133 passed, 0 failed`; 137 s locally), harness 17 s
+  (`project-counters: 40 passed, 0 failed`). `boundaries` was cancelled the
+  same way a second time and passed on its third attempt (7 s) —
+  https://github.com/ryanczhang7/first-roblox/actions/runs/37364861607. No
+  timing near a limit.
