@@ -4,8 +4,8 @@ title: A preset is filtered and broadcast with its sender and position once per 
 slug: a-preset-is-filtered-and-broadcast-with
 epic: EPIC-06
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/CHAN-004-a-preset-is-filtered-and-broadcast-with
 depends_on: [CHAN-001, CHAN-002, CHAN-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -262,6 +262,61 @@ cannot run this. Owner: GATES.
 then reach the handler, and AC-7 fail. RED's ten-limiter control proves the
 check discriminates in principle; this proves it reads the real declaration.
 Owner: GATES.
+
+**Results (GATES, 2026-10-06, orchestrator).** All five ran through
+`scripts/mutate.sh <file> '<expr>' -- lune run test` against `d5ce7a4`, with
+the suite at `1234 passed, 0 failed` before and after. Each condition held:
+
+- **D-1** (rate literal `9`): AC-1's rate check red, plus the attempt-floor
+  sequence and AC-7, whose send detail quotes the rate, as RED's handoff
+  predicted. `1231 passed, 3 failed`. Restored.
+- **D-2** (unfiltered word shown on filter failure): AC-6 red, plus AC-5's
+  accumulation check (the filter-refused send is logged). `1232 passed, 2
+  failed`. Restored.
+- **D-3** (filter-failure decline removed): exactly AC-6 red. AC-4 stayed
+  green. `1233 passed, 1 failed`. Restored.
+- **D-4** (phase check always true): AC-4 red in both the pure suite and the
+  guarded remote, plus AC-5's accumulation. `1231 passed, 3 failed`. Restored.
+- **D-5** (send limit = attempt floor): AC-7 red, the 5 s second send reached
+  the handler, plus AC-1's two rate checks. `1231 passed, 3 failed`. Restored.
+
+```
+=== D-1
+=== mutate: src/net/GameRemotes.luau (1 line(s) changed by s/minIntervalSeconds = MechanicsTuning.channel.preset_rate_limit_seconds/minIntervalSeconds = 9/) ===
+tests/net/preset_remote_test.luau :: AC-1: SendPreset's rateLimit.minIntervalSeconds equals the value RateLimitSpec reads for preset_rate_limit_seconds from tuning.md, equals MechanicsTuning.channel.p
+tests/net/preset_remote_test.luau :: AC-1: a second well-formed SendPreset inside channel_attempt_min_interval_seconds is rejected for rate with the attempt detail; one at exactly the floor is rejecte
+tests/net/preset_remote_test.luau :: AC-7: through the guarded SendPreset in Round, two players sending at the same instant are both shown; one player's second, different preset 5 s later is rejected 
+1231 passed, 3 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_net_GameRemotes.luau.20261006T181252Z.488
+=== D-2
+=== mutate: src/server/channel/PresetSends.luau (1 line(s) changed by s/return state, failure(presetId, "filter")/return accept(state, senderId, presetId, position, now, preset.word)/) ===
+tests/server/preset_sends_test.luau :: AC-5: from new(), three shown sends by two senders with a phase refusal and a filter refusal between them leave a log of exactly those three entries in order, an
+tests/server/preset_sends_test.luau :: AC-6: a filter returning (false, nil), (true, nil), (false, word) or (true, 42), or raising, never escapes send; the result is failed with reason filter, the cal
+1232 passed, 2 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_server_channel_PresetSends.luau.20261006T
+=== D-3
+=== mutate: src/server/channel/PresetSends.luau (1 line(s) changed by s/call.decline() -- the filter failed: fail closed (C5)/-- decline removed (D-3)/) ===
+tests/server/preset_sends_test.luau :: AC-6: a filter returning (false, nil), (true, nil), (false, word) or (true, 42), or raising, never escapes send; the result is failed with reason filter, the cal
+1233 passed, 1 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_server_channel_PresetSends.luau.20261006T
+=== D-4
+=== mutate: src/server/channel/PresetSends.luau (1 line(s) changed by s/local legal = table.find(preset.phases, phase) ~= nil/local legal = true/) ===
+tests/net/preset_remote_test.luau :: AC-4: through the guarded SendPreset in Round, a preset whose row excludes Round is declined with send returning failed / phase_for_preset and the filter uncalled;
+tests/server/preset_sends_test.luau :: AC-4: every preset sent in a phase its row excludes (Well played in Round among them) is failed with reason phase_for_preset, declined exactly once, the filter i
+tests/server/preset_sends_test.luau :: AC-5: from new(), three shown sends by two senders with a phase refusal and a filter refusal between them leave a log of exactly those three entries in order, an
+1231 passed, 3 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_server_channel_PresetSends.luau.20261006T
+=== D-5
+=== mutate: src/net/GameRemotes.luau (1 line(s) changed by s/minIntervalSeconds = MechanicsTuning.channel.preset_rate_limit_seconds/minIntervalSeconds = MechanicsTuning.channel.channel_attempt_min_int
+tests/net/preset_remote_test.luau :: AC-1: SendPreset's rateLimit.minIntervalSeconds equals the value RateLimitSpec reads for preset_rate_limit_seconds from tuning.md, equals MechanicsTuning.channel.p
+tests/net/preset_remote_test.luau :: AC-1: a second well-formed SendPreset inside channel_attempt_min_interval_seconds is rejected for rate with the attempt detail; one at exactly the floor is rejecte
+tests/net/preset_remote_test.luau :: AC-7: through the guarded SendPreset in Round, two players sending at the same instant are both shown; one player's second, different preset 5 s later is rejected 
+1231 passed, 3 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_net_GameRemotes.luau.20261006T182035Z.245
+ M docs/backlog/stories/CHAN-004.md
+1234 passed, 0 failed
+
+```
 
 ## Out of scope
 
@@ -675,10 +730,22 @@ the same shape:
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-06T18:28:23Z
+    commit: d5ce7a4
+    tree:   a7188cb61b86a6228657da1dab4b1f84a97af5c2
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 190)
+    PASS         lint (0s, observed 190, floor 1)
+    PASS         typecheck (2s, observed 31)
+    PASS         unit (101s, observed 1234, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (1s, observed 119695)
+    PASS         harness (14s, observed 41)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -715,3 +782,10 @@ the same shape:
     interpret an AC are C-6 (what "addressed to the sender only" means in a pure
     module) and C-5 (immutability and position copies, following `Pings`). D-3
     to D-5 were added to `## Deferred verifications`, owned by GATES.
+- **GATES (2026-10-06, orchestrator).** D-1..D-5 were run and their results
+  pasted under `## Deferred verifications`. Then a full `bash scripts/gates.sh`
+  gave `All required gates passed (6 ran, 3 unconfigured, 0 known.)`, and a full
+  `bash scripts/selftest.sh`, run after gates and never concurrently, gave
+  `22 harness suite(s) passed.` Leaving GATES: `frozen: OK — 159 path(s)
+  unchanged since the snapshot for CHAN-004`. No source changed in GATES, and
+  this story adds no gate, so it has no `## Gate probes`.
