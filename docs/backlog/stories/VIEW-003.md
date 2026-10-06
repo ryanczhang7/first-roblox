@@ -5,7 +5,7 @@ slug: the-public-round-view-carries-public-fac
 epic: EPIC-07
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/VIEW-003-the-public-round-view-carries-public-fac
 depends_on: [PROC-003, CHAN-006, SLICE-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -329,6 +329,13 @@ from an upstream story or spike (as noted above), amend it and re-run
   widened AC-4 (Session still sends five keys). It independently confirmed the
   C-5 `not_live` amendment against `Procedure.luau`'s `rejected()`, which writes
   `dials[id].setting` and logs `result = reason` for both rejection reasons.
+- GREEN - `feature-developer` - no override; resolved `claude-opus-5-5` (Opus 5.5)
+  per the agent. Matches the plan. Wrote `RoundView.luau` and wired `Session.luau`.
+  It stopped on one frozen test it found wrong (R-1) instead of working around it.
+  `lune run test` -> `1305 passed, 1 failed`; `frozen: OK — 163 path(s) unchanged`.
+  Suggested GATES expressions: D-1 `s/progress = { committed = committed, total = total }/progress = { committed = committed, total = total, byTrack = {} }/`;
+  D-2 `s/local setting = if state == "unset" then nil else lastTurned(procedure, id)/local setting = if state == "committed" then lastTurned(procedure, id) else machine.requiredSetting/`;
+  D-3 `s/return math.max(0, raw)/return raw/`; D-4 (Session) `s/payload = view,/payload = (function(v) v.progress = nil return v end)(view),/`.
 
 ## Test plan
 
@@ -641,6 +648,48 @@ exists in this runner, and the new files add about a second.
          or Gate probes section describes a failure without showing one
        * whether GREEN was a no-op, and the command output proving the source
          was untouched and still passes -->
+
+### R-1. GREEN -> RED (2026-10-06): AC-6 compared a PositionsSampled step as if it were a Tick
+
+- **Test.** `tests/server/round_view_test.luau`, "AC-6 (C-1): every RoundView
+  Session broadcasts ...", lines ~223-227. It took
+  `walked[#walked]` from `ScriptedRound.walk` and required exactly one
+  `Broadcast/RoundView` in it ("the last Tick of the walk"). Its vacuity floor
+  (`>= 12` broadcasts compared) counted that comparison.
+- **What was wrong.** `ScriptedRound.walk` (`tests/helpers/ScriptedRound.luau:314-359`)
+  returns the effects of its `ScriptedRound.sample` calls, which are
+  `PositionsSampled` steps, and discards its Ticks. A `PositionsSampled` never
+  broadcasts. SLICE-003's cadence (C-1, unchanged by this story) and
+  `SessionRoundContract.luau:1533` ("the only effect a PositionsSampled may emit
+  is Placed") both require that. The assertion could only pass by breaking
+  C-1. RED did not see this because the file failed at its load check, so this
+  assertion never ran.
+- **How it was found.** In GREEN, `lune run test` gave `1305 passed, 1 failed`:
+
+      FAIL  tests/server/round_view_test.luau :: AC-6 (C-1): every RoundView Session broadcasts ...
+            tests/server/round_view_test:74: AC-6: the last Tick of the walk: 0 Broadcast/RoundView effect(s), expected exactly 1
+
+- **Orchestrator's independent reproduction** (not the subagent's scripts; read
+  against the PRE-GREEN source). `git show origin/main:src/server/session/Session.luau`,
+  lines 301-330: the `PositionsSampled` branch builds `effects` from `Placed`
+  resyncs only and `return next_, effects` before the RoundView builder at line
+  483 is reached. So SLICE-003's Session gives the same 0 broadcasts on a
+  sample, which means the defect is in the test, not in GREEN's wiring. The
+  feature-developer separately measured `walk returned 4 entries` with effects
+  `{}` x4 against both HEAD's and its Session, and the test passing once the
+  walk comparison is removed (11 broadcasts deep-equal).
+- **What it should assert instead.** Compare a real Tick, not a sample. For
+  example, compare an explicit `ScriptedRound.tick(d, 1)` after the walk, or the
+  walk's ticks if `walk` is extended **without** changing its return for its
+  SLICE-005 callers. Keep the vacuity floor at a number the corrected
+  comparisons actually reach. It must not be lowered to whatever passes: state
+  the count and why it is the right floor.
+- **What earns it.** A `scripts/mutate.sh` probe on the shipped Session or
+  RoundView that turns the corrected comparison red, pasted here with its
+  restore line.
+- **Second item for RED to restate, not a defect.** The handoff says "8
+  penalised snapshots". The feature-developer counted 11 Round snapshots with
+  `penaltySeconds > 0`. Say how 8 is counted, or correct the handoff.
 
 ## Gate results
 
