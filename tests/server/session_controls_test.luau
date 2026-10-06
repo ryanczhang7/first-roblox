@@ -37,6 +37,7 @@ local Deep = require("../helpers/Deep")
 local PhaseMachine = require("../../src/server/round/PhaseMachine")
 local Projection = require("../../src/server/seats/Projection")
 local Ring = require("../../src/server/seats/Ring")
+local MechanicsTuning = require("../../src/shared/MechanicsTuning")
 local Rng = require("../../src/shared/Rng")
 
 type Defects = {
@@ -253,12 +254,21 @@ local function standIn(defects: Defects): Contract.Session
 			local players: { string } = if defects.aliasesPlayers
 				then round.players
 				else table.clone(round.players)
+			-- VIEW-003 (C-1, C-10) widened the payload to ten keys. This
+			-- stand-in never holds a Procedure, so the five new ones are the
+			-- Contract's defaults (C-3) and pings is {} as Session sends it
+			-- until SLICE-006.
 			local payload: { [string]: any } = {
 				phase = round.phase,
 				secondsLeft = secondsLeft,
 				players = players,
 				playersMin = config.playersMin,
 				playersMax = config.playersMax,
+				progress = { committed = 0, total = MechanicsTuning.instance.procedure_length },
+				instability = 0,
+				dark = {},
+				pings = {},
+				machines = {},
 			}
 			if defects.leaksSeedInRoundView then
 				payload.seed = round.seed
@@ -365,7 +375,7 @@ local QUORUM = "withdrawsOnTheLeaveThatDropsBelowQuorumToo"
 local NO_WITHDRAW = "sendsNoSeatViewAndKeepsTheRingWhenNobodyIsUnseated"
 local CLEARS = "clearsTheAssignmentOnEnteringLobby"
 local RV_WHEN = "broadcastsRoundViewExactlyWhenThePhaseOrCountChangesOrATickHasADuration"
-local RV_PAYLOAD = "roundViewCarriesExactlyTheFiveKeysWithACeilingSecondsLeftFromConfig"
+local RV_PAYLOAD = "roundViewCarriesExactlyTheTenKeysWithACeilingSecondsLeftFromConfig"
 local PASS = "passesThroughTheMachinesEffectsUnchangedInOrderAndConsumesAssignSeats"
 local IGNORES = "ignoresASeatsAssignedEventFromOutsideAndEveryNoOp"
 local ORDER = "ordersPassThroughThenSeatViewsThenRoundViewLast"

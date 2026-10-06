@@ -249,11 +249,13 @@ local function seatView(assignment: any, playerId: string): any
 end
 
 -- C-5: the Procedure's deadline in Round with a procedure; SLICE-003's
--- formula everywhere else.
+-- formula everywhere else. VIEW-003 C-7 clamps every non-nil value at 0;
+-- no step of this plan reaches a negative value (a Round past its deadline
+-- is resolved in the same step), so the clamp changes no number here.
 local function secondsLeftOf(o: Oracle, now: number, config: RoundConfig.RoundConfig): number?
 	local round = o.round
 	if round.phase == "Round" and o.procedure ~= nil then
-		return math.ceil(Procedure.deadline(o.procedure) - now)
+		return math.max(0, math.ceil(Procedure.deadline(o.procedure) - now))
 	end
 	local duration: number? = nil
 	if round.phase == "Lobby" and #round.players >= config.playersMin then
@@ -266,7 +268,7 @@ local function secondsLeftOf(o: Oracle, now: number, config: RoundConfig.RoundCo
 	if duration == nil then
 		return nil
 	end
-	return math.ceil(duration - (now - round.phaseEnteredAt))
+	return math.max(0, math.ceil(duration - (now - round.phaseEnteredAt)))
 end
 
 local function roundViewOf(o: Oracle, now: number, config: RoundConfig.RoundConfig): any
@@ -1795,7 +1797,8 @@ function SessionRoundContract.secondsLeftReadsTheProcedureDeadlineInRound(S: Ses
 			continue
 		end
 		checked += 1
-		local want = math.ceil(Procedure.deadline(o.procedure) - step.now)
+		-- VIEW-003 C-7: clamped at 0 (never reached on this plan; see secondsLeftOf).
+		local want = math.max(0, math.ceil(Procedure.deadline(o.procedure) - step.now))
 		local configFormula = math.ceil(c.roundSeconds - (step.now - o.round.phaseEnteredAt))
 		if want ~= configFormula then
 			penalised += 1

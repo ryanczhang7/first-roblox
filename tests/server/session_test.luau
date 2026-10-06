@@ -92,8 +92,8 @@ return {
 		Contract.broadcastsRoundViewExactlyWhenThePhaseOrCountChangesOrATickHasADuration(Session())
 	end,
 
-	["AC-4: every RoundView is exactly { phase, secondsLeft, players, playersMin, playersMax } by pairs; secondsLeft = ceil(RoundConfig duration - elapsed) in Lobby (at/above playersMin), Round and Post - 0.5 s in rounds UP, the dealing step says roundSeconds - and nil in Resolution and a short Lobby; players is a copy"] = function()
-		Contract.roundViewCarriesExactlyTheFiveKeysWithACeilingSecondsLeftFromConfig(Session())
+	["AC-4 (widened by VIEW-003 C-10): every RoundView is exactly { phase, secondsLeft, players, playersMin, playersMax, progress, instability, dark, pings, machines } by pairs; secondsLeft = ceil(RoundConfig duration - elapsed) in Lobby (at/above playersMin), Round and Post - 0.5 s in rounds UP, the dealing step says roundSeconds - and nil in Resolution and a short Lobby; players is a copy; the five VIEW-003 keys carry their types"] = function()
+		Contract.roundViewCarriesExactlyTheTenKeysWithACeilingSecondsLeftFromConfig(Session())
 	end,
 
 	--[[ AC-5 ]]
