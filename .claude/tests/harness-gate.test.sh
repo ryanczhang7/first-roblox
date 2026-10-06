@@ -181,7 +181,10 @@ fi
 assert_eq "the suite AC-1 identified exists: $COUNTERS_REL" "0" \
   "$(test -f "$REPO_ROOT/$COUNTERS_REL"; printf '%d' $?)"
 
-stray="$( cd "$REPO_ROOT" && git status --porcelain -- src tests lune | grep -E '\.luau$' || true )"
+# Fail closed (HARNESS-023): see scripts/stray-luau.sh. A missing or erroring
+# helper is a non-zero stray_rc with its message in $stray, never "".
+stray="$(bash "$REPO_ROOT/scripts/stray-luau.sh" "$REPO_ROOT" 2>&1)"; stray_rc=$?
+assert_eq "the stray-luau check ran (exit 0)" "0" "$stray_rc"
 assert_eq "the working tree carries no stray .luau files, so 'a clean tree' below is one" "" "$stray"
 
 # =============================================================================
@@ -426,7 +429,8 @@ $(_tail "$out")" ;;
 esac
 
 rm -f "$PROBE"
-assert_eq "the probe is gone and the tree is clean again" "" \
-  "$( cd "$REPO_ROOT" && git status --porcelain -- src tests lune | grep -E '\.luau$' || true )"
+stray="$(bash "$REPO_ROOT/scripts/stray-luau.sh" "$REPO_ROOT" 2>&1)"; stray_rc=$?
+assert_eq "the stray-luau check ran (exit 0)" "0" "$stray_rc"
+assert_eq "the probe is gone and the tree is clean again" "" "$stray"
 
 summary "harness-gate"
