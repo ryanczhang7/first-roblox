@@ -4,8 +4,8 @@ title: The stray-luau precondition sees a file inside a new directory
 slug: the-stray-luau-precondition-sees-a-file
 epic: 
 type: fix
-status: in-progress
-phase: RED
+status: in-review
+phase: REVIEW
 branch: story/HARNESS-023-the-stray-luau-precondition-sees-a-file
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -235,7 +235,7 @@ scripts .claude --include=*.sh`, 2026-10-06).
   the flag.
 - **Owner: GATES.** Run via
   `bash scripts/mutate.sh scripts/stray-luau.sh 's/ --untracked-files=all//' -- bash .claude/tests/stray-luau.test.sh`.
-- **Result:** _pending_
+- **Result (GATES, 2026-10-06):** `bash scripts/mutate.sh scripts/stray-luau.sh 's/ --untracked-files=all//' -- bash .claude/tests/stray-luau.test.sh` -> `stray-luau: 53 passed, 9 failed`; red: "reports exactly the one file, by its path", "the line '?? src/shared/channel/Presets.luau' appears once", "reports exactly tests/new/deeper/X.luau", "reports the file despite status.showUntrackedFiles=no", "three lines, no more", "'?? src/shared/channel/Presets.luau' once", "'?? lune/jobs/Build.luau' once", and the two modified+new-directory counts. AC-2/3/4/5 green, as the handoff predicted. `restored (verified byte-for-byte ...)`.
 
 ### DV-2 - the fail-closed path is pinned
 
@@ -243,7 +243,7 @@ scripts .claude --include=*.sh`, 2026-10-06).
   instead of 2), AC-4 MUST fail. Exact expression is GREEN's to report, since it
   depends on how the branch is written.
 - **Owner: GATES.**
-- **Result:** _pending_
+- **Result (GATES, 2026-10-06):** `bash scripts/mutate.sh scripts/stray-luau.sh 's/exit 2/exit 0/' -- bash .claude/tests/stray-luau.test.sh` -> `stray-luau: 60 passed, 2 failed`; red: "exits 2, never 0" and "exits 2" (AC-4, both fixtures). Stderr message still printed, so its `assert_contains` stayed green, as predicted. `restored (verified byte-for-byte ...)`.
 
 ### DV-3 - a wrong value, not a missing flag
 
@@ -251,7 +251,7 @@ scripts .claude --include=*.sh`, 2026-10-06).
   `\.luau$` anchor removed or the filter dropped), AC-3's non-`.luau` cases MUST
   fail.
 - **Owner: GATES.**
-- **Result:** _pending_
+- **Result (GATES, 2026-10-06):** `bash scripts/mutate.sh scripts/stray-luau.sh '/^printf/s/awk .*/cat/' -- bash .claude/tests/stray-luau.test.sh` (filter dropped) -> `stray-luau: 61 passed, 1 failed`; red: "prints nothing: none of the four distractors is a stray .luau under the three roots" (AC-3). `restored (verified byte-for-byte ...)`. A first attempt with a mis-quoted expression was refused by mutate.sh (`the expression changed nothing`) and ran nothing.
 
 ## Model guidance
 
@@ -287,6 +287,11 @@ Lock coverage: SUPPRESSED by `REPO_ROOT/scripts/stray-luau.sh` (source), `script
   `claude-fable-5-1` (Fable 5.1) per the agent's report. Matches the plan.
   Orchestrator verified: `stray-luau: 28 passed, 34 failed`, every failure the
   missing helper (exit 127, `No such file or directory`).
+- GREEN - `feature-developer` - no override; resolved `claude-opus-5-5`
+  (Opus 5.5) per the agent's report. Matches the plan. Wrote only
+  `scripts/stray-luau.sh`. Orchestrator verified `stray-luau: 62 passed, 0
+  failed` and, before leaving GREEN: `frozen: OK — 4 path(s) unchanged since
+  the snapshot for HARNESS-023` (the three suites and `_lib.sh`).
 
 **Brief for RED (oracle partition):** every AC is mechanical - pin git's
 porcelain lines and the exit codes exactly, with anchored needles. There is no
@@ -569,7 +574,22 @@ back to RED.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself. Do not paste or edit. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-06T15:49:18Z
+    commit: 1c6aa59 (working tree had uncommitted changes)
+    tree:   048f9aa816e02a2e1b05f60432f3df38fd1f970b
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 182)
+    PASS         lint (0s, observed 182, floor 1)
+    PASS         typecheck (2s, observed 30)
+    PASS         unit (104s, observed 1172, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 117327)
+    PASS         harness (13s, observed 41)
+    UNCONFIGURED mutation
 
 ## Notes
 
@@ -589,3 +609,19 @@ back to RED.
 - **Planning dispatch.** PLANNED was written by the `lead-po` agent, resolved
   model `claude-opus-5-5` (Opus 5.5) as reported by the agent's own
   environment; no override was given in the dispatch prompt.
+- **GATES: selftest caught a rule the story missed (2026-10-06).** The first
+  full `bash scripts/selftest.sh` failed `lib: 174 passed, 1 failed` -
+  `FAIL no shipped script depends on $TMPDIR or mktemp` - because GREEN's
+  helper used `mktemp` for a stderr capture file. The Contract did not mention
+  that rule (`.claude/tests/lib.test.sh:313`). The feature-developer (resolved
+  `claude-opus-5-5`, no override) replaced the capture with: git's stderr
+  discarded on the first run, and on failure the same read-only `git status`
+  re-run with stderr shown. Source-only fix in GATES; no test changed
+  (`frozen: OK — 4 path(s) unchanged`). `selftest.sh lib` -> `lib: 175 passed,
+  0 failed`. DV-1..3 were re-run against the fixed helper with identical
+  results (53/9, 60/2, 61/1; each `restored (verified byte-for-byte ...)`).
+- **Leaving GATES (2026-10-06).** `bash scripts/frozen.sh verify` ->
+  `frozen: OK — 4 path(s) unchanged since the snapshot for HARNESS-023`.
+  Full `bash scripts/gates.sh` -> `All required gates passed (6 ran, 3
+  unconfigured, 0 known).` Full `bash scripts/selftest.sh` (run after gates,
+  never concurrently) -> `22 harness suite(s) passed.`
