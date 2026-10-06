@@ -4,8 +4,8 @@ title: The stray-luau precondition sees a file inside a new directory
 slug: the-stray-luau-precondition-sees-a-file
 epic: 
 type: fix
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/HARNESS-023-the-stray-luau-precondition-sees-a-file
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -660,3 +660,7 @@ back to RED.
   Full `bash scripts/gates.sh` -> `All required gates passed (6 ran, 3
   unconfigured, 0 known).` Full `bash scripts/selftest.sh` (run after gates,
   never concurrently) -> `22 harness suite(s) passed.`
+- **REVIEW -> DONE (2026-10-06).** PR https://github.com/ryanczhang7/first-roblox/pull/61
+  merged as `e58e4b5`. CI timings read from the PR's run: `gates` job 3m37s
+  against `timeout-minutes: 45` (Harness self-test 1m45s, Run gates 1m34s);
+  `boundaries` 10s. No step near a limit.
