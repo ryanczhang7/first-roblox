@@ -4,8 +4,8 @@ title: The preset table obeys the countable preset-guideline rules
 slug: the-preset-table-obeys-the-countable-pre
 epic: EPIC-06
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/CHAN-002-the-preset-table-obeys-the-countable-pre
 depends_on: [TUNE-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -669,3 +669,14 @@ GATES accepts them, otherwise they repeat cleanly.)
 required gates passed (6 ran, 3 unconfigured), recorded by the script in
 `## Gate results` against `99ba105`. Freeze through GATES: `frozen: OK — 8 path(s) unchanged since the snapshot for CHAN-002`. No source
 change was needed in GATES, so no feature-developer dispatch.
+
+### DONE (2026-10-06)
+
+- PR [#60](https://github.com/ryanczhang7/first-roblox/pull/60) merged at
+  2026-10-06T14:53:51Z as `55fefc0`.
+- CI, first attempt for both jobs: `boundaries` pass (7 s) —
+  https://github.com/ryanczhang7/first-roblox/actions/runs/37388991428 ;
+  `gates` pass (4m47s; the workflow sets no `timeout-minutes`) —
+  https://github.com/ryanczhang7/first-roblox/actions/runs/37388990690 — unit
+  102 s (`observed 1172`; 93 s locally), harness 16 s (`observed 40`), format,
+  lint and typecheck at 182/182/30. No timing near a limit.
