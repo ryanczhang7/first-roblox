@@ -220,11 +220,12 @@ return {
 		local id = d.state.facility.steps.tracks[1][1]
 		local m = ScriptedRound.machineOf(d.state.facility, id)
 		local turner = ScriptedRound.turnerOf(d.state.assignment, m)
-		local walked = ScriptedRound.walk(d, { [turner] = ScriptedRound.machinePosition(d, m) })
-		local lastWalk = walked[#walked]
-		if lastWalk ~= nil then
-			compare(lastWalk, d, "the last Tick of the walk")
-		end
+		-- `walk` returns the effects of its PositionsSampled steps, which never
+		-- broadcast (SLICE-003's cadence, C-1); its Ticks are not returned. So
+		-- the Tick compared here is an explicit one, stepped after the walk with
+		-- the turner standing at the machine (R-1).
+		ScriptedRound.walk(d, { [turner] = ScriptedRound.machinePosition(d, m) })
+		compare(ScriptedRound.tick(d, 1), d, "the Tick after the walk")
 		local turn =
 			ScriptedRound.turn(d, turner, id, ScriptedRound.wrongSetting(d, m.requiredSetting))
 		assert(
@@ -245,7 +246,15 @@ return {
 				0
 			)
 		end
-		assert(compared >= 12, `only {compared} broadcasts compared`)
+		-- Every scheduled comparison, counted from what drives it: one per join,
+		-- the deal, two Ticks in Round, the Tick after the walk, the Tick after
+		-- the wrong turn, and one Tick per second of the reset window. With 4
+		-- players and actuation_reset_seconds = 3 that is 12 (R-1).
+		local scheduled = #d.players + 1 + 2 + 1 + 1 + reset
+		assert(
+			compared == scheduled,
+			`{compared} broadcasts compared, expected {scheduled} (every scheduled step must broadcast exactly once)`
+		)
 		assert(
 			sawMachines,
 			"no compared view carried machines; the check proves nothing about the wiring in Round"

@@ -5,7 +5,7 @@ slug: the-public-round-view-carries-public-fac
 epic: EPIC-07
 type: feature
 status: in-progress
-phase: GREEN
+phase: RED
 branch: story/VIEW-003-the-public-round-view-carries-public-fac
 depends_on: [PROC-003, CHAN-006, SLICE-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -562,7 +562,7 @@ of 11 over 35 snapshots. The table is the `EXPECTED` map in
 | facilityDoorsAsGiven | AC-3 on the shuffled fixture only, `doors.1.a: expected 1, got 3` | AC-3 |
 | facilityAliasesRooms | AC-3 shared tables; C-9 mutation crosses | AC-3, C-9 |
 | unclampedSecondsLeft | AC-4 `-90 -> 0`, Lobby/Round/Post past-duration cases; every in-clock snapshot passes | AC-4, oracle |
-| secondsLeftIgnoresPenalties | AC-4 on every penalised snapshot (8), "the view ignores the penalty"; start passes | AC-4, oracle |
+| secondsLeftIgnoresPenalties | AC-4 on every penalised snapshot (11, corrected from "8" in R-1), "the view ignores the penalty"; start passes | AC-4, oracle |
 | secondsLeftFromConfigDuration | AC-4 "expected ceil(Procedure.deadline -" | AC-4, oracle |
 | extraOutcome / extraPar / extraSeats | AC-5 names the key and its row | AC-5, oracle |
 | readsProcedureOutsideRound | C-3 Resolution and Post with the Procedure held; AC-1 committed 7 vs 0 | AC-1, C-3, oracle |
@@ -573,8 +573,10 @@ of 11 over 35 snapshots. The table is the `EXPECTED` map in
 Measured scenario numbers GREEN should see again: instability 1 / 3 / 4 across
 the rejected / decoy / disarmed snapshots; `penaltySeconds` = instability x 20;
 secondsLeft on the rejected snapshot (now 102) = 978 against an unpenalised
-998; one dark room after the decoy, two after the disarm; 8 penalised
-snapshots; 2 lit partner lamps on the both-holders snapshot, 1 on the
+998; one dark room after the decoy, two after the disarm; 11 penalised
+snapshots (corrected in R-1 from "8", which was a miscount: the AC-4 check
+counts every snapshot in Round with a Procedure, `penaltySeconds > 0` and a
+positive clock, and the scenario has 11 such); 2 lit partner lamps on the both-holders snapshot, 1 on the
 one-holder snapshot. Confirming these against the shipped module is GREEN's
 job: `round_view_test.luau` runs the identical checks, so they must pass with
 no edit to any test.
@@ -690,6 +692,97 @@ exists in this runner, and the new files add about a second.
 - **Second item for RED to restate, not a defect.** The handoff says "8
   penalised snapshots". The feature-developer counted 11 Round snapshots with
   `penaltySeconds > 0`. Say how 8 is counted, or correct the handoff.
+
+#### What it asserts now (test-developer, RED, 2026-10-06; resolved model: Fable 5.1, no override)
+
+`tests/server/round_view_test.luau` lines 223-228: the walk is still
+stepped (it puts the turner at the machine so the wrong turn is a live,
+rejected turn), its return is discarded, and an explicit
+`ScriptedRound.tick(d, 1)` after it is compared as `"the Tick after the walk"`.
+`ScriptedRound.walk` is untouched. The vacuity check is now an exact count
+over what drives it rather than a constant:
+
+    local scheduled = #d.players + 1 + 2 + 1 + 1 + reset
+    assert(compared == scheduled, ...)
+
+= 4 joins + the deal + 2 Ticks in Round + the Tick after the walk + the Tick
+after the wrong turn + `actuation_reset_seconds` (3) reset Ticks = **12**,
+which is the number of broadcasts the corrected comparisons actually reach -
+the suite prints `[measured] AC-6: 12 broadcasts deep-equal RoundView.public
+of the END state`. It is the right floor because every `compare(...)` call
+in the test is now unconditional, so the count can only be 12, and an
+expression means a later change to the player count or the reset window
+moves the expectation with it instead of leaving a stale constant. Nothing
+else in the file changed; no other test and no counters file was touched;
+no file was added.
+
+The penalised count: **11, not 8.** Measured outside the framework with a
+throwaway script calling `RoundViewContract.snapshots()` and applying the
+AC-4 rule (`inRoundWithProcedure`, `penaltySeconds > 0`, expected
+`secondsLeft > 0`): 35 snapshots, 11 tagged `penalised`, 11 counted by the
+rule - rejected, reset, decoy, one-track-done, four finale-live, armed,
+disarmed, won. "8" in the handoff was a miscount with no basis in the helper;
+the handoff and the `## Test plan` row are corrected.
+
+#### Probe
+
+`bash scripts/mutate.sh src/server/session/Session.luau 's/roundView(after, now))/roundView(after, now - 1))/' -- lune run test`
+- Session builds its broadcast from one second earlier than the step's
+  `now`, so the END-state view is off by one in `secondsLeft`. The newly
+  compared Tick goes red by name, and so do the SLICE-003 Session suites
+  (unrelated AC-4/AC-7 `violation(s)` lines in the output are prints from
+  passing net tests and are elided):
+
+      === mutate: src/server/session/Session.luau (1 line(s) changed by s/roundView(after, now))/roundView(after, now - 1))/) ===
+        458 - 		table.insert(effects, roundView(after, now))
+        458 + 		table.insert(effects, roundView(after, now - 1))
+
+      === mutate: running lune run test ===
+        FAIL  tests/server/round_view_test.luau :: AC-6 (C-1): every RoundView Session broadcasts - on each Lobby join, the deal, Ticks in Round, the Tick after a rejected wrong turn (a rejected dial, instability 1, a shorter clock) and after its reset - deep-equals RoundView.public of the END state with pings = {}, and at least one carries machines, a rejected dial and a penalty
+              AC-6: Session's RoundView broadcast must be RoundView.public(input from the END state, now):
+      join dan (now 0, Lobby):
+        value.secondsLeft: expected 60, got 61
+      the deal (now 60, Round):
+        value.secondsLeft: expected 420, got 421
+      Tick 1 in Round (now 61, Round):
+        value.secondsLeft: expected 419, got 420
+      Tick 2 in Round (now 62, Round):
+        value.secondsLeft: expected 418, got 419
+      the Tick after the walk (now 67, Round):
+        value.secondsLeft: expected 413, got 414
+      the Tick after the wrong turn (now 68, Round):
+        value.secondsLeft: expected 392, got 393
+      Tick 1 of the reset window (now 69, Round):
+        value.secondsLeft: expected 391, got 392
+      Tick 2 of the reset window (now 70, Round):
+        value.secondsLeft: expected 390, got 391
+      value.machines.13.dial.state: expected "unset", got "rejected"
+      value.machines.13.dial.setting: unexpected 1
+      Tick 3 of the reset window (now 71, Round):
+        value.secondsLeft: expected 389, got 390
+        FAIL  tests/server/session_round_test.luau :: Contract (C-5): every RoundView in Round carries secondsLeft = ceil(Procedure.deadline(procedure) - now), which after one wrong turn is instability_clock_penalty_seconds below the config formula
+        FAIL  tests/server/session_test.luau :: AC-4 (widened by VIEW-003 C-10): every RoundView is exactly { phase, secondsLeft, players, playersMin, playersMax, progress, instability, dark, pings, machines } by pairs; ...
+      1303 passed, 3 failed
+
+      === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/worktrees/vigilant-engelbart-e5ebd4/.claude/state/mutations/src_server_session_Session.luau.20261006T213703Z.177728.bak) ===
+        458: 		table.insert(effects, roundView(after, now))
+
+  One mutation, one run, one revert; `git status` afterwards shows only
+  `docs/backlog/stories/VIEW-003.md` and `tests/server/round_view_test.luau`
+  modified.
+
+#### After the correction
+
+`PATH=~/.rokit/bin:$PATH lune run test` against the unmutated source:
+
+      [measured] AC-6: 12 broadcasts deep-equal RoundView.public of the END state
+      pass  tests/server/round_view_test.luau :: AC-6 (C-1): every RoundView Session broadcasts - ...
+      1306 passed, 0 failed
+
+`stylua --check tests/server/round_view_test.luau` exits 0. GREEN is a
+no-op for source on this return: `1f17d9c`'s `RoundView.luau` and
+`Session.luau` are untouched (the probe restore above is the only time
+Session.luau was written, and `cmp` verified it back).
 
 ## Gate results
 
