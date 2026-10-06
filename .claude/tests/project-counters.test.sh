@@ -596,7 +596,11 @@ if [ -n "$missing" ]; then
   exit 1
 fi
 
-stray="$( cd "$REPO_ROOT" && git status --porcelain -- src tests lune | grep -E '\.luau$' || true )"
+# Fail closed (HARNESS-023): the helper lists every untracked FILE, so a new
+# .luau in a new directory is seen, and a helper that is missing or cannot run
+# git is a red exit status with its message in $stray, never an empty string.
+stray="$(bash "$REPO_ROOT/scripts/stray-luau.sh" "$REPO_ROOT" 2>&1)"; stray_rc=$?
+assert_eq "the stray-luau check ran (exit 0)" "0" "$stray_rc"
 assert_eq "the working tree carries no stray .luau files, so the baselines mean what they say" "" "$stray"
 
 assert_eq "project.conf declares a format gate command"    "0" "$(gate_cmd format    > /dev/null; printf '%d' $?)"
