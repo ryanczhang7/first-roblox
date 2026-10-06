@@ -253,6 +253,41 @@ scripts .claude --include=*.sh`, 2026-10-06).
 - **Owner: GATES.**
 - **Result (GATES, 2026-10-06):** `bash scripts/mutate.sh scripts/stray-luau.sh '/^printf/s/awk .*/cat/' -- bash .claude/tests/stray-luau.test.sh` (filter dropped) -> `stray-luau: 61 passed, 1 failed`; red: "prints nothing: none of the four distractors is a stray .luau under the three roots" (AC-3). `restored (verified byte-for-byte ...)`. A first attempt with a mis-quoted expression was refused by mutate.sh (`the expression changed nothing`) and ran nothing.
 
+**Pasted output** - the re-run against the final helper (after the mktemp fix):
+
+```
+$ T="bash .claude/tests/stray-luau.test.sh"
+$ bash scripts/mutate.sh scripts/stray-luau.sh 's/ --untracked-files=all//' -- $T
+stray-luau: 53 passed, 9 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/scripts_stray-luau.sh.20261006T154525Z.5911.bak) ===
+$ bash scripts/mutate.sh scripts/stray-luau.sh 's/exit 2/exit 0/' -- $T
+stray-luau: 60 passed, 2 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/scripts_stray-luau.sh.20261006T154530Z.6182.bak) ===
+$ bash scripts/mutate.sh scripts/stray-luau.sh '/^printf/s/awk .*/cat/' -- $T
+stray-luau: 61 passed, 1 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against .../.claude/state/mutations/scripts_stray-luau.sh.20261006T154542Z.7200.bak) ===
+$ $T | tail -1
+stray-luau: 62 passed, 0 failed
+```
+
+The failing assertions, from the first run of each (before the mktemp fix;
+identical counts after it):
+
+```
+DV-1    FAIL reports exactly the one file, by its path
+        FAIL the line '?? src/shared/channel/Presets.luau' appears once
+        FAIL reports exactly tests/new/deeper/X.luau
+        FAIL reports the file despite status.showUntrackedFiles=no
+        FAIL three lines, no more
+        FAIL '?? src/shared/channel/Presets.luau' once
+        FAIL '?? lune/jobs/Build.luau' once
+        FAIL modified + new-directory file: exactly two lines
+        FAIL modified + new-directory file: '?? src/shared/channel/Presets.luau' once
+DV-2    FAIL exits 2, never 0
+        FAIL exits 2
+DV-3    FAIL prints nothing: none of the four distractors is a stray .luau under the three roots
+```
+
 ## Model guidance
 
 <!-- plan.sh:generated:begin -->
