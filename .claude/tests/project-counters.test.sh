@@ -264,7 +264,33 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-# LAST SET: CHAN-002 (RED), which adds five test files
+# LAST SET: CHAN-004 (RED), which adds seven test files
+# (tests/helpers/PresetRemoteContract.luau, PresetSendsContract.luau,
+# PresetSendsStubs.luau, tests/net/preset_remote_test.luau,
+# preset_remote_controls_test.luau, tests/server/preset_sends_test.luau,
+# preset_sends_controls_test.luau) and whose GREEN adds ONE source file,
+# src/server/channel/PresetSends.luau, under src/server (story `## Contract`;
+# `SendPreset` goes into the existing src/net/GameRemotes.luau, no new file).
+# CHAN-002's values (182/182/30, narrow 30/30/9) were confirmed on the tree
+# before this story's files were added: `git ls-files` over src tests lune
+# counted 182 .luau files, src alone 30, src/shared alone 9. MEASURED on the
+# uncommitted RED tree with `bash scripts/gates.sh --fast`: `stylua over 189
+# files`, `selene over 189 files`, `analyze over 30 files` (182 + 7 tests).
+# PREDICTED post-GREEN, which is what is pinned below: 189 + 1 = 190/190/31,
+# narrow 30/30/9 -> 31/31/9 - NARROW_TYPECHECK does not move, because the new
+# module is under src/server, not src/shared. THE BASELINES BELOW ARE SET TO
+# THOSE PREDICTED GREEN VALUES NOW, IN RED, as CHAN-002, CHAN-005 and VIEW-004
+# did and for the same reason: check-boundaries refuses a .claude/tests/**
+# change from any other phase (TUNE-001 R-1). The suite is red in RED by
+# design - the "no stray .luau files" precondition until the RED commit, and
+# the counters by the one source file until GREEN writes it: expected red
+# under `bash scripts/gates.sh --fast` on RED's tree is `expected count: 190 /
+# actual count: 189` for format and lint, `31 / 30` for typecheck and both
+# narrow src cases, `191 / 190` and `32 / 31` for the untracked-file cases,
+# with the narrow typecheck (9) not failing. GREEN confirms, never edits; a
+# second source file, or one under src/shared/, is a counter failure GREEN
+# cannot fix.
+# BEFORE THAT: CHAN-002 (RED), which adds five test files
 # (tests/helpers/PresetSpec.luau, PresetContract.luau, PresetStubs.luau,
 # tests/shared/presets_test.luau, presets_controls_test.luau) and whose GREEN
 # adds ONE source file, src/shared/channel/Presets.luau, under src/shared
@@ -424,12 +450,12 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=182    # stylua  over src tests lune   (182 = 30 src + 152 tests/lune: CHAN-002's 5 tests + predicted 1 src)
-BASE_LINT=182      # selene  over src tests lune
-BASE_TYPECHECK=30  # analyze over src (NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets, predicted)
-NARROW_FORMAT=30   # stylua  over src alone
-NARROW_LINT=30     # selene  over src alone
-NARROW_TYPECHECK=9 # analyze over src/shared alone (moved by TUNE-001's MechanicsTuning; + CHAN-002's channel/Presets, predicted)
+BASE_FORMAT=190    # stylua  over src tests lune   (190 = 31 src + 159 tests/lune: CHAN-004's 7 tests + predicted 1 src)
+BASE_LINT=190      # selene  over src tests lune
+BASE_TYPECHECK=31  # analyze over src (NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends, predicted)
+NARROW_FORMAT=31   # stylua  over src alone
+NARROW_LINT=31     # selene  over src alone
+NARROW_TYPECHECK=9 # analyze over src/shared alone (moved by TUNE-001's MechanicsTuning; + CHAN-002's channel/Presets; CHAN-004 adds nothing under src/shared)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`
 # rather than `source` - rules.md's probe convention - and so every guard that
