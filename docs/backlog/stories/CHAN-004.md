@@ -4,8 +4,8 @@ title: A preset is filtered and broadcast with its sender and position once per 
 slug: a-preset-is-filtered-and-broadcast-with
 epic: EPIC-06
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/CHAN-004-a-preset-is-filtered-and-broadcast-with
 depends_on: [CHAN-001, CHAN-002, CHAN-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -789,3 +789,8 @@ the same shape:
   `22 harness suite(s) passed.` Leaving GATES: `frozen: OK — 159 path(s)
   unchanged since the snapshot for CHAN-004`. No source changed in GATES, and
   this story adds no gate, so it has no `## Gate probes`.
+- **REVIEW -> DONE (2026-10-06).** PR https://github.com/ryanczhang7/first-roblox/pull/62
+  merged as `1eb7f2f`. CI timings from the PR's runs: `gates`
+  (https://github.com/ryanczhang7/first-roblox/actions/runs/37516503610) took 5m02s
+  against `timeout-minutes: 45` (Harness self-test 2m31s, Run gates 2m12s);
+  `boundaries` took 6s. No step is near a limit.
