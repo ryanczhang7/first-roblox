@@ -5,7 +5,7 @@ slug: a-preset-is-filtered-and-broadcast-with
 epic: EPIC-06
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/CHAN-004-a-preset-is-filtered-and-broadcast-with
 depends_on: [CHAN-001, CHAN-002, CHAN-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -313,6 +313,18 @@ from an upstream story or spike (as noted above), amend it and re-run
   verified `lune run test` -> `1216 passed, 18 failed`; the 18 are the two
   real-module files only (12x `Remotes.all() lists no definition named
   "SendPreset"`, 6x `PresetSends.luau did not load`), and all 44 controls pass.
+- GREEN - `feature-developer` - no override; resolved `claude-opus-5-5` (Opus 5.5)
+  per the agent. Matches the plan. Wrote `SendPreset` into `GameRemotes.luau` and
+  the one new file `src/server/channel/PresetSends.luau`. Orchestrator verified
+  `lune run test` -> `1234 passed, 0 failed` and, leaving GREEN,
+  `frozen: OK — 159 path(s) unchanged since the snapshot for CHAN-004` (every
+  tracked file under `tests/` plus `.claude/tests/project-counters.test.sh`).
+  Suggested GATES mutations (agent, applied to scratch copies only): D-1
+  `s/minIntervalSeconds = MechanicsTuning.channel.preset_rate_limit_seconds/minIntervalSeconds = 9/`
+  on GameRemotes; D-2 `s/return state, failure(presetId, "filter")/return accept(state, senderId, presetId, position, now, preset.word)/`;
+  D-3 `s/call.decline() -- the filter failed: fail closed (C5)/-- decline removed (D-3)/`;
+  D-4 `s/local legal = table.find(preset.phases, phase) ~= nil/local legal = true/`;
+  D-5 the D-1 target replaced by `MechanicsTuning.channel.channel_attempt_min_interval_seconds`.
 
 ## Test plan
 
