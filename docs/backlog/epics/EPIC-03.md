@@ -2,7 +2,7 @@
 id: EPIC-03
 title: A real place runs the round, and four Studio clients see the same phase
 status: todo
-stories: [SLICE-001, SLICE-002, SLICE-003, THEME-001, SLICE-004, HUD-007]
+stories: [SLICE-001, SLICE-008, SLICE-002, SLICE-003, THEME-001, SLICE-004, HUD-007]
 ---
 
 ## Goal

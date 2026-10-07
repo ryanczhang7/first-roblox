@@ -4,8 +4,8 @@ title: A module requires across layers inside a real Rojo-served place
 slug: a-module-requires-across-layers-inside-a
 epic: EPIC-03
 type: spike
-status: todo
-phase: PLANNED
+status: in-review
+phase: REVIEW
 branch: story/SLICE-001-a-module-requires-across-layers-inside-a
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -62,6 +62,22 @@ the operator creates locally (or on a scratch branch that is deleted):
 
 Run in Studio with **Test → Start** (one client is enough). Paste the Output
 window lines into `## Notes`.
+
+**Probe extended by the Lead PO, 2026-10-07 (PLANNED; no AC changed).** The
+files as written locally add three lines:
+- each script prints `script.ClassName` and `script:GetFullName()` (AC-3);
+- `server instance:` and `client instance:`: an instance require of
+  `ReplicatedStorage.Shared.Clock`. This baseline separates "the module does not
+  load" from "the alias does not resolve";
+- `server chain (Generator):` requires `facility/Generator` by instance. Its own
+  requires are strings (`./Layout`, `../seats/Ring`, `@shared/MechanicsTuning`,
+  `@shared/Tuning`), which is how every real module in `src` is written, and
+  what `MAP-001`'s D-1 snippet depends on. `@shared/Clock` alone cannot show
+  this: `Clock` requires nothing.
+
+Headless cross-check for AC-3, not a substitute for it: `rojo sourcemap` (Rojo
+7.7.0) maps `__spike_require` to `"className":"Script"` under `Server` and
+`"className":"LocalScript"` under `Client`.
 
 **If AC-1 or AC-2 fails**, the fallbacks to weigh, in order of preference:
 
@@ -191,3 +207,87 @@ dispatch exists for a spike.
 
 ## Notes
 
+
+**Observation 1 (operator run, Lead PO reading the log, 2026-10-07).** Roblox
+Studio 0.742.0.7421053, Rojo 7.7.0 (CLI and plugin), a new Baseplate, then
+**Play** (solo). The lines are copied verbatim from Studio's log,
+`%LOCALAPPDATA%\Roblox\logs\0.742.0.7421053_20261007T215138Z_Studio_0CBC4_last.log`,
+which carries every Output line (`[FLog::Output]` / `[FLog::CreatorOutput]` /
+`[FLog::CreatorError]`):
+
+    SLICE-001 server class: Script ServerScriptService.Server.__spike_require
+    server alias: false error requiring "@shared/Clock": @shared is not a valid alias
+    server relative: true table: 0x0f43f5f794c08cf0
+    server instance: true table: 0x0f43f5f794c08cf0
+    Error: error requiring "@shared/MechanicsTuning": @shared is not a valid alias
+    Info: Script 'ServerScriptService.Server.facility.Layout', Line 24
+    Error: Requested module experienced an error while loading
+    Info: Script 'ServerScriptService.Server.facility.Generator', Line 40
+    server chain (Generator): false Requested module experienced an error while loading
+    SLICE-001 client class: LocalScript Players.corthan73.PlayerScripts.Client.__spike_require
+    client alias: false error requiring "@shared/Clock": @shared is not a valid alias
+    client instance: true table: 0xcf241a2b08beafcb
+
+- **AC-1:** `@shared` does not resolve on the server: `@shared is not a valid alias`.
+- **AC-2:** `@shared` does not resolve on the client either, with the same error.
+- **AC-3:** the server probe is a `Script` and the client probe a `LocalScript`.
+  The operator also confirmed both in the Explorer, and `rojo sourcemap` agrees.
+- **Relative requires within a layer resolve.** `Generator`'s `./Layout` loaded,
+  and the failure came one level down, at `Layout`'s `@shared` line. So did a
+  relative path across the DataModel (`../../ReplicatedStorage/Shared/Clock`
+  from the server script).
+- **Consequence for `MAP-001` D-1:** its snippet cannot run until this is fixed,
+  because every module that requires `@shared` fails to load in a place.
+
+**Why fallback 1 is unavailable (researched 2026-10-07).** Roblox has not
+shipped custom require aliases. The latest staff statement on the
+require-by-string announcement thread (2026-01-08) says they are "working on"
+it. Only the built-in `@self` and `@game` aliases exist
+(https://devforum.roblox.com/t/introducing-require-by-string/3405078). No file
+Rojo could map into the place would define `@shared`.
+
+**`@game` checked against our tooling (Lead PO, 2026-10-07):**
+- `luau-lsp analyze` 1.69.0 with the Rojo sourcemap **resolves**
+  `require("@game/ReplicatedStorage/Shared/Clock")`. A probe module that
+  annotated it as `number` got `TypeError: Expected this to be 'number', but
+  got 'Clock'`.
+- `lune` 0.10.5 **does not**:
+  `error requiring module "@game/ReplicatedStorage/Shared/Clock": @game is not a valid alias`.
+- Studio: probe lines `server game alias:` and `client game alias:` have been
+  added, and are awaiting a second Play.
+
+**Observation 2 (second Play, same session, 2026-10-07 22:02 UTC):**
+
+    server game alias: true table: 0x9e333e8e77839707
+    client game alias: true table: 0xace9ede3db5a50b3
+
+The built-in `@game` alias resolves on both sides. Lune also resolves
+`@game/ReplicatedStorage/Shared/X` once `.luaurc` declares `"game": "<dir>"`.
+That was checked with a throwaway tree under the ignored `build/`, which printed
+`true { ok = "shared via @game" }`, and the tree was deleted afterwards.
+
+**Decision (operator, 2026-10-07): mirror the DataModel on disk.** The Lead PO
+put three options to the operator:
+1. mirror the DataModel on disk (`src/ReplicatedStorage/{Shared,Net}`, with
+   `.luaurc` declaring `"game": "src"`);
+2. a generated junction or symlink tree for Lune;
+3. instance requires behind a Lune shim.
+
+The operator chose option 1, the Lead PO's recommendation. The reasons and the
+rejected alternatives are in `architecture.md` §1.
+
+**AC-4 discharged:**
+- `architecture.md` §1: "The limit" and "M3 settles this first" are replaced by
+  "Measured in a real place", which records the observed result, the decision
+  and its reason. D21 (`@net`) is marked superseded.
+- The fallback story is written: **`SLICE-008`** (chore, `depends_on:
+  [SLICE-001]`).
+- `SLICE-002` is re-planned while still PLANNED: `depends_on` gains `SLICE-008`,
+  AC-7 now asserts the single `game` alias instead of adding `@net`, and its
+  `.luaurc` contract and Context are rewritten to match.
+
+**Probe files deleted** at close: `src/server/__spike_require.server.luau` and
+`src/client/__spike_require.client.luau`. They were never committed.
+
+**Knock-on, recorded for `MAP-001`:** its D-1 snippet cannot run until
+`SLICE-008` merges. `SLICE-008`'s D-1 runs it.
