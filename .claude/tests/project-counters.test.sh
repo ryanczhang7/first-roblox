@@ -70,7 +70,33 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # Read the number out of each command's own evidence line; do not count files
 # yourself, for the same reason the suite does not.
 #
-# LAST MEASURED: PROC-001 (RED), which added three test files
+# LAST MEASURED: MAP-001 (RED), which adds four test files
+# (tests/helpers/BlockoutContract.luau, tests/helpers/BlockoutStubs.luau,
+# tests/server/blockout_test.luau, tests/server/blockout_controls_test.luau)
+# and whose GREEN adds TWO source files, src/server/facility/Blockout.luau and
+# src/server/facility/BlockoutBuilder.luau, both under src/server (story
+# `## Contract` C-1; the Machines.luau edit is to an existing file).
+# SLICE-006's values (200/200/32, narrow 32/32/9) were confirmed on the tree
+# before this story's files were added: `gates.sh --fast` observed 200 for
+# format and lint and 32 for typecheck. MEASURED on the uncommitted RED tree
+# by `git ls-files --cached --others --exclude-standard` over src tests lune:
+# 204 .luau files (200 + 4 tests), src still 32, src/shared still 9, and the
+# `harness` gate of `bash scripts/gates.sh --fast` read `stylua over 204
+# files` and `selene over 204 files`. PREDICTED post-GREEN, which is what is
+# pinned below: 204 + 2 = 206/206/34, narrow 32/32/9 -> 34/34/9 -
+# NARROW_TYPECHECK does not move, because both new modules are under
+# src/server, not src/shared. THE BASELINES BELOW ARE SET TO THOSE PREDICTED
+# GREEN VALUES NOW, IN RED, as VIEW-003, CHAN-004 and the rest did and for the
+# same reason: check-boundaries refuses a .claude/tests/** change from any
+# other phase (TUNE-001 R-1). The suite is red in RED by design - the "no
+# stray .luau files" precondition until the RED commit, and the counters by
+# the two source files until GREEN writes them: expected red under `bash
+# scripts/gates.sh --fast` on RED's tree is `expected count: 206 / actual
+# count: 204` for format and lint, `34 / 32` for typecheck and both narrow src
+# cases, `207 / 205` and `35 / 33` for the untracked-file cases, with the
+# narrow typecheck (9) not failing. GREEN confirms, never edits; a third
+# source file, or one under src/shared/, is a counter failure GREEN cannot fix.
+# BEFORE THAT: PROC-001 (RED), which added three test files
 # (tests/helpers/TurnContract.luau, tests/server/procedure_test.luau,
 # procedure_controls_test.luau) and no source: 119/119/23 -> 122/122/23,
 # narrow format/lint unchanged at 23, NARROW_TYPECHECK unchanged at 8. GEN-004's
@@ -475,11 +501,11 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=200    # stylua  over src tests lune   (200 = 32 src + 168 tests/lune: SLICE-006 RED adds 5 test files and GREEN no source; read from the gate evidence "observed 200")
-BASE_LINT=200      # selene  over src tests lune
-BASE_TYPECHECK=32  # analyze over src (NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView, predicted)
-NARROW_FORMAT=32   # stylua  over src alone
-NARROW_LINT=32     # selene  over src alone
+BASE_FORMAT=206    # stylua  over src tests lune   (206 = 34 src + 172 tests/lune: MAP-001 RED adds 4 test files and GREEN two source files, predicted; SLICE-006 read "observed 200")
+BASE_LINT=206      # selene  over src tests lune
+BASE_TYPECHECK=34  # analyze over src (+ MAP-001's facility/Blockout and facility/BlockoutBuilder, predicted; NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView, predicted)
+NARROW_FORMAT=34   # stylua  over src alone (MAP-001 predicted)
+NARROW_LINT=34     # selene  over src alone (MAP-001 predicted)
 NARROW_TYPECHECK=9 # analyze over src/shared alone (moved by TUNE-001's MechanicsTuning; + CHAN-002's channel/Presets; VIEW-003 adds nothing under src/shared)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`
