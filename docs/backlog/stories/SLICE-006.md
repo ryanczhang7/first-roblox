@@ -4,8 +4,8 @@ title: The session carries pings, presets and every view, and a scripted round i
 slug: the-session-carries-pings-presets-and-ev
 epic: EPIC-08
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/SLICE-006-the-session-carries-pings-presets-and-ev
 depends_on: [SLICE-005, CHAN-004, CHAN-006, VIEW-001, VIEW-002, VIEW-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -297,6 +297,47 @@ bandwidth rule, not a correctness one - if AC-2 fails here, the script is readin
 "a lens arrived" as a signal, which C-10 does not allow). RED cannot run this.
 Owner: GATES.
 
+
+**Results (lead-po, GATES, 2026-10-07)**, each run through `scripts/mutate.sh` against
+commit `6c4ba26`, with `lune run test` and the file restored byte-for-byte after each
+run:
+
+- **D-1: PASSED.** Mutation: `s/^\t\ttable.insert(shown, entry)$/\t\tlocal _ = entry/` in
+  `src/server/channel/Pings.luau`, so `Pings.shown` always returns `{}`.
+  Result: `1314 passed, 30 failed`; `restored (verified byte-for-byte ...)`.
+  In `session_channel_test` exactly the three RED predicted went red: **AC-2**,
+  AC-3 (accepted ping shown) and C-9. The other 27:
+  - 2 in `ping_lifecycle_test` (CHAN-006's own `shown` tests);
+  - 25 in `session_channel_controls_test`, whose reference stand-in calls the real
+    `Pings.shown`. Its baseline therefore no longer wins, and every control that
+    compares against that baseline fails with it.
+- **D-2: PASSED.** Mutation: `s/local lensClass = Ring.lensOf(assignment, playerId)/local
+  lensClass = assignment.keyClasses[playerId][1]/` in
+  `src/server/seats/Projection.luau`, so the lens reads the player's own key class
+  (the direction error). Result: `1316 passed, 28 failed`; restored byte-for-byte.
+  **AC-2 failed and AC-6 failed**, which is what the block requires. The rest:
+  - 5 in `lens_view_test` (VIEW-001's own tests);
+  - 20 in the controls file, which shares the real `lensFor`.
+
+  **The prediction differed in one test.** RED predicted AC-1, AC-6 and AC-2. The
+  real red set was AC-2, AC-6 and AC-3 (accepted ping shown); AC-1 stayed green.
+  Why: AC-1's oracle calls the real `Projection.lensFor` on the end state, so it
+  agrees with any lensFor, mutated or not. AC-1 pins the routing of lens views,
+  not their content, and AC-6 is the test that pins content. RED's stand-in
+  modelled D-2 inside the session rather than in `lensFor`, so it made AC-1
+  disagree. AC-3's accepted-ping case fails because its helper is placed by the
+  lens the test expects. The criterion's condition holds; only the predicted
+  spread was wrong.
+- **D-3: PASSED.** Mutation: `s/if not deepEqual(lensView, lastLens\[playerId\]) then/if
+  true then/` in `src/server/session/Session.luau`, so every lens is sent on every
+  step. Result: `1332 passed, 12 failed`; restored byte-for-byte. **AC-1 failed,
+  and AC-2 and AC-6 both passed**, as the block requires: the diff is a bandwidth
+  rule, and the script does not read "a lens arrived" as a signal. The red set
+  matches RED's prediction exactly:
+  - 5 in `session_channel_test` (AC-1, AC-3 ×2, AC-4, C-9);
+  - 5 in `session_positions_test`;
+  - 2 in `session_test`.
+
 ## Out of scope
 
 - The client (`HUD-*`), and the driver's real ports (`SLICE-007`).
@@ -347,6 +388,9 @@ from an upstream story or spike (as noted above), amend it and re-run
 - GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5, from the session's own
   model identification). 2026-10-07. The dispatch message stated no model
   override; the planned row is `opus`, so the plan and the resolution agree.
+- GATES - no dispatch: no gate failed, so the `feature-developer` row was not
+  needed. `lead-po` (`claude-opus-5-5`) ran D-1 to D-3 and `gates.sh`. 2026-10-07.
+- REVIEW - `lead-po` - `claude-opus-5-5` (Opus 5.5). 2026-10-07.
 
 ## Test plan
 
@@ -786,10 +830,22 @@ the controls only - not for the AC-2 criterion, which fixes 50.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-07T15:17:05Z
+    commit: 6c4ba26
+    tree:   7b98e77e2777d11a4d1c43f3221981de919272b6
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 200)
+    PASS         lint (0s, observed 200, floor 1)
+    PASS         typecheck (2s, observed 32)
+    PASS         unit (281s, observed 1344, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 128260)
+    PASS         harness (25s, observed 41)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -961,3 +1017,5 @@ the controls only - not for the AC-2 criterion, which fixes 50.
   `roomLit = not Procedure.isDark(...)` branch is unexercised. `roomLit` only
   feeds the ping log the trace reads, so this goes to EPIC-09's trace story, not
   to a return to RED.
+
+- GATES freeze: `frozen: OK — 190 path(s) unchanged since the snapshot for SLICE-006`; `git diff --stat src` empty after all three mutations (each restore verified by `mutate.sh`).
