@@ -264,7 +264,32 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # 43/43/8 -> 47/47/8, narrow unchanged at 8/8/5.
 # BEFORE THAT: SEAT-001 (return to RED), which added src/server/seats/Ring.luau
 # and four test files: 38/38/7 -> 43/43/8, narrow 7/7/5 -> 8/8/5.
-# LAST SET: CHAN-004 (RED), which adds seven test files
+# LAST SET: VIEW-003 (RED), which adds four test files
+# (tests/helpers/RoundViewContract.luau, RoundViewStubs.luau,
+# tests/server/round_view_test.luau, round_view_controls_test.luau) and whose
+# GREEN adds ONE source file, src/server/round/RoundView.luau, under
+# src/server (story `## Contract` C-2; the Session.luau edit is to an
+# existing file). CHAN-004's values (190/190/31, narrow 31/31/9) were
+# confirmed on the tree before this story's files were added: `git ls-files
+# --cached --others --exclude-standard` over src tests lune counted 190 .luau
+# files, src alone 31, src/shared alone 9. MEASURED on the uncommitted RED
+# tree by the same command: 194 over src tests lune (190 + 4 tests), src
+# still 31, src/shared still 9. PREDICTED post-GREEN, which is what is
+# pinned below: 194 + 1 = 195/195/32, narrow 31/31/9 -> 32/32/9 -
+# NARROW_TYPECHECK does not move, because the new module is under
+# src/server, not src/shared. THE BASELINES BELOW ARE SET TO THOSE PREDICTED
+# GREEN VALUES NOW, IN RED, as CHAN-004, CHAN-002, CHAN-005 and VIEW-004 did
+# and for the same reason: check-boundaries refuses a .claude/tests/** change
+# from any other phase (TUNE-001 R-1). The suite is red in RED by design -
+# the "no stray .luau files" precondition until the RED commit, and the
+# counters by the one source file until GREEN writes it: expected red under
+# `bash scripts/gates.sh --fast` on RED's tree is `expected count: 195 /
+# actual count: 194` for format and lint, `32 / 31` for typecheck and both
+# narrow src cases, `196 / 195` and `33 / 32` for the untracked-file cases,
+# with the narrow typecheck (9) not failing. GREEN confirms, never edits; a
+# second source file, or one under src/shared/, is a counter failure GREEN
+# cannot fix.
+# BEFORE THAT: CHAN-004 (RED), which adds seven test files
 # (tests/helpers/PresetRemoteContract.luau, PresetSendsContract.luau,
 # PresetSendsStubs.luau, tests/net/preset_remote_test.luau,
 # preset_remote_controls_test.luau, tests/server/preset_sends_test.luau,
@@ -450,12 +475,12 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=190    # stylua  over src tests lune   (190 = 31 src + 159 tests/lune: CHAN-004's 7 tests + predicted 1 src)
-BASE_LINT=190      # selene  over src tests lune
-BASE_TYPECHECK=31  # analyze over src (NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends, predicted)
-NARROW_FORMAT=31   # stylua  over src alone
-NARROW_LINT=31     # selene  over src alone
-NARROW_TYPECHECK=9 # analyze over src/shared alone (moved by TUNE-001's MechanicsTuning; + CHAN-002's channel/Presets; CHAN-004 adds nothing under src/shared)
+BASE_FORMAT=195    # stylua  over src tests lune   (195 = 32 src + 163 tests/lune: VIEW-003's 4 tests + predicted 1 src)
+BASE_LINT=195      # selene  over src tests lune
+BASE_TYPECHECK=32  # analyze over src (NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView, predicted)
+NARROW_FORMAT=32   # stylua  over src alone
+NARROW_LINT=32     # selene  over src alone
+NARROW_TYPECHECK=9 # analyze over src/shared alone (moved by TUNE-001's MechanicsTuning; + CHAN-002's channel/Presets; VIEW-003 adds nothing under src/shared)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`
 # rather than `source` - rules.md's probe convention - and so every guard that

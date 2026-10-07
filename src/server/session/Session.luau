@@ -54,8 +54,10 @@
 	EACH PLAYER IS SENT ONLY THEIR OWN VIEW. A seat view is a `SendTo`
 	addressed to one player with `Projection.forPlayer(assignment, thatPlayer)`
 	as its payload. No `Broadcast` ever carries one: the public broadcast is
-	the `RoundView`, which holds the phase, the seconds left and who is
-	playing, and nothing from the ring.
+	the `RoundView` (VIEW-003, `round/RoundView.luau`), which holds only public
+	facts - the phase, the seconds left, who is playing, the progress bar,
+	instability, dark rooms, pings and each machine's public dial - and
+	nothing from the ring.
 
 	A WITHDRAWAL HAPPENS ONLY WHEN THE MACHINE UNSEATED THE LEAVER - they are
 	in the old `round.players` and not in the new one, with a ring dealt.
@@ -74,15 +76,9 @@
 	`PromptRematch`, `ComputeTrace`) in emission order with `AssignSeats`
 	removed; then `Placed` in seat order; then the `SendTo` seat views in seat
 	order; then the `SendTo` turn result; then at most one `Broadcast` of the
-	`RoundView`, built from the state at the END of the step.
-
-	`secondsLeft` IS RELATIVE. In `Round` with a Procedure it is the
-	whole-second ceiling of `Procedure.deadline` minus `now`, so an instability
-	penalty shows; elsewhere it is the ceiling of the config's duration minus
-	the time spent in the phase. Never an absolute deadline: the server's
-	clock is not the client's (§9.7). `nil` where the phase has no running
-	clock - `Assignment`, `Resolution`, and a `Lobby` below `playersMin`,
-	where the timer holds (§3).
+	`RoundView`, built by `RoundView.public` from the state at the END of the
+	step, with `pings = {}` until SLICE-006 adds channel state. `secondsLeft`
+	and every other field's rule live in that module.
 
 	PURE: nothing handed in is mutated, and the effect list is always a table.
 ]]
@@ -94,6 +90,7 @@ local Positions = require("./Positions")
 local Procedure = require("../procedure/Procedure")
 local Projection = require("../seats/Projection")
 local RoundConfig = require("../round/RoundConfig")
+local RoundView = require("../round/RoundView")
 local Ring = require("../seats/Ring")
 local Rng = require("@shared/Rng")
 local TurnRequests = require("../procedure/TurnRequests")
@@ -125,15 +122,6 @@ export type SessionEvent =
 	| { kind: "PositionsSampled", samples: { [string]: Procedure.Vec } }
 	| { kind: "TurnRequested", playerId: string, args: { machine: number, setting: number } }
 
--- `VIEW-003` moves this to `src/server/round/RoundView.luau` and widens it.
-export type RoundView = {
-	phase: PhaseMachine.Phase,
-	secondsLeft: number?,
-	players: { string }, -- join order, which is seat order once dealt; public
-	playersMin: number,
-	playersMax: number,
-}
-
 export type SessionEffect = {
 	kind: "SendTo",
 	playerId: string,
@@ -147,7 +135,7 @@ export type SessionEffect = {
 } | { kind: "Placed", playerId: string, position: Procedure.Vec } | {
 	kind: "Broadcast",
 	payloadKind: "RoundView",
-	payload: RoundView,
+	payload: RoundView.RoundView,
 } | PhaseMachine.Effect -- minus AssignSeats, which is consumed here
 
 function Session.new(
@@ -239,45 +227,21 @@ local function spawnCentre(
 	error(`Session: spawn room {facility.spawnRoom} is not in the layout`)
 end
 
--- The whole seconds left in a timed phase, or `nil` where no clock runs.
-local function secondsLeftIn(
-	round: PhaseMachine.RoundState,
-	procedure: Procedure.ProcedureState?,
-	now: number
-): number?
-	local config = round.config
-	if round.phase == "Round" and procedure ~= nil then
-		return math.ceil(Procedure.deadline(procedure) - now)
-	end
-	local duration: number? = nil
-	if round.phase == "Lobby" and #round.players >= config.playersMin then
-		duration = config.lobbySeconds
-	elseif round.phase == "Round" then
-		duration = config.roundSeconds
-	elseif round.phase == "Post" then
-		duration = config.postRoundSeconds
-	end
-	if duration == nil then
-		return nil
-	end
-	return math.ceil(duration - (now - round.phaseEnteredAt))
-end
-
-local function roundView(
-	round: PhaseMachine.RoundState,
-	procedure: Procedure.ProcedureState?,
-	now: number
-): SessionEffect
+-- The public broadcast, from the END state of the step. `pings` is `{}` until
+-- SLICE-006 adds channel state.
+local function roundView(state: SessionState, now: number): SessionEffect
+	local view = RoundView.public({
+		round = state.round,
+		procedure = state.procedure,
+		assignment = state.assignment,
+		positions = state.positions,
+		pings = {},
+		tuning = state.tuning,
+	}, now)
 	return {
 		kind = "Broadcast",
 		payloadKind = "RoundView",
-		payload = {
-			phase = round.phase,
-			secondsLeft = secondsLeftIn(round, procedure, now),
-			players = table.clone(round.players),
-			playersMin = round.config.playersMin,
-			playersMax = round.config.playersMax,
-		},
+		payload = view,
 	}
 end
 
@@ -474,16 +438,7 @@ function Session.step(
 		table.insert(effects, reply)
 	end
 
-	local timed = round.phase == "Lobby" or round.phase == "Round" or round.phase == "Post"
-	if
-		round.phase ~= before.phase
-		or #round.players ~= #before.players
-		or (event.kind == "Tick" and timed)
-	then
-		table.insert(effects, roundView(round, procedure, now))
-	end
-
-	return {
+	local after: SessionState = {
 		round = round,
 		assignment = assignment,
 		facility = facility,
@@ -492,8 +447,18 @@ function Session.step(
 		tracks = tracks,
 		tuning = state.tuning,
 		generatorPredicate = state.generatorPredicate,
-	},
-		effects
+	}
+
+	local timed = round.phase == "Lobby" or round.phase == "Round" or round.phase == "Post"
+	if
+		round.phase ~= before.phase
+		or #round.players ~= #before.players
+		or (event.kind == "Tick" and timed)
+	then
+		table.insert(effects, roundView(after, now))
+	end
+
+	return after, effects
 end
 
 return Session

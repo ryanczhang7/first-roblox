@@ -39,6 +39,7 @@ local Procedure = require("../../src/server/procedure/Procedure")
 local Projection = require("../../src/server/seats/Projection")
 local Ring = require("../../src/server/seats/Ring")
 local Rng = require("../../src/shared/Rng")
+local RoundViewStubs = require("./RoundViewStubs")
 local ScriptedRound = require("./ScriptedRound")
 local TurnRequests = require("../../src/server/procedure/TurnRequests")
 
@@ -196,17 +197,31 @@ function SessionRoundStubs.standIn(defects: Defects): any
 		return math.ceil(duration - (now - round.phaseEnteredAt))
 	end
 
-	local function roundView(state: any, round: any, procedure: any, now: number): any
+	-- VIEW-003 (C-1, C-10): the ten-key view, built by the reference view
+	-- builder from the END-state pieces, with this stand-in's own secondsLeft
+	-- (so `secondsLeftFromConfig` still reaches the payload) and pings = {}
+	-- as Session sends until SLICE-006.
+	local function roundView(
+		state: any,
+		round: any,
+		procedure: any,
+		assignment: any,
+		positions: any,
+		now: number
+	): any
+		local payload = RoundViewStubs.reference.public({
+			round = round,
+			procedure = procedure,
+			assignment = assignment,
+			positions = positions,
+			pings = {},
+			tuning = state.tuning,
+		}, now)
+		payload.secondsLeft = secondsLeft(state, round, procedure, now)
 		return {
 			kind = "Broadcast",
 			payloadKind = "RoundView",
-			payload = {
-				phase = round.phase,
-				secondsLeft = secondsLeft(state, round, procedure, now),
-				players = table.clone(round.players),
-				playersMin = round.config.playersMin,
-				playersMax = round.config.playersMax,
-			},
+			payload = payload,
 		}
 	end
 
@@ -264,7 +279,17 @@ function SessionRoundStubs.standIn(defects: Defects): any
 					})
 				end
 				if #due > 0 and defects.resyncAlsoBroadcasts then
-					table.insert(effects, roundView(state, state.round, state.procedure, now))
+					table.insert(
+						effects,
+						roundView(
+							state,
+							state.round,
+							state.procedure,
+							state.assignment,
+							positions,
+							now
+						)
+					)
 				end
 			end
 			if defects.mutatesStateOnSample then
@@ -336,7 +361,10 @@ function SessionRoundStubs.standIn(defects: Defects): any
 				})
 			end
 			if round.phase ~= state.round.phase or defects.broadcastsOnEveryTurn then
-				table.insert(effects, roundView(state, round, procedure, now))
+				table.insert(
+					effects,
+					roundView(state, round, procedure, state.assignment, state.positions, now)
+				)
 			end
 			return next_(
 				state,
@@ -518,7 +546,7 @@ function SessionRoundStubs.standIn(defects: Defects): any
 			or #round.players ~= #before.players
 			or (event.kind == "Tick" and timed)
 		then
-			table.insert(effects, roundView(state, round, procedure, now))
+			table.insert(effects, roundView(state, round, procedure, assignment, positions, now))
 		end
 		return next_(state, round, assignment, facility, procedure, positions, tracks), effects
 	end

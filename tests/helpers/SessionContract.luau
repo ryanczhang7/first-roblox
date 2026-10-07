@@ -74,8 +74,33 @@ SessionContract.SEAT_VIEW_KEYS =
 	{ "playerId", "keyClasses", "lensClass", "supplierId", "dependentId", "seatOrder" }
 
 -- The RoundView key set the Contract pins, sorted. `secondsLeft` is absent
--- when nil, so the expected list is built per step.
-SessionContract.ROUND_VIEW_KEYS = { "phase", "players", "playersMax", "playersMin", "secondsLeft" }
+-- when nil, so the expected list is built per step. WIDENED by VIEW-003
+-- (C-1, C-10): the five SLICE-003 keys plus progress, instability, dark,
+-- pings and machines. The five are still checked by value below; the five
+-- new ones are checked here for presence and type only - their contents are
+-- `RoundView.public`'s and are pinned in `tests/server/round_view_test.luau`.
+SessionContract.ROUND_VIEW_KEYS = {
+	"dark",
+	"instability",
+	"machines",
+	"phase",
+	"pings",
+	"players",
+	"playersMax",
+	"playersMin",
+	"progress",
+	"secondsLeft",
+}
+SessionContract.SLICE3_ROUND_VIEW_KEYS =
+	{ "phase", "players", "playersMax", "playersMin", "secondsLeft" }
+-- VIEW-003's five: key -> the Luau type it must carry.
+SessionContract.VIEW3_ROUND_VIEW_TYPES = {
+	progress = "table",
+	instability = "number",
+	dark = "table",
+	pings = "table",
+	machines = "table",
+}
 
 SessionContract.SEND_TO_KEYS = { "kind", "payload", "payloadKind", "playerId" }
 SessionContract.BROADCAST_KEYS = { "kind", "payload", "payloadKind" }
@@ -1005,18 +1030,22 @@ end
      AC-4: the RoundView.
      --------------------------------------------------------------------- ]]
 
--- The RoundView the Contract says the END state of `step` produces at `now`.
+-- The five SLICE-003 fields the Contract says the END state of `step`
+-- produces at `now`. VIEW-003 C-7 clamps every non-nil secondsLeft at 0;
+-- no step of SLICE-003's plan reaches a negative value, so the clamp
+-- changes no expected number here and is written for consistency with
+-- `RoundViewContract.expectedSecondsLeft`.
 function SessionContract.expectedRoundView(step: Step): any
 	local c = SessionContract.config()
 	local round = step.oracleAfter
 	local elapsed = step.now - round.phaseEnteredAt
 	local secondsLeft: number? = nil
 	if round.phase == "Lobby" and #round.players >= c.playersMin then
-		secondsLeft = math.ceil(c.lobbySeconds - elapsed)
+		secondsLeft = math.max(0, math.ceil(c.lobbySeconds - elapsed))
 	elseif round.phase == "Round" then
-		secondsLeft = math.ceil(c.roundSeconds - elapsed)
+		secondsLeft = math.max(0, math.ceil(c.roundSeconds - elapsed))
 	elseif round.phase == "Post" then
-		secondsLeft = math.ceil(c.postRoundSeconds - elapsed)
+		secondsLeft = math.max(0, math.ceil(c.postRoundSeconds - elapsed))
 	end
 	return {
 		phase = round.phase,
@@ -1079,12 +1108,15 @@ end
 
 --[[
 	Where a RoundView is emitted, its payload is exactly
-	`{ phase, secondsLeft?, players, playersMin, playersMax }`: the key set
-	enumerated with `pairs`, `secondsLeft` the ceiling against the config's
-	duration (nil in Resolution and in a short Lobby), `players` deep-equal to
-	the round's and not the same table.
+	`{ phase, secondsLeft?, players, playersMin, playersMax, progress,
+	instability, dark, pings, machines }`: the key set enumerated with
+	`pairs`, `secondsLeft` the ceiling against the config's duration (nil in
+	Resolution and in a short Lobby), `players` deep-equal to the round's and
+	not the same table, and VIEW-003's five keys present with the right type.
+	WIDENED by VIEW-003 under PO decision 1 (C-1, C-10) from SLICE-003's
+	five-key set; nothing SLICE-003 asserted was dropped.
 ]]
-function SessionContract.roundViewCarriesExactlyTheFiveKeysWithACeilingSecondsLeftFromConfig(
+function SessionContract.roundViewCarriesExactlyTheTenKeysWithACeilingSecondsLeftFromConfig(
 	S: Session
 )
 	local problems: { string } = {}
@@ -1115,14 +1147,25 @@ function SessionContract.roundViewCarriesExactlyTheFiveKeysWithACeilingSecondsLe
 			continue
 		end
 		local gotKeys = SessionContract.keysOf(payload)
-		local wantKeys = SessionContract.keysOf(want)
+		local wantKeys = table.clone(SessionContract.ROUND_VIEW_KEYS)
+		if want.secondsLeft == nil then
+			table.remove(wantKeys, table.find(wantKeys, "secondsLeft") :: number)
+		end
 		if not Deep.equal(gotKeys, wantKeys) then
 			table.insert(
 				problems,
 				`AC-4: "{step.label}": the RoundView key set is {Deep.show(gotKeys)}, expected exactly {Deep.show(
 					wantKeys
-				)} (secondsLeft {if want.secondsLeft == nil then "nil" else "present"} in {want.phase})`
+				)} (secondsLeft {if want.secondsLeft == nil then "nil" else "present"} in {want.phase}; VIEW-003 widened SLICE-003's five keys to ten)`
 			)
+		end
+		for key, kind in pairs(SessionContract.VIEW3_ROUND_VIEW_TYPES) do
+			if typeof(payload[key]) ~= kind then
+				table.insert(
+					problems,
+					`AC-4: "{step.label}": RoundView.{key} is {Deep.show(payload[key])}, expected a {kind} (VIEW-003)`
+				)
+			end
 		end
 		if payload.phase ~= want.phase then
 			table.insert(
@@ -1165,7 +1208,7 @@ function SessionContract.roundViewCarriesExactlyTheFiveKeysWithACeilingSecondsLe
 	end
 	if #problems > 0 then
 		Contract.fail(
-			`AC-4: the RoundView is exactly \{ phase, secondsLeft, players, playersMin, playersMax } with secondsLeft = ceil(duration - elapsed) from RoundConfig:\n{Contract.firstFew(
+			`AC-4: the RoundView is exactly \{ phase, secondsLeft, players, playersMin, playersMax, progress, instability, dark, pings, machines } with secondsLeft = ceil(duration - elapsed) from RoundConfig:\n{Contract.firstFew(
 				problems,
 				10
 			)}`
@@ -1509,9 +1552,9 @@ SessionContract.CHECKS = {
 		run = SessionContract.broadcastsRoundViewExactlyWhenThePhaseOrCountChangesOrATickHasADuration,
 	},
 	{
-		name = "roundViewCarriesExactlyTheFiveKeysWithACeilingSecondsLeftFromConfig",
+		name = "roundViewCarriesExactlyTheTenKeysWithACeilingSecondsLeftFromConfig",
 		ac = "AC-4",
-		run = SessionContract.roundViewCarriesExactlyTheFiveKeysWithACeilingSecondsLeftFromConfig,
+		run = SessionContract.roundViewCarriesExactlyTheTenKeysWithACeilingSecondsLeftFromConfig,
 	},
 	{
 		name = "passesThroughTheMachinesEffectsUnchangedInOrderAndConsumesAssignSeats",

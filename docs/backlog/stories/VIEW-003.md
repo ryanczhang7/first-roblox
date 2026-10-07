@@ -4,8 +4,8 @@ title: The public round view carries public facts and a progress bar of exactly 
 slug: the-public-round-view-carries-public-fac
 epic: EPIC-07
 type: feature
-status: todo
-phase: PLANNED
+status: in-review
+phase: REVIEW
 branch: story/VIEW-003-the-public-round-view-carries-public-fac
 depends_on: [PROC-003, CHAN-006, SLICE-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -110,6 +110,151 @@ tests under `tests/server/`. RED lists them from the tree with
 `rg "RoundView" src tests`. `SLICE-004`'s client model reads the payload by
 shape, not by this type.
 
+### Pinned at PLANNED -> RED (lead-po, 2026-10-06)
+
+**RED may amend any block in this section, in place, with a reason; GREEN
+builds what the amended block says.**
+
+**C-1. PO decision 1 (the user, 2026-10-06): Session is wired in this story.**
+`Session.step`'s one `Broadcast` of kind `RoundView` now carries
+`RoundView.public(...)`, the widened ten-key view, in place of SLICE-003's
+five-field payload. Its cadence does not change: it is still sent where
+SLICE-003 sends it, at most once per step and built from the END state.
+`pings` is `{}` until `SLICE-006` adds channel state. `FacilityView` is
+**built** here (`RoundView.facility`) but not **emitted**; emitting it is
+`SLICE-006` AC-5. Change detection is also `SLICE-006`'s.
+
+**C-2. The signature takes an input record, not `Session.SessionState`.**
+Amended from the block above. `Session` must require `RoundView` to build its
+payload, so `RoundView` requiring `Session`, even for a type, is a runtime
+require cycle. `RoundView.luau` therefore requires neither `Session` nor
+anything that requires it:
+
+    export type Input = {
+        round: PhaseMachine.RoundState,
+        procedure: Procedure.ProcedureState?,
+        assignment: Ring.Assignment?,
+        positions: { [string]: Procedure.Vec },   -- the ACCEPTED positions
+        pings: { Pings.PingShown },               -- already shown; Session passes {} until SLICE-006
+        tuning: MechanicsTuning.MechanicsTuning,
+    }
+    RoundView.public(input: Input, now: number) -> RoundView
+    RoundView.facility(facility: Generator.Facility) -> FacilityView
+
+`Session` builds `Input` from its own state. `SessionState` already has
+`round`, `procedure`, `assignment`, `positions` and `tuning`.
+
+**C-3. Procedure-derived fields exist only in `Round` with a Procedure.**
+They are `instability`, `dark`, `machines` and `progress.committed`. When
+`input.round.phase == "Round"` and `input.procedure ~= nil`, they are read from
+the procedure. Otherwise `instability = 0`, `dark = {}`, `machines = {}` and
+`progress = { committed = 0, total = tuning.instance.procedure_length }`.
+`pings` is `input.pings` as given (a copy), in every phase. `total` is always
+`tuning.instance.procedure_length`, never `#steps`.
+
+**C-4. `progress.committed`** is the number of `true` entries in
+`procedure.committed`. A decoy never commits, so that number is steps
+committed. It is never `#procedure.log`, and never per track.
+
+**C-5. A machine's public record** (`machines`, ascending `id`, one per
+`facility.placement.machines` entry):
+- `dial.state`, by precedence:
+  1. `committed` if `procedure.committed[id]`;
+  2. else `armed` if `procedure.armed ~= nil and procedure.armed.machineId == id`
+     (expiry is `Procedure.tick`'s job; the view reads the state as given);
+  3. else `rejected` if `Procedure.dial(procedure, id, now).state == "rejected"`
+     (inside its reset window);
+  4. else `unset`.
+- `dial.setting`:
+  - `unset`: nil;
+  - otherwise the `setting` of the **last** `procedure.log` entry for `id`,
+    whatever its `result` (`committed`, `armed`, `wrong_setting` **or
+    `not_live`**). That is the setting last turned onto it.
+    **Amended in RED (test-developer, 2026-10-06):** the block listed three
+    results and omitted `not_live`. A `not_live` rejection is an evaluated
+    turn that moved the dial - `Procedure.dial` reports its setting as
+    `rejected` for the reset window (PROC-001 P-6/P-8), and AC-2 says "the
+    setting last **turned**". Excluding it would show a turned decoy as
+    `{ state = "rejected" }` with no setting, contradicting the dial the
+    world shows. Every log entry is a turn, so the rule is simply "the last
+    entry for `id`". Pinned by the decoy snapshot in
+    `tests/helpers/RoundViewContract.luau` and the
+    `settingIgnoresNotLiveTurns` control.
+  - It is **never** read from `Machines.Machine.requiredSetting`. For a
+    committed machine the last turned setting is the committed setting.
+- `live`: `Procedure.isLive(procedure, id)`.
+- `partnerLamp`: present only on the two `facility.steps.finale` machines. It is
+  `Procedure.partnerLamps(procedure, assignment, positions)[id] == true` when
+  `assignment ~= nil`, and `false` when it is nil. It is **absent** (nil) on
+  every other machine.
+- The record's keys are exactly `id`, `dial`, `live` and, on the finale
+  machines, `partnerLamp`. `dial`'s keys are exactly `setting` (when non-nil)
+  and `state`.
+
+**C-6. `dark`** is the ascending list of layout room ids `r` with
+`procedure.dark[r] == true`.
+
+**C-7. `secondsLeft`** moves here from `Session.secondsLeftIn`, unchanged except
+for the clamp. `Round` with a Procedure gives `ceil(Procedure.deadline - now)`.
+Otherwise it is SLICE-003's config-duration rule, with `nil` where no clock
+runs. Every non-nil value is clamped at `0` (`math.max(0, ...)`).
+
+**C-8. `FacilityView`** is a fresh structure, sharing no table with
+`facility`:
+- `rooms`: `{ id, column, row }` per `layout.rooms` entry, ascending `id`;
+- `doors`: `{ a, b }` per `layout.doors` entry, with `a < b`, sorted by `a` then
+  `b`;
+- `spawnRoom`: `layout.spawnRoom`;
+- `machines`: `{ id, room, slot, tag, keyClass }` per placement machine,
+  ascending `id`.
+
+Nothing else is carried. The machines carry no `requiredSetting`, and there are
+no steps, tracks, finale marker, `par` or `attempt`. The keys are exact.
+
+**C-9. Every list and record in a view is fresh.** Mutating the view must not
+touch session state, and the reverse.
+
+**C-10. Callers, from `rg "RoundView|secondsLeft|roundView" src tests`,
+2026-10-06.** RED updates every test caller in this RED and names each file in
+`## Test plan`. These are SLICE-003's (EPIC-08) DONE tests, changed under PO
+decision 1. Each change must be a widening that keeps what SLICE-003's AC
+asserted (cadence, the five original fields' values, players as a copy), never
+a deletion. The handoff states the list was checked against the tree.
+- `src/server/session/Session.luau`: `export type RoundView` (removed, re-typed
+  from `RoundView.RoundView`), `secondsLeftIn` and `roundView` (moved), and the
+  `SessionEffect` payload type. Removing the type is a changed export, so
+  `Session` must not keep a stale `RoundView` alias (AC-6).
+- `tests/helpers/SessionContract.luau`: `ROUND_VIEW_KEYS` (the five-key exact
+  set) and `expectedRoundView` (five fields, secondsLeft unclamped), plus the
+  key-set comparison around line 1120. These become the ten-key set, with the
+  five original fields still checked by value.
+- `tests/helpers/ScriptedRound.luau`, `SessionRoundContract.luau` and
+  `SessionRoundStubs.luau`; `tests/server/session_test.luau`,
+  `session_controls_test.luau`, `session_round_test.luau` and
+  `session_round_controls_test.luau`. They read `secondsLeft` or the payload.
+  RED confirms each still holds, or changes it with a reason.
+
+**C-11. The partner-lamp reading** (block above) is backed by `architecture.md`
+D15 and §9.7 ("each machine's ... partner lamp" listed under public world
+facts) and by `roles.md` §3, where partner lamps are "Public world". The Game
+Designer confirmation stays open as a report question. It is not a blocker.
+
+**C-12. Test placement.** `tests/server/round_view_test.luau` and
+`tests/server/round_view_controls_test.luau`, with a contract or stubs pair in
+`tests/helpers/` (`RoundViewContract.luau`, `RoundViewStubs.luau`) in the house
+pattern. The controls are executed in RED against stub builders:
+- a bar with `track`, `next` or `byTrack` (AC-1, naming the key);
+- `dial.setting` from `requiredSetting` on a fixture whose last rejected turn
+  differs from it (AC-2);
+- a facility machine carrying `requiredSetting` (AC-3);
+- an unclamped `secondsLeft`, and one from the phase-machine clock that ignores
+  penalties (AC-4);
+- a view carrying an extra top-level key such as `outcome`, `par` or `seats`
+  (AC-5);
+- `committed` counted from `#log` (C-4);
+- `partnerLamp` on a non-finale machine (C-5);
+- a view sharing a table with the input (C-9).
+
 **Oracle partition.**
 - AC-1 and AC-5 are **settled** by `mechanics.md` §3.2's "must never show"
   table. Name each assertion after its row.
@@ -120,6 +265,62 @@ shape, not by this type.
 **D-1. The bar holds its shape.** Use `scripts/mutate.sh` to add a
 `byTrack` field to the progress record. AC-1 **must** then fail, naming it. RED
 cannot run this. Owner: GATES.
+
+**D-2. The dial never reads the secret.** Use `scripts/mutate.sh` to make
+`RoundView.luau` fill `dial.setting` from the machine's `requiredSetting` for
+non-committed machines. AC-2 **must** fail. RED cannot run this. Owner: GATES.
+
+**D-3. The clamp is real.** Use `scripts/mutate.sh` to remove the `math.max(0,
+...)` clamp. AC-4's past-deadline case **must** fail. Owner: GATES.
+
+**D-4. Session really broadcasts the widened view.** Use `scripts/mutate.sh` so
+that Session's broadcast payload drops one of the five new keys, for example
+`progress`. The widened SessionContract key-set check **must** fail. This
+proves the SLICE-003 suite now pins the ten keys and was not just loosened.
+Owner: GATES.
+
+**Results (GATES, 2026-10-06, orchestrator).** All four ran through
+`scripts/mutate.sh <file> '<expr>' -- lune run test` against `3009bdf`, with
+the suite at `1306 passed, 0 failed` before and after. Each condition held:
+
+- **D-1** (`byTrack` added to progress): AC-1 red, naming the key, plus the C-3
+  and composition checks. `1303 passed, 3 failed`. Restored.
+- **D-2** (`dial.setting` from `requiredSetting` when not committed): AC-2 red,
+  plus the composition check. `1304 passed, 2 failed`. Restored.
+- **D-3** (clamp removed): AC-4 red, plus the composition check. `1304 passed,
+  2 failed`. Restored.
+- **D-4** (Session's broadcast loses `progress`): the widened SessionContract
+  key-set check (`session_test` AC-4) went red, and so did the AC-6 wiring test.
+  So SLICE-003's suite now pins all ten keys and was not loosened. `1304 passed,
+  2 failed`. Restored.
+
+```
+=== D-1
+=== mutate: src/server/round/RoundView.luau (1 line(s) changed by s/progress = { committed = committed, total = total }/progress = { committed = committed, total = total,
+tests/server/round_view_test.luau :: AC-1 (mechanics.md 3.2, 'steps committed, out of procedure_length'): progress has exactly the keys committed and total; total is tuni
+tests/server/round_view_test.luau :: Contract (C-3): instability, dark, machines and progress.committed come from the Procedure only in Round with a Procedure; in Resolut
+tests/server/round_view_test.luau :: Contract: public(input, now) deep-equals the Contract's composition of C-3..C-7 on every snapshot - the played scenario, the generate
+1303 passed, 3 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_server_roun
+=== D-2
+=== mutate: src/server/round/RoundView.luau (1 line(s) changed by s/local setting = if state == "unset" then nil else lastTurned(procedure, id)/local setting = if state =
+tests/server/round_view_test.luau :: AC-2: for a machine that is unset, rejected or armed dial.setting is nil or the setting last turned onto it from the actuation log (a
+tests/server/round_view_test.luau :: Contract: public(input, now) deep-equals the Contract's composition of C-3..C-7 on every snapshot - the played scenario, the generate
+1304 passed, 2 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_server_roun
+=== D-3
+=== mutate: src/server/round/RoundView.luau (1 line(s) changed by s/return math.max(0, raw)/return raw/) ===
+tests/server/round_view_test.luau :: AC-4: in Round with a Procedure secondsLeft = ceil(Procedure.deadline - now), which on every penalised snapshot is penaltySeconds bel
+tests/server/round_view_test.luau :: Contract: public(input, now) deep-equals the Contract's composition of C-3..C-7 on every snapshot - the played scenario, the generate
+1304 passed, 2 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_server_roun
+=== D-4
+=== mutate: src/server/session/Session.luau (1 line(s) changed by s/payload = view,/payload = (function(v) v.progress = nil return v end)(view),/) ===
+tests/server/round_view_test.luau :: AC-6 (C-1): every RoundView Session broadcasts - on each Lobby join, the deal, Ticks in Round, the Tick after a rejected wrong turn (
+tests/server/session_test.luau :: AC-4 (widened by VIEW-003 C-10): every RoundView is exactly { phase, secondsLeft, players, playersMin, playersMax, progress, instability
+1304 passed, 2 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_server_sess
+```
 
 ## Out of scope
 
@@ -145,7 +346,7 @@ this command runs again; the rest of the section is yours and is preserved.
 | REVIEW | `lead-po` | `opus` | reading review feedback against the contract is judgement, and a wrong call here ships |
 | SCAFFOLD | `lead-po` | `opus` | source, tests and config in one indivisible derivation, with no failing test in front of any of it |
 
-Lock coverage: SUPPRESSED by `src/server/round/RoundView.luau` (source), `src/server/session/Session.luau` (source), scanned from the Contract text — the phase lock freezes them, so RED follows the plain plan.
+Lock coverage: SUPPRESSED by `src/server/round/RoundView.luau` (source), `src/server/session/Session.luau` (source), `tests/helpers/ScriptedRound.luau` (test) (+4 more), scanned from the Contract text — the phase lock freezes them, so RED follows the plain plan.
 <!-- plan.sh:generated:end -->
 
 Partition as in `## Contract`.
@@ -161,30 +362,316 @@ from an upstream story or spike (as noted above), amend it and re-run
 - PLANNED - `lead-po` - `claude-opus-5-5` (Opus 5.5, from the session's own model
   identification; the /plan-product dispatch reported no override). 2026-09-30.
 
+- PLANNED -> RED contract pinning - orchestrator (`lead-po` role, main session) -
+  `claude-opus-5-5`. 2026-10-06. PO decision 1 was put to the user, who chose to
+  wire Session now.
+- RED - `test-developer` - dispatched with explicit `model: fable`; resolved
+  `claude-fable-5-1` (Fable 5.1) per the agent. Matches the plan. Orchestrator
+  verified `lune run test` -> `1290 passed, 16 failed`: 15 in `round_view_test`
+  (the module is missing, and Session still has its own type) plus session_test's
+  widened AC-4 (Session still sends five keys). It independently confirmed the
+  C-5 `not_live` amendment against `Procedure.luau`'s `rejected()`, which writes
+  `dials[id].setting` and logs `result = reason` for both rejection reasons.
+- GREEN - `feature-developer` - no override; resolved `claude-opus-5-5` (Opus 5.5)
+  per the agent. Matches the plan. Wrote `RoundView.luau` and wired `Session.luau`.
+  It stopped on one frozen test it found wrong (R-1) instead of working around it.
+  `lune run test` -> `1305 passed, 1 failed`; `frozen: OK — 163 path(s) unchanged`.
+  Suggested GATES expressions: D-1 `s/progress = { committed = committed, total = total }/progress = { committed = committed, total = total, byTrack = {} }/`;
+  D-2 `s/local setting = if state == "unset" then nil else lastTurned(procedure, id)/local setting = if state == "committed" then lastTurned(procedure, id) else machine.requiredSetting/`;
+  D-3 `s/return math.max(0, raw)/return raw/`; D-4 (Session) `s/payload = view,/payload = (function(v) v.progress = nil return v end)(view),/`.
+
 ## Test plan
 
-<!-- Filled by the Test Developer during RED: which tests, at which level,
-     and which AC each one covers. -->
+All unit level: `RoundView` is a pure function of plain data, and the one
+contract this story changes (Session's broadcast) is pinned by driving the
+real `Session.step` with `ScriptedRound` and deep-comparing its payload to
+`RoundView.public` of the END state.
+
+**The house pattern.** `tests/helpers/RoundViewContract.luau` holds every
+check as a function over a view module `V` (`V.public(input, now)`,
+`V.facility(facility)`); `tests/server/round_view_test.luau` applies them to
+the real module (red in RED: the file does not exist); `tests/helpers/RoundViewStubs.luau`
+is a reference builder plus 31 one-defect builders; `tests/server/round_view_controls_test.luau`
+runs every check against every builder and pins the exact set each defect
+fires (all executed and measured in RED).
+
+**The fixture is played, not written.** `TurnContract`'s hand-built facility
+(7 steps on two tracks, decoys 18 and 19, under a tuning with
+`actuation_reset_seconds` 5 and `instability_per_out_of_order` 2) goes
+through the real `Procedure.start` / `Procedure.turn`: wrong turn on the
+live head (REJECTED, turned 1 vs required 2 - AC-2's named fixture); the same
+state past the reset (UNSET, turn still in the log); a decoy turn (`not_live`,
++2, so instability crosses 2 and a room goes DARK); track 1's ordinary steps
+only (finale 13 waits at position 0, NOT live); every ordinary step; the
+finale ARMED; a wrong turn on the other finale machine (both REJECTED,
+instability 4 crosses the second threshold, two rooms dark); re-armed and
+COMMITTED (won). Plus the live-finale state with four partner-lamp position
+variants, 12 generated 16-machine facilities at their start, one with
+`dark` written out of order, nine phase fixtures (Lobby timed / short / past,
+Assignment, Round without a Procedure / past, Resolution and Post with the
+won Procedure still held, Post past), and a Round whose Procedure is 90 s
+past its deadline. 35 snapshots.
+
+| Test (round_view_test.luau) | Level | Covers |
+|---|---|---|
+| C-2: module loads, exports `public` and `facility` | unit | export shape |
+| C-2: RoundView.luau's string literals name no session module | unit (text) | C-2 |
+| AC-5 (3.2 "must never show"): top-level keys exactly the ten, each extra attributed to its row | unit | AC-5 |
+| AC-1 (3.2 "steps committed, out of procedure_length"): progress exactly `{ committed, total }`, total = procedure_length (8, fixture has 7 steps), committed = count of true | unit | AC-1, C-4 |
+| AC-2: dial by C-5 precedence; setting from the log, never requiredSetting; rejected fixture differs from required | unit | AC-2, C-5 |
+| C-5: one record per machine ascending, exact keys, live = Procedure.isLive, partnerLamp only on the finale (both/one/none lit, false with no assignment) | unit | C-5, C-11 |
+| AC-3: FacilityView exact shape, doors normalised and sorted, no requiredSetting/par/attempt/steps, fresh | unit | AC-3, C-8 |
+| AC-4: secondsLeft = max(0, ceil(deadline - now)), penalty visible against the unpenalised clock, -90 -> 0, config rule elsewhere | unit | AC-4, C-7 |
+| C-3: procedure fields defaulted in Resolution/Post with the Procedure held and in Round without one; instability pinned in Round | unit | C-3 |
+| C-6: dark ascending | unit | C-6 |
+| C-1/C-3: pings copied as given in every phase | unit | C-1, C-3 |
+| C-9: no aliasing either way, for RoundView and FacilityView | unit | C-9 |
+| oracle: whole view deep-equals the Contract's composition on every snapshot | unit | all |
+| AC-6 (C-1): every Session broadcast deep-equals RoundView.public of the END state (joins, deal, ticks, wrong turn, reset) | integration | AC-6, C-1, C-10 |
+| AC-6 (C-10): Session.luau declares no `export type RoundView` and requires `../round/RoundView` | unit (text) | AC-6 |
+| AC-6 (C-10): the text guard has its subject (classifier + non-empty) | unit | AC-6 |
+
+**C-10: SLICE-003's DONE tests, widened (never deleted).** Checked against the
+tree with `rg "RoundView|secondsLeft|roundView" src tests` on 2026-10-06;
+the list in C-10 matched it exactly.
+
+| File | Change | Why |
+|---|---|---|
+| `tests/helpers/SessionContract.luau` | `ROUND_VIEW_KEYS` is the ten-key set (`SLICE3_ROUND_VIEW_KEYS` keeps the five); `expectedRoundView` clamps at 0 (no plan step reaches a negative, so no expected number moved); the payload check renamed `roundViewCarriesExactlyTheTenKeys...`, compares the key set against the ten (secondsLeft absent when nil), still checks the five values and `players` as a copy, and additionally requires the five new keys to carry their type (`progress`/`dark`/`pings`/`machines` tables, `instability` number). Contents of the five are `round_view_test`'s. | C-1, C-10, D-4 |
+| `tests/server/session_test.luau` | the AC-4 payload test renamed and its name says ten keys | C-10 |
+| `tests/server/session_controls_test.luau` | the SLICE-003 stand-in's payload gains the five keys at C-3's defaults (no Procedure there); `RV_PAYLOAD` renamed; requires `MechanicsTuning` for `procedure_length` | the reference must still pass the widened check |
+| `tests/helpers/SessionRoundStubs.luau` | the stand-in's `roundView` builds the ten-key payload through `RoundViewStubs.reference.public` from the END-state pieces (assignment and positions now passed at the three call sites), then applies its own `secondsLeft` so the `secondsLeftFromConfig` defect still reaches the payload | the SLICE-005 reference must pass SLICE-003's widened battery |
+| `tests/helpers/SessionRoundContract.luau` | `secondsLeftOf` and the C-5 `want` clamp at 0 (never reached on the plan) | C-7 consistency |
+| `tests/server/session_round_controls_test.luau` | `SLICE3_PAYLOAD` renamed | C-10 |
+| `tests/helpers/ScriptedRound.luau` | **unchanged**: reads only `view.secondsLeft`, which keeps its value | C-10 confirmed |
+
+**Counters.** `.claude/tests/project-counters.test.sh` baselines set to the
+predicted post-GREEN values 195/195/32, narrow 32/32/9, with the history
+comment (measured RED tree: 194/31/9).
 
 ## Handoff: RED -> GREEN
 
-<!-- Filled by the Test Developer at the end of RED. This is the ONLY channel
-     to the Feature Developer, whose context is fresh. Must contain:
-       * the exact command that runs the new tests
-       * the failure output, and why it is the RIGHT failure
-       * every file touched, and which AC each test covers
-       * the EXPORT SHAPE the tests already pin: every module they import, the
-         exact exported names and signatures, and the types the assertions
-         destructure. Not a suggestion - a test already imports them, so a
-         wrong guess is a compile error. Say what the tests do NOT constrain
-         too, so it stays the implementer's choice.
-       * any test that passed on arrival, and the probe or negative control
-         that earns it
-       * the EXPECTED VALUE of every negative control, as a table: threshold,
-         candidate range, and the number the control measured. In RED the
-         suite fails at import, so no assertion in it has run - the controls
-         are claims until GREEN confirms them against the shipped module
-       * anything discovered that changes the approach -->
+**Resolved model for this RED dispatch:** `claude-fable-5-1` (Fable 5.1), the
+planned `fable` row; dispatched with `model: fable` as the dispatch note asks.
+
+### The command
+
+    export PATH="$HOME/.rokit/bin:$PATH"
+    lune run test            # the runner has no per-file filter
+
+Baseline on arrival: `1234 passed, 0 failed`. Now: `1290 passed, 16 failed`
+(72 tests added: 16 in `round_view_test.luau`, 56 in
+`round_view_controls_test.luau`). The 16 failures are exactly this story's:
+15 in `round_view_test.luau` and the widened SLICE-003 payload check in
+`session_test.luau`. No unrelated test moved; every control passes.
+
+### The failure, verbatim (trimmed to one of each shape)
+
+    FAIL  tests/server/round_view_test.luau :: Contract (C-2): src/server/round/RoundView.luau loads and exports public and facility as plain field functions
+          tests/server/round_view_test:50: src/server/round/RoundView.luau did not load: error requiring module "../../src/server/round/RoundView": could not resolve child component "RoundView"
+    FAIL  tests/server/round_view_test.luau :: Contract (C-2): RoundView.luau requires neither Session nor anything under session/ - its string literals name no session module
+          tests/server/round_view_test:99: src/server/round/RoundView.luau does not exist
+    FAIL  tests/server/round_view_test.luau :: AC-6 (C-10): Session.luau declares no RoundView type of its own - no `export type RoundView` in its code - and requires ../round/RoundView
+          tests/server/round_view_test:281: AC-6: src/server/session/Session.luau must take RoundView from src/server/round/RoundView.luau and keep no stale alias:
+            line 129 declares a RoundView type: export type RoundView = {
+            no require of "../round/RoundView" among the string literals
+    FAIL  tests/server/session_test.luau :: AC-4 (widened by VIEW-003 C-10): every RoundView is exactly { phase, secondsLeft, players, playersMin, playersMax, progress, instability, dark, pings, machines } by pairs; ...
+          AC-4: "join ann (below min)": the RoundView key set is { 1 = "phase", 2 = "players", 3 = "playersMax", 4 = "playersMin" }, expected exactly { 1 = "dark", 2 = "instability", 3 = "machines", 4 = "phase", 5 = "pings", 6 = "players", 7 = "playersMax", 8 = "playersMin", 9 = "progress" } (secondsLeft nil in Lobby; VIEW-003 widened SLICE-003's five keys to ten)
+          AC-4: "join ann (below min)": RoundView.instability is nil, expected a number (VIEW-003)
+          ...
+
+The other 12 `round_view_test` failures all read `did not load ... could not
+resolve child component "RoundView"` from the load check at line 50. **Why
+this is the right failure:** the module the story adds does not exist, so
+every behavioural test fails at the export check - one counted failure per
+criterion, not one LOAD FAIL - and the two Session-side tests fail on their
+own assertions: Session still declares its own `RoundView` type and still
+sends the five-key payload. Nothing fails on a timeout, a lint rule or a
+config error (`bash scripts/gates.sh --fast` below).
+
+### Files
+
+New: `tests/helpers/RoundViewContract.luau`, `tests/helpers/RoundViewStubs.luau`,
+`tests/server/round_view_test.luau`, `tests/server/round_view_controls_test.luau`.
+Changed (C-10 widenings, see `## Test plan`): `tests/helpers/SessionContract.luau`,
+`tests/helpers/SessionRoundContract.luau`, `tests/helpers/SessionRoundStubs.luau`,
+`tests/server/session_test.luau`, `tests/server/session_controls_test.luau`,
+`tests/server/session_round_controls_test.luau`. Harness:
+`.claude/tests/project-counters.test.sh` (baselines 195/195/32, narrow
+32/32/9, predicted post-GREEN). Story: `## Contract` C-5 amended (not_live),
+`## Test plan`, this section.
+
+### The export shape the tests already pin
+
+Nothing below is a suggestion. Each name is already called by a test, so
+getting it wrong is a failing assertion rather than a debate.
+
+    src/server/round/RoundView.luau                    -- NEW, pure, under src/server/round
+      RoundView.public(input: Input, now: number) -> RoundView
+      RoundView.facility(facility: Generator.Facility) -> FacilityView
+      -- plain field functions on the returned table (called with a dot)
+      -- MUST NOT require Session or anything under session/ (C-2): the test
+      -- scans the file's string literals for "session/" and "/Session"
+
+    Input (C-2):   { round: PhaseMachine.RoundState, procedure: Procedure.ProcedureState?,
+                     assignment: Ring.Assignment?, positions: { [string]: Procedure.Vec },
+                     pings: { Pings.PingShown }, tuning: MechanicsTuning.MechanicsTuning }
+    RoundView:     { phase, secondsLeft?, players, playersMin, playersMax,
+                     progress = { committed, total }, instability, dark = { number },
+                     pings = { PingShown }, machines = { MachinePublic } }      -- exactly these keys
+    MachinePublic: { id, dial = { setting?, state }, live, partnerLamp? }      -- partnerLamp key present
+                                                                               -- (true/false) ONLY on the two
+                                                                               -- finale machines, absent elsewhere
+    FacilityView:  { rooms = { { id, column, row } }, doors = { { a, b } }, spawnRoom,
+                     machines = { { id, room, slot, tag, keyClass } } }        -- exactly these keys
+
+    src/server/session/Session.luau                    -- EDITED
+      - no `export type RoundView =` anywhere in its CODE (comments are blanked by
+        the scan; a comment may still mention the name)
+      - a string literal exactly "../round/RoundView" (or "./RoundView") - i.e.
+        `require("../round/RoundView")`
+      - the Broadcast/RoundView payload deep-equals
+        RoundView.public({ round, procedure, assignment, positions, pings = {}, tuning }, now)
+        built from the END state of the step, with SLICE-003's cadence unchanged
+        (the SLICE-003 suites still run and pin it)
+
+Values the assertions pin exactly (all derived in the helper from the merged
+modules, never from the view):
+
+- `secondsLeft`: Round with a Procedure -> `math.max(0, math.ceil(Procedure.deadline(p) - now))`;
+  else SLICE-003's config rule, clamped; nil in Assignment, Resolution, a Lobby
+  below playersMin. `round.config` is read for the durations.
+- `progress.total` = `input.tuning.instance.procedure_length` in EVERY phase
+  (the fixture has 7 steps and total must read 8). `progress.committed` =
+  number of `true` entries in `procedure.committed`, 0 outside Round-with-Procedure.
+- `instability` = `procedure.instability` in Round-with-Procedure, else 0.
+- `dark` = ascending room ids with `procedure.dark[id] == true`, `{}` otherwise.
+- `machines`: one record per `facility.placement.machines` entry, ascending
+  `id`, `{}` outside Round-with-Procedure. `dial.state` by C-5's precedence:
+  committed > armed (`procedure.armed.machineId == id`, before asking
+  `Procedure.dial`, which reports an armed machine as unset) > rejected
+  (`Procedure.dial(p, id, now).state == "rejected"`) > unset. `dial.setting`
+  nil when unset, else the `setting` of the LAST `procedure.log` entry for the
+  id (any result, `not_live` included - C-5 as amended). `live` =
+  `Procedure.isLive(p, id)`. `partnerLamp` =
+  `Procedure.partnerLamps(p, assignment, positions)[id] == true`, `false` when
+  `assignment == nil`, present only for `facility.steps.finale` ids.
+- `pings` = a copy of `input.pings` (list and entries) in every phase.
+- Every table in either view is fresh: no table reachable from a view is
+  `rawequal` to one reachable from the input/facility, and mutation in either
+  direction does not cross.
+- `FacilityView.doors` are normalised (`a < b`) and sorted by `a` then `b`
+  (one fixture lists them out of order with one reversed); rooms ascending by
+  id with exactly `id, column, row`.
+
+**Not constrained** (the implementer's choice): whether `dial.setting` is read
+from the log or from `procedure.dials[id].setting` - they agree on every
+reachable state and the `settingFromDials` control measures that the suite
+accepts either; how `Session` builds `Input` (a local helper or inline); where
+`secondsLeftIn` goes (it may move into the module per C-7 or stay private, as
+long as the payload matches); error wording; any extra private function; how
+`FacilityView` is reached from Session (it is built, not emitted - SLICE-006).
+
+### Tests green on arrival
+
+One: `AC-6 (C-10): the guard above has its subject` - a vacuity check that the
+classifier returns `Session.luau` and the file is non-empty. It earns its
+place as the negative control for the text guard beside it: without it a
+guard scanning an empty or unclassified file would pass over nothing. It
+guards an invariant of the harness (ROUND-001 AC-6), not of this story.
+
+### Expected value of every negative control
+
+All 31 builders in `RoundViewStubs.luau` were EXECUTED in RED against the
+11 checks in `RoundViewContract.luau` (nothing in them needs the missing
+module) and each pins the EXACT set of checks it fires. The reference fails 0
+of 11 over 35 snapshots. The table is the `EXPECTED` map in
+`round_view_controls_test.luau`; measured in RED, every row passes:
+
+| Control (one defect) | Threshold | Fires exactly (measured) |
+|---|---|---|
+| progressTrack / progressNext / progressByTrack | AC-1 names the key and the 3.2 row | AC-1, oracle |
+| committedFromLog | AC-1 says "that is #procedure.log" | AC-1, oracle |
+| totalFromSteps (7 vs 8) | AC-1 names 7 and 8; C-3 keeps total at 8 outside Round | AC-1, C-3, oracle |
+| settingFromRequired (live rejected/armed read the secret) | AC-2 names machine 11, required 2, turned 1, state rejected; start and armed snapshots pass | AC-2, oracle |
+| settingFromRequiredWhenUnset | AC-2 on "start: nothing turned" | AC-2, oracle |
+| armedReadAsUnset (Procedure.dial alone) | AC-2 wants `{ setting = 1, state = "armed" }` | AC-2, oracle |
+| settingIgnoresNotLiveTurns | AC-2 on the decoy (`{ setting = 2, state = "rejected" }`) | AC-2, oracle |
+| settingFromDials | indistinguishable today | none (measured, stated) |
+| partnerLampEverywhere / IgnoresPositions / WithoutAssignmentIsNil | C-5 names the non-finale machine / the one-holder snapshot / the no-assignment snapshot | C-5, oracle |
+| machinesDescending | C-5 "machines[1].id is 19, expected 11" | C-5, oracle |
+| liveFromPosition | C-5 only on "one track done" | C-5, oracle |
+| facilityWithRequiredSetting / facilityWithPar | AC-3 names the key (and the secret) | AC-3 |
+| facilityDoorsAsGiven | AC-3 on the shuffled fixture only, `doors.1.a: expected 1, got 3` | AC-3 |
+| facilityAliasesRooms | AC-3 shared tables; C-9 mutation crosses | AC-3, C-9 |
+| unclampedSecondsLeft | AC-4 `-90 -> 0`, Lobby/Round/Post past-duration cases; every in-clock snapshot passes | AC-4, oracle |
+| secondsLeftIgnoresPenalties | AC-4 on every penalised snapshot (11, corrected from "8" in R-1), "the view ignores the penalty"; start passes | AC-4, oracle |
+| secondsLeftFromConfigDuration | AC-4 "expected ceil(Procedure.deadline -" | AC-4, oracle |
+| extraOutcome / extraPar / extraSeats | AC-5 names the key and its row | AC-5, oracle |
+| readsProcedureOutsideRound | C-3 Resolution and Post with the Procedure held; AC-1 committed 7 vs 0 | AC-1, C-3, oracle |
+| pingsOnlyInRound | pings check on Lobby/Post | pings, oracle |
+| darkDescending | C-6 on two-dark and `4, 1, 3` -> `{1, 3, 4}` | C-6, oracle |
+| sharesPlayers / sharesPings / sharesPingEntries | C-9 names the field; pings check sees the alias | C-9 (+ pings for the two ping ones) |
+
+Measured scenario numbers GREEN should see again: instability 1 / 3 / 4 across
+the rejected / decoy / disarmed snapshots; `penaltySeconds` = instability x 20;
+secondsLeft on the rejected snapshot (now 102) = 978 against an unpenalised
+998; one dark room after the decoy, two after the disarm; 11 penalised
+snapshots (corrected in R-1 from "8", which was a miscount: the AC-4 check
+counts every snapshot in Round with a Procedure, `penaltySeconds > 0` and a
+positive clock, and the scenario has 11 such); 2 lit partner lamps on the both-holders snapshot, 1 on the
+one-holder snapshot. Confirming these against the shipped module is GREEN's
+job: `round_view_test.luau` runs the identical checks, so they must pass with
+no edit to any test.
+
+### Deferred verifications declined here
+
+D-1..D-4 need the real module and are **declined in RED**, owner GATES as the
+story says. Expected outcomes: D-1 (`byTrack` on the bar) -> `AC-1` red naming
+`"byTrack"` and the per-track row, `oracle` red, all else green; D-2
+(`requiredSetting` for non-committed machines) -> `AC-2` red on the rejected
+and reset snapshots, `oracle` red; D-3 (clamp removed) -> `AC-4` red on the
+past-deadline case (`-90`), `oracle` red; D-4 (Session drops `progress`) ->
+`session_test.luau`'s widened payload check red on every step ("missing
+progress" in the key set), and `round_view_test.luau`'s AC-6 deep-compare
+red; nothing in the controls files moves. The measured control sets above are
+the same mechanism observed on stubs.
+
+### Discovered, and what it changes
+
+- **C-5 amended** (in `## Contract`): the dial-setting rule now reads "the
+  last log entry for the id", `not_live` included. The fixture's decoy turn
+  pins it. Reason recorded beside the amendment.
+- `Procedure.dial` reports an ARMED machine as `unset` (its dial carries no
+  `rejectedUntil`), so the armed check must come before it - exactly C-5's
+  precedence; the `armedReadAsUnset` control shows the cost of getting it
+  wrong.
+- The real `Session` keeps `procedure` through Resolution and Post, so C-3's
+  "only in Round with a Procedure" is live behaviour, not a corner: the
+  phase fixtures hold the won Procedure in both and expect the defaults.
+- `TurnContract`'s fixture has 7 steps against `procedure_length` 8, which is
+  what makes "total is never #steps" a real assertion.
+- `bash scripts/gates.sh --fast` shape is recorded below.
+
+### `bash scripts/gates.sh --fast` on the uncommitted RED tree (2026-10-06, local)
+
+    PASS         format (1s, observed 194)
+    PASS         lint (1s, observed 194, floor 1)
+    PASS         typecheck (2s, observed 31)
+    FAIL         unit (128s, exit 1) -> .claude/state/gate-logs/unit.log      1290 passed, 16 failed
+    UNCONFIGURED coverage
+    PASS         build (0s, observed 119695)
+    FAIL         harness (16s, exit 1) -> .claude/state/gate-logs/harness.log  project-counters: 29 passed, 12 failed
+
+`unit` fails only on this story's 16 assertions (15 `round_view_test`, 1
+`session_test` widened payload). `harness` fails on the stray-file
+precondition (clears at the RED commit) and the 11 predicted off-by-one
+counters: `expected count: 195 / actual count: 194` for format and lint,
+`32 / 31` for typecheck and both narrow src cases, `196 / 195` and `33 / 32`
+for the untracked-file cases, `195 / 194` and `32 / 31` for the ignored-file
+cases; the narrow typecheck (9) does not fail. Timings are local; the unit
+gate's 128 s is the whole suite under `lune run test`, no per-test timeout
+exists in this runner, and the new files add about a second.
 
 ## Regressions
 
@@ -207,12 +694,157 @@ from an upstream story or spike (as noted above), amend it and re-run
        * whether GREEN was a no-op, and the command output proving the source
          was untouched and still passes -->
 
+### R-1. GREEN -> RED (2026-10-06): AC-6 compared a PositionsSampled step as if it were a Tick
+
+- **Test.** `tests/server/round_view_test.luau`, "AC-6 (C-1): every RoundView
+  Session broadcasts ...", lines ~223-227. It took
+  `walked[#walked]` from `ScriptedRound.walk` and required exactly one
+  `Broadcast/RoundView` in it ("the last Tick of the walk"). Its vacuity floor
+  (`>= 12` broadcasts compared) counted that comparison.
+- **What was wrong.** `ScriptedRound.walk` (`tests/helpers/ScriptedRound.luau:314-359`)
+  returns the effects of its `ScriptedRound.sample` calls, which are
+  `PositionsSampled` steps, and discards its Ticks. A `PositionsSampled` never
+  broadcasts. SLICE-003's cadence (C-1, unchanged by this story) and
+  `SessionRoundContract.luau:1533` ("the only effect a PositionsSampled may emit
+  is Placed") both require that. The assertion could only pass by breaking
+  C-1. RED did not see this because the file failed at its load check, so this
+  assertion never ran.
+- **How it was found.** In GREEN, `lune run test` gave `1305 passed, 1 failed`:
+
+      FAIL  tests/server/round_view_test.luau :: AC-6 (C-1): every RoundView Session broadcasts ...
+            tests/server/round_view_test:74: AC-6: the last Tick of the walk: 0 Broadcast/RoundView effect(s), expected exactly 1
+
+- **Orchestrator's independent reproduction** (not the subagent's scripts; read
+  against the PRE-GREEN source). `git show origin/main:src/server/session/Session.luau`,
+  lines 301-330: the `PositionsSampled` branch builds `effects` from `Placed`
+  resyncs only and `return next_, effects` before the RoundView builder at line
+  483 is reached. So SLICE-003's Session gives the same 0 broadcasts on a
+  sample, which means the defect is in the test, not in GREEN's wiring. The
+  feature-developer separately measured `walk returned 4 entries` with effects
+  `{}` x4 against both HEAD's and its Session, and the test passing once the
+  walk comparison is removed (11 broadcasts deep-equal).
+- **What it should assert instead.** Compare a real Tick, not a sample. For
+  example, compare an explicit `ScriptedRound.tick(d, 1)` after the walk, or the
+  walk's ticks if `walk` is extended **without** changing its return for its
+  SLICE-005 callers. Keep the vacuity floor at a number the corrected
+  comparisons actually reach. It must not be lowered to whatever passes: state
+  the count and why it is the right floor.
+- **What earns it.** A `scripts/mutate.sh` probe on the shipped Session or
+  RoundView that turns the corrected comparison red, pasted here with its
+  restore line.
+- **Second item for RED to restate, not a defect.** The handoff says "8
+  penalised snapshots". The feature-developer counted 11 Round snapshots with
+  `penaltySeconds > 0`. Say how 8 is counted, or correct the handoff.
+
+#### What it asserts now (test-developer, RED, 2026-10-06; resolved model: Fable 5.1, no override)
+
+`tests/server/round_view_test.luau` lines 223-228: the walk is still
+stepped (it puts the turner at the machine so the wrong turn is a live,
+rejected turn), its return is discarded, and an explicit
+`ScriptedRound.tick(d, 1)` after it is compared as `"the Tick after the walk"`.
+`ScriptedRound.walk` is untouched. The vacuity check is now an exact count
+over what drives it rather than a constant:
+
+    local scheduled = #d.players + 1 + 2 + 1 + 1 + reset
+    assert(compared == scheduled, ...)
+
+= 4 joins + the deal + 2 Ticks in Round + the Tick after the walk + the Tick
+after the wrong turn + `actuation_reset_seconds` (3) reset Ticks = **12**,
+which is the number of broadcasts the corrected comparisons actually reach -
+the suite prints `[measured] AC-6: 12 broadcasts deep-equal RoundView.public
+of the END state`. It is the right floor because every `compare(...)` call
+in the test is now unconditional, so the count can only be 12, and an
+expression means a later change to the player count or the reset window
+moves the expectation with it instead of leaving a stale constant. Nothing
+else in the file changed; no other test and no counters file was touched;
+no file was added.
+
+The penalised count: **11, not 8.** Measured outside the framework with a
+throwaway script calling `RoundViewContract.snapshots()` and applying the
+AC-4 rule (`inRoundWithProcedure`, `penaltySeconds > 0`, expected
+`secondsLeft > 0`): 35 snapshots, 11 tagged `penalised`, 11 counted by the
+rule - rejected, reset, decoy, one-track-done, four finale-live, armed,
+disarmed, won. "8" in the handoff was a miscount with no basis in the helper;
+the handoff and the `## Test plan` row are corrected.
+
+#### Probe
+
+`bash scripts/mutate.sh src/server/session/Session.luau 's/roundView(after, now))/roundView(after, now - 1))/' -- lune run test`
+- Session builds its broadcast from one second earlier than the step's
+  `now`, so the END-state view is off by one in `secondsLeft`. The newly
+  compared Tick goes red by name, and so do the SLICE-003 Session suites
+  (unrelated AC-4/AC-7 `violation(s)` lines in the output are prints from
+  passing net tests and are elided):
+
+      === mutate: src/server/session/Session.luau (1 line(s) changed by s/roundView(after, now))/roundView(after, now - 1))/) ===
+        458 - 		table.insert(effects, roundView(after, now))
+        458 + 		table.insert(effects, roundView(after, now - 1))
+
+      === mutate: running lune run test ===
+        FAIL  tests/server/round_view_test.luau :: AC-6 (C-1): every RoundView Session broadcasts - on each Lobby join, the deal, Ticks in Round, the Tick after a rejected wrong turn (a rejected dial, instability 1, a shorter clock) and after its reset - deep-equals RoundView.public of the END state with pings = {}, and at least one carries machines, a rejected dial and a penalty
+              AC-6: Session's RoundView broadcast must be RoundView.public(input from the END state, now):
+      join dan (now 0, Lobby):
+        value.secondsLeft: expected 60, got 61
+      the deal (now 60, Round):
+        value.secondsLeft: expected 420, got 421
+      Tick 1 in Round (now 61, Round):
+        value.secondsLeft: expected 419, got 420
+      Tick 2 in Round (now 62, Round):
+        value.secondsLeft: expected 418, got 419
+      the Tick after the walk (now 67, Round):
+        value.secondsLeft: expected 413, got 414
+      the Tick after the wrong turn (now 68, Round):
+        value.secondsLeft: expected 392, got 393
+      Tick 1 of the reset window (now 69, Round):
+        value.secondsLeft: expected 391, got 392
+      Tick 2 of the reset window (now 70, Round):
+        value.secondsLeft: expected 390, got 391
+      value.machines.13.dial.state: expected "unset", got "rejected"
+      value.machines.13.dial.setting: unexpected 1
+      Tick 3 of the reset window (now 71, Round):
+        value.secondsLeft: expected 389, got 390
+        FAIL  tests/server/session_round_test.luau :: Contract (C-5): every RoundView in Round carries secondsLeft = ceil(Procedure.deadline(procedure) - now), which after one wrong turn is instability_clock_penalty_seconds below the config formula
+        FAIL  tests/server/session_test.luau :: AC-4 (widened by VIEW-003 C-10): every RoundView is exactly { phase, secondsLeft, players, playersMin, playersMax, progress, instability, dark, pings, machines } by pairs; ...
+      1303 passed, 3 failed
+
+      === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/worktrees/vigilant-engelbart-e5ebd4/.claude/state/mutations/src_server_session_Session.luau.20261006T213703Z.177728.bak) ===
+        458: 		table.insert(effects, roundView(after, now))
+
+  One mutation, one run, one revert; `git status` afterwards shows only
+  `docs/backlog/stories/VIEW-003.md` and `tests/server/round_view_test.luau`
+  modified.
+
+#### After the correction
+
+`PATH=~/.rokit/bin:$PATH lune run test` against the unmutated source:
+
+      [measured] AC-6: 12 broadcasts deep-equal RoundView.public of the END state
+      pass  tests/server/round_view_test.luau :: AC-6 (C-1): every RoundView Session broadcasts - ...
+      1306 passed, 0 failed
+
+`stylua --check tests/server/round_view_test.luau` exits 0. GREEN is a
+no-op for source on this return: `1f17d9c`'s `RoundView.luau` and
+`Session.luau` are untouched (the probe restore above is the only time
+Session.luau was written, and `cmp` verified it back).
+
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-06T22:26:42Z
+    commit: 3009bdf
+    tree:   74e6f6064ffc13d3eb8233f4ce7f99223860271d
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 195)
+    PASS         lint (0s, observed 195, floor 1)
+    PASS         typecheck (3s, observed 32)
+    PASS         unit (135s, observed 1306, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 123650)
+    PASS         harness (14s, observed 41)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -238,3 +870,41 @@ from an upstream story or spike (as noted above), amend it and re-run
 
 ## Notes
 
+
+- **PO, PLANNED -> RED (2026-10-06).**
+  - *Gate.* `unit` (required) covers `src/server/**`. `RoundView.luau` and the
+    `Session.luau` edit are both read by it, so `required_gates` stays empty.
+  - *PO decision 1 (the user chose it, 2026-10-06).* Session's RoundView
+    broadcast is widened in this story rather than in SLICE-006 (C-1). The cost
+    is accepted: SLICE-003's DONE tests that pin the five-key payload are
+    updated in this RED, as widenings, under C-10. D-4 proves the widened check
+    is not a loosened one.
+  - *PO decision 2.* The Contract's `RoundView.public(session, now)` would be a
+    require cycle, so it takes an `Input` record instead (C-2).
+  - *Epic.* EPIC-07 done-when item 3 maps to AC-1, AC-2, AC-3 and AC-5. One
+    reading is recorded here. An **armed** finale machine's `dial.setting` is
+    the setting last turned onto it, which is necessarily its required one.
+    Publishing it is not publishing the secret: it is the dial's physical
+    position, which `roles.md` §3 lists as public world, and AC-2 names
+    `armed` explicitly. The view never **reads** `requiredSetting` (D-2). This
+    is the same kind of exception as the partner lamp (C-11), and it goes to
+    the same Game Designer report question.
+  - *Counters.* GREEN adds exactly one source file,
+    `src/server/round/RoundView.luau`, under `src/server`. RED sets the
+    `project-counters` baselines to the predicted post-GREEN values and commits
+    them under `phase: RED`.
+- **RED (R-1) -> GREEN (2026-10-06, orchestrator).** The R-1 test-developer
+  resolved `claude-fable-5-1` (Fable 5.1). The fix is committed as `3009bdf`
+  under `phase: RED`. GREEN on this return is a genuine **no-op**: no
+  feature-developer was dispatched, and `git diff --stat 1f17d9c -- src` is
+  empty. Verified with `lune run test` -> `1306 passed, 0 failed` and
+  `bash scripts/gates.sh --fast` -> `All required gates passed (6 ran, 1
+  unconfigured, 0 known)`, with harness at 41 and counters at 195/195/32. The
+  freeze was snapshotted again on entering GREEN (163 paths).
+- **GATES (2026-10-06, orchestrator).** D-1..D-4 were run and their results
+  pasted under `## Deferred verifications`. Full `bash scripts/gates.sh` gave
+  `All required gates passed (6 ran, 3 unconfigured, 0 known).` Full
+  `bash scripts/selftest.sh`, run after gates and never concurrently, gave
+  `22 harness suite(s) passed.` Leaving GATES: `frozen: OK — 163 path(s)
+  unchanged since the snapshot for VIEW-003`. No source changed in GATES, and
+  the story adds no gate, so it has no `## Gate probes`.

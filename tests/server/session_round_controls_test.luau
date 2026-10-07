@@ -126,7 +126,7 @@ local CLOCK = "losesByTheClockOnTheProcedureDeadlineAtEveryPenaltyLevel"
 local PURE = "stepMutatesNeitherStateNorEventOnRoundEvents"
 
 local SLICE3_PASS = "passesThroughTheMachinesEffectsUnchangedInOrderAndConsumesAssignSeats"
-local SLICE3_PAYLOAD = "roundViewCarriesExactlyTheFiveKeysWithACeilingSecondsLeftFromConfig"
+local SLICE3_PAYLOAD = "roundViewCarriesExactlyTheTenKeysWithACeilingSecondsLeftFromConfig"
 
 -- An unrouted clock-out leaves the lifecycle in Round past its penalised
 -- deadline, so every pin on the second half of the plan (the ignored turns in
