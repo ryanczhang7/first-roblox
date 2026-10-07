@@ -4,8 +4,8 @@ title: The public round view carries public facts and a progress bar of exactly 
 slug: the-public-round-view-carries-public-fac
 epic: EPIC-07
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/VIEW-003-the-public-round-view-carries-public-fac
 depends_on: [PROC-003, CHAN-006, SLICE-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -908,3 +908,10 @@ Session.luau was written, and `cmp` verified it back).
   `22 harness suite(s) passed.` Leaving GATES: `frozen: OK — 163 path(s)
   unchanged since the snapshot for VIEW-003`. No source changed in GATES, and
   the story adds no gate, so it has no `## Gate probes`.
+- **REVIEW -> DONE (2026-10-07).** PR https://github.com/ryanczhang7/first-roblox/pull/63
+  merged as `789b46f`. CI timings from the PR's runs: `gates`
+  (https://github.com/ryanczhang7/first-roblox/actions/runs/37554850301) took 4m29s
+  against `timeout-minutes: 45` (Harness self-test 2m09s, Run gates 2m05s);
+  `boundaries` took 4s. No step is near a limit. Still open, not blocking: the
+  Game Designer report question on the partner-lamp and armed-dial readings
+  (C-11 and the PO notes).
