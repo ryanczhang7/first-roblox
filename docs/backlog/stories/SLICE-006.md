@@ -5,7 +5,7 @@ slug: the-session-carries-pings-presets-and-ev
 epic: EPIC-08
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/SLICE-006-the-session-carries-pings-presets-and-ev
 depends_on: [SLICE-005, CHAN-004, CHAN-006, VIEW-001, VIEW-002, VIEW-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -344,6 +344,9 @@ from an upstream story or spike (as noted above), amend it and re-run
   controls file, amended C-6 and wrote the handoff. Neither dispatch message
   stated an override; the planned row is `fable`, so the plan and the resolution
   agree.
+- GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5, from the session's own
+  model identification). 2026-10-07. The dispatch message stated no model
+  override; the planned row is `opus`, so the plan and the resolution agree.
 
 ## Test plan
 
@@ -876,3 +879,85 @@ the controls only - not for the AC-2 criterion, which fixes 50.
   locally and the whole suite went from 2m17s to 3m20s (5m08s under RED's load).
   CI's last full gate run took 17m57s against `timeout-minutes: 45`, so there is room,
   but read the CI timing at REVIEW.
+
+### GREEN notes (feature-developer)
+
+- **Files changed:** `src/server/session/Session.luau` only, header included. No
+  new source file, so the `harness` counters (200/200/32) stand. `Pings`,
+  `PresetSends`, `Projection` and `RoundView` are unchanged; no test or
+  `.claude/tests/**` file was touched.
+- **`lune run test`:** `1344 passed, 0 failed` (was `1330 passed, 14 failed`) on the
+  first full run after the change, 4m48s wall time.
+- **Negative controls, measured against the shipped `Session`** (the test's own
+  `[measured]` lines), next to RED's reference-stand-in figures:
+
+  | Measurement | RED (reference) | GREEN (shipped) |
+  |---|---|---|
+  | AC-2 win | 150/150; max 64 s, max 150 steps; 1203 pings (0 refused, 0 declines), 1366 turns | `150/150 rounds won by showing; max 64 s deal-to-resolution, max 150 steps; 1203 pings (0 refused, 0 declines), 1366 turns` |
+  | AC-2 control (`pings = false`) | 9/9 lost / clock at 420 s, 0 turns, 0 pings | `9/9 rounds lost / clock with no turn and no ping` (the test asserts the 420 s deadline, 0 turns and 0 pings per round; it passes) |
+  | AC-6 sweep | 830 steps, 205 LensViews, 89 readings | `830 steps over 9 rounds; 205 LensViews carrying 89 readings inspected` (precondition >= 9 holds) |
+  | AC-1 sequence | 6 LensView, 8 TurnCues, 14 silent, 2 alone | `6 LensView and 8 TurnCues sends expected over the sequence; 14 silent steps; 2 steps where one player alone was sent` |
+
+  Every figure matches the table exactly. The AC-2 control now holds non-vacuously:
+  the same module wins 150/150 with pings and loses 9/9 without them.
+- **Choices beyond what the tests pin:**
+  - The deal **does** reset `sent.lens` / `sent.cues` (C-6 says so; RED notes it
+    is unobservable).
+  - Outside `Round` with a ring still held (a leave that resolves the round below
+    quorum), `sent.lens` / `sent.cues` are pruned to `assignment.players`, so "a
+    player no longer in `assignment.players` loses their entries" holds in every
+    phase, not only when views are rebuilt. The reference stand-in does not do
+    this; no test observes the difference.
+  - `roomLit` is `not Procedure.isDark(procedure, machine.room)` for the target
+    machine's room, `true` for a doorway, as C-4 says. No test exercises a ping
+    into a dark room (AC-3's accepted ping expects `true`), so the dark branch is
+    unpinned; GATES or a later story may want a case.
+  - Deep equality is a local structural `deepEqual` in `Session.luau`; there is
+    no shared one in `src/`, and adding a module would move the harness counters.
+  - Ignored turns no longer return early: every step except an external
+    `SeatsAssigned` and a no-position `PresetSent` goes through the view build,
+    as C-6 requires. They still return `{}` and a deep-equal state, as SLICE-005's
+    tests require.
+- **`bash scripts/gates.sh --fast`** (once, uncommitted tree; not recorded):
+
+      PASS         format (1s, observed 200)
+      PASS         lint (1s, observed 200, floor 1)
+      PASS         typecheck (3s, observed 32)
+      PASS         unit (290s, observed 1344, floor 507)
+      UNCONFIGURED coverage
+      PASS         build (0s, observed 128260)
+      FAIL         harness (21s, exit 1)
+
+  `harness` is `project-counters: 40 passed, 1 failed`, and the one failure is the
+  precondition `the working tree carries no stray .luau files` with
+  `actual:  M src/server/session/Session.luau`: the GREEN change is not committed
+  (the dispatch said not to commit). RED hit the same check and it cleared with the
+  RED commit. The counts it guards are as RED set them: 200 / 200 / 32. Expect
+  `harness` to pass once GREEN is committed; re-run it then rather than taking this
+  note's word for it.
+- **Mechanisms named in the contract** (`Pings.targetPosition`, `Procedure.isDark`
+  for `roomLit`, the non-yielding filter adapter, deep-equality change detection,
+  `secondsLeft` ignored in the RoundView comparison) were all used as written. None
+  needed changing.
+
+**GREEN verification (lead-po, 2026-10-07).**
+
+- Freeze: `frozen: OK — 190 path(s) unchanged since the snapshot for SLICE-006`
+  (snapshot of every tracked file under `tests/` and `.claude/tests/`, taken right
+  after `phase.sh set SLICE-006 GREEN`).
+- `lune run test` (orchestrator): `1344 passed, 0 failed` in 4m15s. The only source
+  change is `src/server/session/Session.luau`.
+- **The handoff's discrimination table, checked against the shipped module** with
+  `scripts/mutate.sh`, two mutations each predicted to fail exactly one test:
+  - `s/pings = Pings.tick(channel.pings, now, state.tuning)/pings = channel.pings/`
+    (`pingsNeverExpire`): `1343 passed, 1 failed` - `FAIL session_channel_test ::
+    AC-3: an accepted setting ping ...`; `restored (verified byte-for-byte ...)`.
+  - `s/pings = Pings.onCommitted(channel.pings, id)/pings = channel.pings/`
+    (`pingsSurviveCommit`): `1343 passed, 1 failed` - the same AC-3 test;
+    `restored (verified byte-for-byte ...)`.
+  Both counts match the table. The suite is green again on the restored file
+  (`git diff --stat src` unchanged: 404 insertions, 81 deletions).
+- **Known gap, not an AC:** no test pings into a dark room, so the
+  `roomLit = not Procedure.isDark(...)` branch is unexercised. `roomLit` only
+  feeds the ping log the trace reads, so this goes to EPIC-09's trace story, not
+  to a return to RED.
