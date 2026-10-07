@@ -14,8 +14,18 @@
 	A `Session` here is anything with two plain field functions, called with a
 	dot exactly as the story's Contract writes them:
 
-	    S.new(config, seed, roundId, sessionId) -> SessionState
+	    S.new(config, seed, roundId, sessionId, ports) -> SessionState
 	    S.step(state, event, now) -> (SessionState, { SessionEffect })
+
+	`ports` is SLICE-006 C-2's fifth argument (`{ lineOfSight }`); every call
+	below passes `PORTS`, a sight that always answers true. NARROWED BY
+	SLICE-006 C-3: the SendTo checks here read only `SeatView` sends and the
+	Broadcast checks accept the kinds `architecture.md` §9.7 lists as public
+	(`RoundView`, `FacilityView`, `PresetShown`) - the per-player views and
+	the channel's effects are pinned by `SessionChannelContract.luau`. What
+	is NOT narrowed: a Broadcast shaped like a seat view still fails, a
+	SendTo of any kind to the leaver still fails, and the RoundView cadence
+	and payload checks are unchanged.
 
 	THE ORACLE IS THE M1/M2 MODULES THEMSELVES, STEPPED HERE, INDEPENDENTLY.
 	`run` drives a scripted plan through the session under test and, beside
@@ -104,6 +114,16 @@ SessionContract.VIEW3_ROUND_VIEW_TYPES = {
 
 SessionContract.SEND_TO_KEYS = { "kind", "payload", "payloadKind", "playerId" }
 SessionContract.BROADCAST_KEYS = { "kind", "payload", "payloadKind" }
+
+-- The public payload kinds a Broadcast may carry (§9.7; SLICE-006 C-5, C-7).
+SessionContract.PUBLIC_BROADCAST_KINDS = { "RoundView", "FacilityView", "PresetShown" }
+
+-- SLICE-006 C-2: the sight port every plan here runs with - always true.
+SessionContract.PORTS = table.freeze({
+	lineOfSight = function(_from: any, _to: any): boolean
+		return true
+	end,
+})
 
 function SessionContract.config(): RoundConfig.RoundConfig
 	return RoundConfig.fromTuning(Tuning)
@@ -262,7 +282,8 @@ function SessionContract.run(S: Session, criterion: string, plan: Plan): { Step 
 		config,
 		SessionContract.SEED,
 		SessionContract.ROUND_ID,
-		SessionContract.SESSION_ID
+		SessionContract.SESSION_ID,
+		SessionContract.PORTS
 	)
 	if not okNew then
 		Contract.fail(`{criterion}: Session.new RAISED: {tostring(state)}`)
@@ -548,7 +569,8 @@ function SessionContract.newHoldsPhaseMachineInitialWithNoAssignment(S: Session)
 		config,
 		SessionContract.SEED,
 		SessionContract.ROUND_ID,
-		SessionContract.SESSION_ID
+		SessionContract.SESSION_ID,
+		SessionContract.PORTS
 	)
 	if not ok then
 		Contract.fail(`Contract: Session.new RAISED: {tostring(state)}`)
@@ -702,6 +724,20 @@ end
      AC-2: each player gets their own view, and nothing is broadcast.
      --------------------------------------------------------------------- ]]
 
+-- The SendTo/SeatView effects of a step. NARROWED by SLICE-006 C-3: a
+-- SendTo of another kind (LensView, TurnCues, TurnResult, PingRefused,
+-- PresetFailed) is that story's and is pinned there; here it is neither a
+-- seat view nor a problem.
+function SessionContract.seatViewSendTos(effects: { any }): { any }
+	local out: { any } = {}
+	for _, effect in SessionContract.sendTos(effects) do
+		if effect.payloadKind == "SeatView" then
+			table.insert(out, effect)
+		end
+	end
+	return out
+end
+
 -- The SendTo/SeatView problems of one step against `assignment` and the
 -- recipient list `expected` (seat order). Shared by AC-2 and AC-3.
 local function seatViewProblems(
@@ -712,7 +748,7 @@ local function seatViewProblems(
 	problems: { string }
 )
 	local byPlayer: { [string]: { any } } = {}
-	for _, effect in SessionContract.sendTos(step.effects) do
+	for _, effect in SessionContract.seatViewSendTos(step.effects) do
 		local keys = SessionContract.keysOf(effect)
 		if not Deep.equal(keys, SessionContract.SEND_TO_KEYS) then
 			table.insert(
@@ -720,14 +756,6 @@ local function seatViewProblems(
 				`{criterion}: "{step.label}": a SendTo effect's key set is {Deep.show(keys)}, expected exactly {Deep.show(
 					SessionContract.SEND_TO_KEYS
 				)}`
-			)
-		end
-		if effect.payloadKind ~= "SeatView" then
-			table.insert(
-				problems,
-				`{criterion}: "{step.label}": a SendTo to {Deep.show(effect.playerId)} has payloadKind {Deep.show(
-					effect.payloadKind
-				)}; the Contract names only "SeatView"`
 			)
 		end
 		local id = tostring(effect.playerId)
@@ -760,20 +788,22 @@ local function seatViewProblems(
 	for playerId, got in pairs(byPlayer) do
 		table.insert(
 			problems,
-			`{criterion}: "{step.label}": {#got} SendTo effect(s) addressed to {playerId}, who must receive none on this step`
+			`{criterion}: "{step.label}": {#got} SendTo/SeatView effect(s) addressed to {playerId}, who must receive none on this step`
 		)
 	end
 end
 
--- Any Broadcast that carries a seat view, by payloadKind or by shape.
+-- Any Broadcast that carries a seat view, by payloadKind or by shape. The
+-- kinds accepted are §9.7's public ones (SLICE-006 C-3 widened "RoundView"
+-- to the list); the shape check applies to every one of them.
 local function broadcastLeakProblems(criterion: string, step: Step, problems: { string })
 	for _, effect in SessionContract.broadcasts(step.effects) do
-		if effect.payloadKind ~= "RoundView" then
+		if not contains(SessionContract.PUBLIC_BROADCAST_KINDS, tostring(effect.payloadKind)) then
 			table.insert(
 				problems,
 				`{criterion}: "{step.label}": a Broadcast has payloadKind {Deep.show(
 					effect.payloadKind
-				)}; the Contract names only "RoundView"`
+				)}; the Contract names only {Deep.show(SessionContract.PUBLIC_BROADCAST_KINDS)}`
 			)
 		end
 		if SessionContract.looksLikeSeatView(effect.payload) then
@@ -1378,7 +1408,10 @@ end
 --[[
 	Effect order within a step: pass-through first, then the SendTo/SeatView
 	effects in the ring's seat order (the new ring's, on a withdrawal), then
-	at most one Broadcast, last.
+	at most one Broadcast/RoundView, last. NARROWED by SLICE-006 C-3: the
+	SendTo clauses read SeatView sends only and the "last, at most one"
+	clause reads RoundView broadcasts only; where the other kinds sit is C-9
+	of that story, pinned in `SessionChannelContract.luau`.
 ]]
 function SessionContract.ordersPassThroughThenSeatViewsThenRoundViewLast(S: Session)
 	local problems: { string } = {}
@@ -1392,18 +1425,22 @@ function SessionContract.ordersPassThroughThenSeatViewsThenRoundViewLast(S: Sess
 			for i, effect in step.effects do
 				local kind = if typeof(effect) == "table" then effect.kind else nil
 				if kind == "SendTo" then
-					firstSend = firstSend or i
-					lastSend = i
-					table.insert(sendOrder, tostring(effect.playerId))
+					if effect.payloadKind == "SeatView" then
+						firstSend = firstSend or i
+						lastSend = i
+						table.insert(sendOrder, tostring(effect.playerId))
+					end
 				elseif kind == "Broadcast" then
-					broadcastCount += 1
-					if i ~= #step.effects then
-						table.insert(
-							problems,
-							`Contract: "{step.label}": a Broadcast at position {i} of {#step.effects} ({Deep.show(
-								kinds
-							)}); it must be last`
-						)
+					if effect.payloadKind == "RoundView" then
+						broadcastCount += 1
+						if i ~= #step.effects then
+							table.insert(
+								problems,
+								`Contract: "{step.label}": a Broadcast/RoundView at position {i} of {#step.effects} ({Deep.show(
+									kinds
+								)}); it must be last`
+							)
+						end
 					end
 				else
 					lastPass = i
@@ -1412,7 +1449,7 @@ function SessionContract.ordersPassThroughThenSeatViewsThenRoundViewLast(S: Sess
 			if broadcastCount > 1 then
 				table.insert(
 					problems,
-					`Contract: "{step.label}": {broadcastCount} Broadcast effects, at most one is allowed`
+					`Contract: "{step.label}": {broadcastCount} Broadcast/RoundView effects, at most one is allowed`
 				)
 			end
 			if firstSend ~= nil then

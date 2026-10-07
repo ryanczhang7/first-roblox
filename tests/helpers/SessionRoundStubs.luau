@@ -104,11 +104,15 @@ function SessionRoundStubs.standIn(defects: Defects): any
 	local initialSeed = 0
 	local P: any = defects.positions or PositionsStubs.reference
 
+	-- SLICE-006 C-2: ports is the fifth argument, options the sixth. This
+	-- stand-in is SLICE-005's and reads neither port; `SessionChannelStubs`
+	-- wraps it with the channel, the views and the port.
 	function S.new(
 		config: any,
 		seed: number,
 		roundId: string,
 		sessionId: string,
+		_ports: any,
 		options: any?
 	): any
 		initialSeed = seed

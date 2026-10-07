@@ -1141,7 +1141,7 @@ function PositionsContract.tracksFromNewAndTheDeal(S: Session, P: Positions)
 	requireModule("Contract", P)
 	requireSession("Contract", S)
 	local problems: { string } = {}
-	local fresh = S.new(ScriptedRound.config(), 108, "r", "s")
+	local fresh = S.new(ScriptedRound.config(), 108, "r", "s", ScriptedRound.PORTS)
 	if not Deep.equal(fresh.tracks, {}) then
 		table.insert(problems, `state.tracks is {Deep.show(fresh.tracks)} from new, expected \{}`)
 	end
