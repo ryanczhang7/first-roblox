@@ -842,3 +842,37 @@ the controls only - not for the AC-2 criterion, which fixes 50.
    `SLICE-005` and this story.
 6. **Gate.** `unit` (required) covers `src/server/**`; it is the gate that fails if
    this artifact breaks. No optional gate reads it, so `required_gates` stays `[]`.
+
+**RED verification (lead-po, 2026-10-07).**
+
+- The first RED dispatch was cut off by the session ending; its tests were on disk
+  without a handoff. A second dispatch reviewed them, added
+  `session_channel_controls_test.luau`, amended C-6 and wrote the handoff.
+- `lune run test` (orchestrator, tree as committed in `d750b37`):
+  `1330 passed, 14 failed`. All 14 are the story's: 10 in
+  `session_channel_test` on missing behaviour (`state.channel` nil, no
+  `LensView`/`FacilityView`, pings accepted as no-ops, AC-2 `0/150` with 0 pings and
+  0 turns); 3 in `session_round_test` and 1 in `session_positions_test` because the
+  callers now pass `options` 6th (C-2) and today's `Session` reads it 5th.
+  Baseline before RED: `1306 passed, 0 failed`.
+- **C-6 amendment reproduced independently** (not by re-running RED's stand-in):
+  `SessionContract.lifecycle()` broadcasts on the Tick at `deal1 + 100.25`, then
+  steps an ignored `SeatsAssigned` at `deal1 + 101`, which
+  `ignoresASeatsAssignedEventFromOutsideAndEveryNoOp` requires to return `{}` and
+  an unchanged state. `ceil(R - 100.25) = R - 100 ≠ R - 101 = ceil(R - 101)`, so a
+  strict comparison would broadcast there. Ignoring `secondsLeft` in the diff is
+  right; the per-second Tick carries the clock.
+- **C-10 reviewed:** `ShownRound.goalOf/pingOf/turnOf` take `(inbox, position,
+  tuning)` only; `d.state` is read only by the driver loop's phase check and by the
+  test's `observe` hook (AC-6).
+- `gates.sh --fast`: format, lint (200), typecheck (32), build PASS; `unit` FAIL
+  with the 14 above (the right failure); `harness` FAIL 7, because RED's five new
+  test files moved the format/lint counts 195 -> 200. Fixed in RED as the counters
+  rule requires: `BASE_FORMAT`/`BASE_LINT` set to 200, read from the gate's own
+  `observed 200`. GREEN adds no source file, so 200/200/32 are also the post-GREEN
+  values. The one remaining check, the uncommitted-`.luau` precondition, cleared
+  with the RED commit: `project-counters: 41 passed, 0 failed`.
+- **Flag for GATES and CI:** `session_channel_controls_test.luau` costs 61.6 s
+  locally and the whole suite went from 2m17s to 3m20s (5m08s under RED's load).
+  CI's last full gate run took 17m57s against `timeout-minutes: 45`, so there is room,
+  but read the CI timing at REVIEW.
