@@ -4,8 +4,8 @@ title: The public round view carries public facts and a progress bar of exactly 
 slug: the-public-round-view-carries-public-fac
 epic: EPIC-07
 type: feature
-status: in-progress
-phase: RED
+status: in-review
+phase: REVIEW
 branch: story/VIEW-003-the-public-round-view-carries-public-fac
 depends_on: [PROC-003, CHAN-006, SLICE-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -278,6 +278,49 @@ that Session's broadcast payload drops one of the five new keys, for example
 `progress`. The widened SessionContract key-set check **must** fail. This
 proves the SLICE-003 suite now pins the ten keys and was not just loosened.
 Owner: GATES.
+
+**Results (GATES, 2026-10-06, orchestrator).** All four ran through
+`scripts/mutate.sh <file> '<expr>' -- lune run test` against `3009bdf`, with
+the suite at `1306 passed, 0 failed` before and after. Each condition held:
+
+- **D-1** (`byTrack` added to progress): AC-1 red, naming the key, plus the C-3
+  and composition checks. `1303 passed, 3 failed`. Restored.
+- **D-2** (`dial.setting` from `requiredSetting` when not committed): AC-2 red,
+  plus the composition check. `1304 passed, 2 failed`. Restored.
+- **D-3** (clamp removed): AC-4 red, plus the composition check. `1304 passed,
+  2 failed`. Restored.
+- **D-4** (Session's broadcast loses `progress`): the widened SessionContract
+  key-set check (`session_test` AC-4) went red, and so did the AC-6 wiring test.
+  So SLICE-003's suite now pins all ten keys and was not loosened. `1304 passed,
+  2 failed`. Restored.
+
+```
+=== D-1
+=== mutate: src/server/round/RoundView.luau (1 line(s) changed by s/progress = { committed = committed, total = total }/progress = { committed = committed, total = total,
+tests/server/round_view_test.luau :: AC-1 (mechanics.md 3.2, 'steps committed, out of procedure_length'): progress has exactly the keys committed and total; total is tuni
+tests/server/round_view_test.luau :: Contract (C-3): instability, dark, machines and progress.committed come from the Procedure only in Round with a Procedure; in Resolut
+tests/server/round_view_test.luau :: Contract: public(input, now) deep-equals the Contract's composition of C-3..C-7 on every snapshot - the played scenario, the generate
+1303 passed, 3 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_server_roun
+=== D-2
+=== mutate: src/server/round/RoundView.luau (1 line(s) changed by s/local setting = if state == "unset" then nil else lastTurned(procedure, id)/local setting = if state =
+tests/server/round_view_test.luau :: AC-2: for a machine that is unset, rejected or armed dial.setting is nil or the setting last turned onto it from the actuation log (a
+tests/server/round_view_test.luau :: Contract: public(input, now) deep-equals the Contract's composition of C-3..C-7 on every snapshot - the played scenario, the generate
+1304 passed, 2 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_server_roun
+=== D-3
+=== mutate: src/server/round/RoundView.luau (1 line(s) changed by s/return math.max(0, raw)/return raw/) ===
+tests/server/round_view_test.luau :: AC-4: in Round with a Procedure secondsLeft = ceil(Procedure.deadline - now), which on every penalised snapshot is penaltySeconds bel
+tests/server/round_view_test.luau :: Contract: public(input, now) deep-equals the Contract's composition of C-3..C-7 on every snapshot - the played scenario, the generate
+1304 passed, 2 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_server_roun
+=== D-4
+=== mutate: src/server/session/Session.luau (1 line(s) changed by s/payload = view,/payload = (function(v) v.progress = nil return v end)(view),/) ===
+tests/server/round_view_test.luau :: AC-6 (C-1): every RoundView Session broadcasts - on each Lobby join, the deal, Ticks in Round, the Tick after a rejected wrong turn (
+tests/server/session_test.luau :: AC-4 (widened by VIEW-003 C-10): every RoundView is exactly { phase, secondsLeft, players, playersMin, playersMax, progress, instability
+1304 passed, 2 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against ./.claude/state/mutations/src_server_sess
+```
 
 ## Out of scope
 
@@ -786,10 +829,22 @@ Session.luau was written, and `cmp` verified it back).
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-06T22:26:42Z
+    commit: 3009bdf
+    tree:   74e6f6064ffc13d3eb8233f4ce7f99223860271d
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 195)
+    PASS         lint (0s, observed 195, floor 1)
+    PASS         typecheck (3s, observed 32)
+    PASS         unit (135s, observed 1306, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 123650)
+    PASS         harness (14s, observed 41)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -838,3 +893,18 @@ Session.luau was written, and `cmp` verified it back).
     `src/server/round/RoundView.luau`, under `src/server`. RED sets the
     `project-counters` baselines to the predicted post-GREEN values and commits
     them under `phase: RED`.
+- **RED (R-1) -> GREEN (2026-10-06, orchestrator).** The R-1 test-developer
+  resolved `claude-fable-5-1` (Fable 5.1). The fix is committed as `3009bdf`
+  under `phase: RED`. GREEN on this return is a genuine **no-op**: no
+  feature-developer was dispatched, and `git diff --stat 1f17d9c -- src` is
+  empty. Verified with `lune run test` -> `1306 passed, 0 failed` and
+  `bash scripts/gates.sh --fast` -> `All required gates passed (6 ran, 1
+  unconfigured, 0 known)`, with harness at 41 and counters at 195/195/32. The
+  freeze was snapshotted again on entering GREEN (163 paths).
+- **GATES (2026-10-06, orchestrator).** D-1..D-4 were run and their results
+  pasted under `## Deferred verifications`. Full `bash scripts/gates.sh` gave
+  `All required gates passed (6 ran, 3 unconfigured, 0 known).` Full
+  `bash scripts/selftest.sh`, run after gates and never concurrently, gave
+  `22 harness suite(s) passed.` Leaving GATES: `frozen: OK — 163 path(s)
+  unchanged since the snapshot for VIEW-003`. No source changed in GATES, and
+  the story adds no gate, so it has no `## Gate probes`.
