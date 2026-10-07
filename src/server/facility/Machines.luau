@@ -318,11 +318,25 @@ function Machines.check(
 	return report
 end
 
+-- A room's centre on the floor plane: `((column - 1) x room_pitch_studs, 0,
+-- (row - 1) x room_pitch_studs)` (`architecture.md` §9.8). Raises, naming the
+-- id, for a room not in the layout. MAP-001's blockout reads it for floors and
+-- ceilings, and `positionOf` below is this plus a quadrant offset.
+function Machines.roomCentre(layout: Layout.Layout, roomId: number, tuning: Tuning): Position
+	local room = roomById(layout, roomId)
+	if room == nil then
+		error(`Machines: room {roomId} is not in the layout`, 2)
+	end
+	local pitch = tuning.instance.room_pitch_studs
+	return { x = (room.column - 1) * pitch, y = 0, z = (room.row - 1) * pitch }
+end
+
 -- The machine's world position: its room's centre plus the slot's quadrant
 -- offset of ± `room_pitch_studs` / 4 on each axis. Reads only `room` and `slot`.
 function Machines.positionOf(layout: Layout.Layout, machine: Machine, tuning: Tuning): Position
-	local room = roomById(layout, machine.room)
-	if room == nil then
+	-- Checked here as well as in `roomCentre` so the error is still reported
+	-- at positionOf's caller, as it was before `roomCentre` existed.
+	if roomById(layout, machine.room) == nil then
 		error(`Machines: room {machine.room} is not in the layout`, 2)
 	end
 	local quadrant = QUADRANT[machine.slot]
@@ -330,10 +344,11 @@ function Machines.positionOf(layout: Layout.Layout, machine: Machine, tuning: Tu
 		error(`Machines: slot {machine.slot} is not a quadrant`, 2)
 	end
 	local pitch = tuning.instance.room_pitch_studs
+	local centre = Machines.roomCentre(layout, machine.room, tuning)
 	return {
-		x = (room.column - 1) * pitch + quadrant[1] * pitch / 4,
+		x = centre.x + quadrant[1] * pitch / 4,
 		y = 0,
-		z = (room.row - 1) * pitch + quadrant[2] * pitch / 4,
+		z = centre.z + quadrant[2] * pitch / 4,
 	}
 end
 
