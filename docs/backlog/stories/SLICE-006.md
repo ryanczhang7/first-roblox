@@ -60,6 +60,21 @@ the lens, the ping or the routing is broken, the script cannot win.
   a required setting of a machine outside `λ(p)`. This is the end-to-end form of
   `VIEW-001`'s property.
 
+## Amendments
+
+**AC-4, 2026-10-06, in PLANNED (Lead PO, PO-3).** It said: *"Given a `PresetSent`
+with a succeeding filter port, when the step returns, ..."* It now says: *"Given a
+`PresetSent` whose filter result succeeded, when the step returns, ..."*; nothing
+else in the criterion changed. **Why:** `CHAN-001` established that both Roblox
+filter calls yield, so the filter cannot be a port of the pure `Session.step`. The
+driver calls it and the event carries its answer (C-5). The old words named a
+mechanism that no longer exists; what the criterion requires (a broadcast at the
+stored position on success, a sender-only `PresetFailed` on failure) is unchanged.
+**Approved by:** Lead PO, before the story left PLANNED. It was not put to the
+user. The PO-3 note's claim that "no `## Amendments` entry is due" was wrong:
+`check-boundaries.sh` compares against the base branch whatever the phase of the
+edit, and refused this commit until this entry existed.
+
 ## Contract
 
 `src/server/session/Session.luau`, extended. Every block below was pinned by
@@ -890,7 +905,7 @@ the controls only - not for the AC-2 criterion, which fixes 50.
 3. **PO-3 - the filter is not a port; its answer rides in the event** (the
    contract's own amendment clause, settled by `CHAN-001`: both Roblox calls
    yield). AC-4's wording "a succeeding filter port" became "whose filter result
-   succeeded" - an edit made in PLANNED, so no `## Amendments` entry is due; the
+   succeeded" - an edit made in PLANNED, recorded under `## Amendments` (an entry IS due: see there); the
    criterion's meaning is unchanged.
 4. **PO-4 - a preset from a player with no stored position is declined with no
    effect.** `PresetShown` needs a position and inventing one would broadcast a
