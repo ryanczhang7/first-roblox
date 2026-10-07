@@ -9,9 +9,13 @@
 
 	Shared with SLICE-006, which extends it: the DRIVER below is generic
 	(`step`, `tick`, `walk`, `turn` and the facility readers), and the three
-	scripts at the end are compositions of it. SLICE-006 adds pings and presets
-	as further `step` calls on the same driver; nothing here needs to change for
-	that.
+	scripts at the end are compositions of it. SLICE-006 adds `ping` and
+	`preset` as further `step` calls on the same driver, and a session now
+	needs PORTS (SLICE-006 C-2): `new` passes `options.ports`, or `PORTS` - a
+	sight port that always answers true (no geometry headlessly) - as the
+	fifth argument, and the options as the sixth. The SLICE-006 script that
+	plays AS PLAYERS, reading no secret, is `ShownRound.luau`; the scripts in
+	this file still read it.
 
 	IT NEVER WRITES `state`. A player MOVES by WALKING (VIEW-004, PO-3): `walk`
 	advances every named player at most `walk_speed_studs_per_second` (read
@@ -73,6 +77,9 @@ export type Vec = { x: number, y: number, z: number }
 export type Options = {
 	tuning: any?,
 	generatorPredicate: ((any) -> string?)?,
+	-- SLICE-006: the session's ports; `PORTS` (sight always true) when absent.
+	-- Read here by `new` and never forwarded in the sixth argument.
+	ports: any?,
 }
 
 export type Driver = {
@@ -112,6 +119,14 @@ ScriptedRound.PLAYERS = { "ann", "bob", "cat", "dan", "eve", "fay" }
 ScriptedRound.ROUND_ID = "scripted-round"
 ScriptedRound.SESSION_ID = "scripted-session"
 
+-- SLICE-006 C-2: the sight port every headless script uses. A CONSTANT true:
+-- there is no geometry to cast a ray through, so range, class, darkness and
+-- commitment are the only lens and ping clauses a script exercises.
+function ScriptedRound.sightAlwaysTrue(_from: Vec, _to: Vec): boolean
+	return true
+end
+ScriptedRound.PORTS = table.freeze({ lineOfSight = ScriptedRound.sightAlwaysTrue })
+
 function ScriptedRound.config(): RoundConfig.RoundConfig
 	return RoundConfig.fromTuning(Tuning)
 end
@@ -142,12 +157,16 @@ function ScriptedRound.new(S: Session, seed: number, n: number, options: Options
 	local tuning = if options ~= nil and options.tuning ~= nil
 		then options.tuning
 		else MechanicsTuning
-	local state
+	local ports = if options ~= nil and options.ports ~= nil
+		then options.ports
+		else ScriptedRound.PORTS
+	local forwarded: any = nil
 	if options ~= nil then
-		state = S.new(config, seed, ScriptedRound.ROUND_ID, ScriptedRound.SESSION_ID, options)
-	else
-		state = S.new(config, seed, ScriptedRound.ROUND_ID, ScriptedRound.SESSION_ID)
+		forwarded = { tuning = options.tuning, generatorPredicate = options.generatorPredicate }
 	end
+	-- SLICE-006 C-2: ports fifth, required; options sixth, optional.
+	local state =
+		S.new(config, seed, ScriptedRound.ROUND_ID, ScriptedRound.SESSION_ID, ports, forwarded)
 	if typeof(state) ~= "table" or typeof(state.round) ~= "table" then
 		error(`Session.new returned {Deep.show(state)}, expected a SessionState with a round`, 0)
 	end
@@ -411,6 +430,111 @@ function ScriptedRound.turn(
 		effects = effects,
 		phaseAfter = d.state.round.phase,
 		outcomeAfter = Deep.copy(d.state.round.outcome),
+	}
+end
+
+-- A call-control stub (SLICE-006): counts its declines, nothing else.
+export type Call = { decline: () -> (), declines: number }
+
+function ScriptedRound.call(): Call
+	local call: Call = { declines = 0, decline = function() end }
+	call.decline = function()
+		call.declines += 1
+	end
+	return call
+end
+
+export type PingRecord = {
+	playerId: string,
+	target: any,
+	now: number,
+	call: Call,
+	refused: any?, -- the PingRefused payload sent to the sender, or nil
+	effects: { any },
+}
+
+-- A PingRequested at the current `now` (SLICE-006 C-4), recorded with what
+-- came back; `target` is `{ kind, target, setting? }` as `Pings.PingTarget`.
+function ScriptedRound.ping(d: Driver, playerId: string, target: any): PingRecord
+	local call = ScriptedRound.call()
+	local effects = ScriptedRound.step(d, {
+		kind = "PingRequested",
+		playerId = playerId,
+		target = Deep.copy(target),
+		call = call,
+	})
+	local refused: any = nil
+	for _, e in effects do
+		if
+			typeof(e) == "table"
+			and e.kind == "SendTo"
+			and e.payloadKind == "PingRefused"
+			and e.playerId == playerId
+		then
+			refused = e.payload
+		end
+	end
+	return {
+		playerId = playerId,
+		target = target,
+		now = d.now,
+		call = call,
+		refused = refused,
+		effects = effects,
+	}
+end
+
+export type PresetRecord = {
+	playerId: string,
+	presetId: number,
+	filtered: any,
+	now: number,
+	call: Call,
+	shown: any?, -- the PresetShown payload broadcast, or nil
+	failed: any?, -- the PresetFailed payload sent to the sender, or nil
+	effects: { any },
+}
+
+-- A PresetSent at the current `now` (SLICE-006 C-5). `filtered` is the
+-- driver's filter answer, `{ ok = true, text = ... }` or `{ ok = false }`.
+function ScriptedRound.preset(
+	d: Driver,
+	playerId: string,
+	presetId: number,
+	filtered: any
+): PresetRecord
+	local call = ScriptedRound.call()
+	local effects = ScriptedRound.step(d, {
+		kind = "PresetSent",
+		playerId = playerId,
+		presetId = presetId,
+		filtered = Deep.copy(filtered),
+		call = call,
+	})
+	local shown: any, failed: any = nil, nil
+	for _, e in effects do
+		if typeof(e) ~= "table" then
+			continue
+		end
+		if e.kind == "Broadcast" and e.payloadKind == "PresetShown" then
+			shown = e.payload
+		elseif
+			e.kind == "SendTo"
+			and e.payloadKind == "PresetFailed"
+			and e.playerId == playerId
+		then
+			failed = e.payload
+		end
+	end
+	return {
+		playerId = playerId,
+		presetId = presetId,
+		filtered = filtered,
+		now = d.now,
+		call = call,
+		shown = shown,
+		failed = failed,
+		effects = effects,
 	}
 end
 

@@ -85,7 +85,9 @@ local function standIn(defects: Defects): Contract.Session
 	local S = {}
 	local initialSeed = 0
 
-	function S.new(config: any, seed: number, roundId: string, sessionId: string): any
+	-- SLICE-006 C-2 moved `ports` into the fifth argument; SLICE-003's
+	-- stand-in reads nothing from it.
+	function S.new(config: any, seed: number, roundId: string, sessionId: string, _ports: any): any
 		initialSeed = seed
 		return { round = PhaseMachine.initial(config, seed, roundId, sessionId), assignment = nil }
 	end
@@ -573,11 +575,11 @@ return {
 	     AC-2's controls.
 	     ================================================================ ]]
 
-	["control (AC-2, the story's): a session that ALSO broadcasts the list of all seat views fails exactly the own-view check (a Broadcast carries a seat view, by kind and by shape) and the order check (two Broadcasts)"] = function()
+	["control (AC-2, the story's): a session that ALSO broadcasts the list of all seat views fails exactly the own-view check (a Broadcast carries a seat view, by kind and by shape); since SLICE-006 C-3 narrowed the order check to RoundView broadcasts, the second Broadcast no longer fires it - that story's own order check refuses the unknown kind"] = function()
 		expectFires(
 			"broadcastsAllSeatViews",
 			standIn({ broadcastsAllSeatViews = true }),
-			{ OWN_VIEW, ORDER }
+			{ OWN_VIEW }
 		)
 	end,
 

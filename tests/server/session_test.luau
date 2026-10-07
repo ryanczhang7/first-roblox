@@ -44,7 +44,7 @@ end
 return {
 	--[[ The Contract's shape and the round's provenance. ]]
 
-	["Contract: Session.new(config, seed, roundId, sessionId) holds exactly PhaseMachine.initial on the same arguments, with assignment nil"] = function()
+	["Contract: Session.new(config, seed, roundId, sessionId, ports) holds exactly PhaseMachine.initial on the first four arguments, with assignment nil (ports fifth since SLICE-006 C-2)"] = function()
 		Contract.newHoldsPhaseMachineInitialWithNoAssignment(Session())
 	end,
 

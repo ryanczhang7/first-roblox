@@ -475,8 +475,8 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=195    # stylua  over src tests lune   (195 = 32 src + 163 tests/lune: VIEW-003's 4 tests + predicted 1 src)
-BASE_LINT=195      # selene  over src tests lune
+BASE_FORMAT=200    # stylua  over src tests lune   (200 = 32 src + 168 tests/lune: SLICE-006 RED adds 5 test files and GREEN no source; read from the gate evidence "observed 200")
+BASE_LINT=200      # selene  over src tests lune
 BASE_TYPECHECK=32  # analyze over src (NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView, predicted)
 NARROW_FORMAT=32   # stylua  over src alone
 NARROW_LINT=32     # selene  over src alone

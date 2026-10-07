@@ -65,6 +65,10 @@ SessionRoundContract.PLAYER_COUNTS = { 4, 5, 6 }
 -- handful of seeds at each n is enough to show they do not depend on one layout.
 SessionRoundContract.LOSS_SEEDS = { 1, 2, 3 }
 
+-- SLICE-006 C-2: the sight port every plan and script here runs with. A
+-- constant true - headlessly there is no geometry to cast a ray through.
+SessionRoundContract.PORTS = ScriptedRound.PORTS
+
 SessionRoundContract.PLACED_KEYS = { "kind", "playerId", "position" }
 SessionRoundContract.SEND_TO_KEYS = { "kind", "payload", "payloadKind", "playerId" }
 SessionRoundContract.VEC_KEYS = { "x", "y", "z" }
@@ -560,25 +564,16 @@ function SessionRoundContract.run(
 	local tuning = SessionRoundContract.tuning()
 	local predicate = if options ~= nil then options.generatorPredicate else nil
 
-	local okNew, state
-	if options ~= nil then
-		okNew, state = pcall(
-			S.new,
-			config,
-			SessionRoundContract.SEED,
-			SessionRoundContract.ROUND_ID,
-			SessionRoundContract.SESSION_ID,
-			options
-		)
-	else
-		okNew, state = pcall(
-			S.new,
-			config,
-			SessionRoundContract.SEED,
-			SessionRoundContract.ROUND_ID,
-			SessionRoundContract.SESSION_ID
-		)
-	end
+	-- SLICE-006 C-2: ports fifth (required), options sixth (nil when none).
+	local okNew, state = pcall(
+		S.new,
+		config,
+		SessionRoundContract.SEED,
+		SessionRoundContract.ROUND_ID,
+		SessionRoundContract.SESSION_ID,
+		SessionRoundContract.PORTS,
+		options
+	)
 	if not okNew then
 		Contract.fail(`{criterion}: Session.new RAISED: {tostring(state)}`)
 	end
@@ -947,9 +942,9 @@ end
 
 --[[
 	C-1: `new` holds no facility, no procedure, `positions = {}` and (VIEW-004)
-	`tracks = {}`; it also accepts an optional fifth `options` argument
-	carrying `generatorPredicate` without raising, and still holds
-	PhaseMachine.initial's round.
+	`tracks = {}`; it also accepts an optional SIXTH `options` argument
+	carrying `generatorPredicate` without raising (fifth until SLICE-006 C-2
+	put the ports there), and still holds PhaseMachine.initial's round.
 ]]
 function SessionRoundContract.newHoldsNoFacilityNoProcedureEmptyPositionsAndAcceptsOptions(
 	S: Session
@@ -962,7 +957,8 @@ function SessionRoundContract.newHoldsNoFacilityNoProcedureEmptyPositionsAndAcce
 		config,
 		SessionRoundContract.SEED,
 		SessionRoundContract.ROUND_ID,
-		SessionRoundContract.SESSION_ID
+		SessionRoundContract.SESSION_ID,
+		SessionRoundContract.PORTS
 	)
 	if not ok then
 		Contract.fail(`Contract: Session.new RAISED: {tostring(state)}`)
@@ -991,20 +987,21 @@ function SessionRoundContract.newHoldsNoFacilityNoProcedureEmptyPositionsAndAcce
 			`state.tracks is {Deep.show(state.tracks)} from new, expected \{} (VIEW-004)`
 		)
 	end
-	local ok5, state5 = pcall(
+	local ok6, state6 = pcall(
 		S.new,
 		config,
 		SessionRoundContract.SEED,
 		SessionRoundContract.ROUND_ID,
 		SessionRoundContract.SESSION_ID,
+		SessionRoundContract.PORTS,
 		{ generatorPredicate = SessionRoundContract.refuseAll }
 	)
-	if not ok5 then
+	if not ok6 then
 		table.insert(
 			problems,
-			`Session.new with a fifth options argument RAISED: {tostring(state5)}`
+			`Session.new with a sixth options argument RAISED: {tostring(state6)}`
 		)
-	elseif typeof(state5) ~= "table" or not Deep.equal(state5.round, state.round) then
+	elseif typeof(state6) ~= "table" or not Deep.equal(state6.round, state.round) then
 		table.insert(problems, "Session.new with options returned a different round than without")
 	end
 	fewProblems(
@@ -1389,11 +1386,23 @@ function SessionRoundContract.handlesATurnAgainstTheStoredPositionsAndRepliesToT
 			)
 		end
 		local replies = SessionRoundContract.turnResultsOf(step.effects)
-		local allSends = ofKind(step.effects, "SendTo")
-		if #allSends ~= 1 or #replies ~= 1 then
+		-- NARROWED by SLICE-006 C-3: a turn that commits may also change a
+		-- lens or a turn cue, and those ride as their own SendTos (C-6).
+		-- Every other kind of SendTo on a turn is still a problem.
+		local otherSends = 0
+		for _, e in ofKind(step.effects, "SendTo") do
+			if
+				e.payloadKind ~= "TurnResult"
+				and e.payloadKind ~= "LensView"
+				and e.payloadKind ~= "TurnCues"
+			then
+				otherSends += 1
+			end
+		end
+		if otherSends ~= 0 or #replies ~= 1 then
 			table.insert(
 				problems,
-				`"{step.label}": {#allSends} SendTo effect(s) ({#replies} TurnResult), expected exactly one TurnResult to the caller {t.playerId}; effects were {Deep.show(
+				`"{step.label}": {#replies} TurnResult SendTo(s) and {otherSends} SendTo(s) of a kind that is neither TurnResult, LensView nor TurnCues, expected exactly one TurnResult to the caller {t.playerId}; effects were {Deep.show(
 					Deep.kinds(step.effects)
 				)}`
 			)
@@ -1426,14 +1435,25 @@ function SessionRoundContract.handlesATurnAgainstTheStoredPositionsAndRepliesToT
 		if #SessionRoundContract.placedOf(step.effects) > 0 then
 			table.insert(problems, `"{step.label}": a Placed effect on a turn`)
 		end
+		-- NARROWED by SLICE-006 C-3 (C-6): a RoundView may also ride on a turn
+		-- whose phase did not change when the view changed - which a turn
+		-- does exactly when it was EVALUATED (committed, armed, rejected: the
+		-- dial, the progress bar or the live lamp moves). A REFUSED turn
+		-- changes nothing, so it still broadcasts nothing.
 		local broadcasts = ofKind(step.effects, "Broadcast")
+		local evaluated = result.kind == "committed"
+			or result.kind == "armed"
+			or result.kind == "rejected"
 		local want = if step.meta.wantsRoundView then 1 else 0
-		if #broadcasts ~= want then
+		local tolerated = if step.meta.wantsRoundView or not evaluated then want else 1
+		if #broadcasts < want or #broadcasts > tolerated then
 			table.insert(
 				problems,
-				`"{step.label}": {#broadcasts} Broadcast(s) on a turn whose phase {if want == 1
+				`"{step.label}": {#broadcasts} Broadcast(s) on a {result.kind} turn whose phase {if step.meta.wantsRoundView
 					then "changed"
-					else "did not change"}, expected {want}`
+					else "did not change"}, expected {if want == tolerated
+					then tostring(want)
+					else `{want} or {tolerated}`}`
 			)
 		end
 	end
@@ -1524,20 +1544,31 @@ function SessionRoundContract.mergesAcceptedSamplesAndEmitsOnlyResyncPlacements(
 				end
 			end
 		end
+		-- NARROWED by SLICE-006 C-3: a sample may also emit the LensView
+		-- sends and the RoundView broadcast of that story's C-6 (a lens
+		-- changes when its holder walks), and nothing else.
 		for i, effect in step.effects do
-			if typeof(effect) ~= "table" or effect.kind ~= "Placed" then
+			local allowed = typeof(effect) == "table"
+				and (
+					effect.kind == "Placed"
+					or (effect.kind == "SendTo" and effect.payloadKind == "LensView")
+					or (effect.kind == "Broadcast" and effect.payloadKind == "RoundView")
+				)
+			if not allowed then
 				table.insert(
 					problems,
 					`"{step.label}": effect #{i} is {Deep.show(
-						if typeof(effect) == "table" then effect.kind else effect
-					)}; the only effect a PositionsSampled may emit is Placed`
+						if typeof(effect) == "table"
+							then `{effect.kind}/{tostring(effect.payloadKind)}`
+							else effect
+					)}; the only effects a PositionsSampled may emit are Placed, SendTo/LensView and Broadcast/RoundView`
 				)
 			end
 		end
-		if #step.effects ~= 0 then
+		if #SessionRoundContract.placedOf(step.effects) ~= 0 then
 			table.insert(
 				problems,
-				`"{step.label}": {Deep.show(Deep.kinds(step.effects))} emitted on a PositionsSampled whose every sample was plausible, expected \{} (no resync is due)`
+				`"{step.label}": {Deep.show(Deep.kinds(step.effects))} emitted on a PositionsSampled whose every sample was plausible, expected no Placed (no resync is due)`
 			)
 		end
 		for _, field in { "round", "assignment", "facility", "procedure" } do
@@ -1665,30 +1696,47 @@ end
      C-4: the order within a step.
      --------------------------------------------------------------------- ]]
 
+--[[
+	SLICE-005 C-4's order, WIDENED by SLICE-006 C-9 to the full list: the
+	machine's pass-through, Placed, SeatView, the FacilityView broadcast, the
+	caller's reply (TurnResult, PingRefused or PresetFailed), the PresetShown
+	broadcast, the private views (LensView, TurnCues), and at most one
+	RoundView broadcast last. A Broadcast is labelled by its payloadKind, as
+	a SendTo is, so "last and at most one" reads the RoundView alone.
+]]
 local RANK: { [string]: number } = {
 	Emit = 1,
 	PromptRematch = 1,
 	ComputeTrace = 1,
 	Placed = 2,
 	SeatView = 3,
-	TurnResult = 4,
-	Broadcast = 5,
+	FacilityView = 4,
+	TurnResult = 5,
+	PingRefused = 5,
+	PresetFailed = 5,
+	PresetShown = 6,
+	LensView = 7,
+	TurnCues = 7,
+	RoundView = 8,
 }
+SessionRoundContract.RANK = RANK
 
 local function rankOf(effect: any): (number?, string)
 	if typeof(effect) ~= "table" then
 		return nil, "<not a table>"
 	end
-	local label = if effect.kind == "SendTo"
+	local label = if effect.kind == "SendTo" or effect.kind == "Broadcast"
 		then tostring(effect.payloadKind)
 		else tostring(effect.kind)
 	return RANK[label], label
 end
+SessionRoundContract.rankOf = rankOf
 
 --[[
 	On every step of both plans the effects are ordered pass-through, Placed
-	(seat order), SendTo/SeatView, SendTo/TurnResult, at most one Broadcast
-	last - and every effect is one of those kinds.
+	(seat order), SendTo/SeatView, then SLICE-006's kinds in C-9's order,
+	SendTo/TurnResult among them, at most one Broadcast/RoundView last - and
+	every effect is one of those kinds.
 ]]
 function SessionRoundContract.ordersPassThroughPlacedSeatViewsTurnResultThenRoundViewLast(
 	S: Session
@@ -1723,16 +1771,16 @@ function SessionRoundContract.ordersPassThroughPlacedSeatViewsTurnResultThenRoun
 						problems,
 						`"{step.label}": {label} at #{i} comes after a later-ordered effect ({Deep.show(
 							labels
-						)}); the order is pass-through, Placed, SeatView, TurnResult, RoundView`
+						)}); the order is pass-through, Placed, SeatView, FacilityView, the reply, PresetShown, LensView/TurnCues, RoundView`
 					)
 				end
 				last = math.max(last, rank)
-				if label == "Broadcast" then
+				if label == "RoundView" then
 					broadcasts += 1
 					if i ~= #step.effects then
 						table.insert(
 							problems,
-							`"{step.label}": a Broadcast at #{i} of {#step.effects}; it must be last`
+							`"{step.label}": a Broadcast/RoundView at #{i} of {#step.effects}; it must be last`
 						)
 					end
 				elseif label == "Placed" then
@@ -1742,7 +1790,7 @@ function SessionRoundContract.ordersPassThroughPlacedSeatViewsTurnResultThenRoun
 			if broadcasts > 1 then
 				table.insert(
 					problems,
-					`"{step.label}": {broadcasts} Broadcasts, at most one is allowed`
+					`"{step.label}": {broadcasts} Broadcast/RoundViews, at most one is allowed`
 				)
 			end
 			if #placedOrder > 0 then
@@ -1770,7 +1818,7 @@ function SessionRoundContract.ordersPassThroughPlacedSeatViewsTurnResultThenRoun
 	end
 	fewProblems(
 		"Contract",
-		"effects are ordered pass-through, Placed in seat order, SeatView, TurnResult, then at most one RoundView last",
+		"effects are ordered pass-through, Placed in seat order, SeatView, FacilityView, the reply, PresetShown, LensView/TurnCues, then at most one RoundView last",
 		problems
 	)
 end
@@ -1915,7 +1963,7 @@ function SessionRoundContract.winsEveryScriptedRoundInTheStepThatTakesTheComplet
 				table.insert(labels, label)
 			end
 			local n_ = #labels
-			if n_ < 2 or labels[n_] ~= "Broadcast" or labels[n_ - 1] ~= "TurnResult" then
+			if n_ < 2 or labels[n_] ~= "RoundView" or labels[n_ - 1] ~= "TurnResult" then
 				ok = false
 				table.insert(
 					problems,
