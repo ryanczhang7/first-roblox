@@ -4,8 +4,8 @@ title: The session carries pings, presets and every view, and a scripted round i
 slug: the-session-carries-pings-presets-and-ev
 epic: EPIC-08
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/SLICE-006-the-session-carries-pings-presets-and-ev
 depends_on: [SLICE-005, CHAN-004, CHAN-006, VIEW-001, VIEW-002, VIEW-003]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -1034,3 +1034,13 @@ the controls only - not for the AC-2 criterion, which fixes 50.
   to a return to RED.
 
 - GATES freeze: `frozen: OK — 190 path(s) unchanged since the snapshot for SLICE-006`; `git diff --stat src` empty after all three mutations (each restore verified by `mutate.sh`).
+- **REVIEW -> DONE (2026-10-07).** PR https://github.com/ryanczhang7/first-roblox/pull/64
+  merged as `91343a9` at 2026-10-07T16:10:14Z. CI timings from the PR's runs:
+  - `gates` (https://github.com/ryanczhang7/first-roblox/actions/runs/37643454870):
+    7m07s against `timeout-minutes: 45`. Within it, the Harness self-test took
+    2m26s and Run gates took 4m20s; `unit` was 235 s with `1344 passed, 0 failed`.
+  - `boundaries` (https://github.com/ryanczhang7/first-roblox/actions/runs/37643454818):
+    13 s.
+
+  No step is near a limit. Still open, not blocking: no test pings into a dark
+  room (`roomLit` only feeds the trace's ping log; EPIC-09).
