@@ -5,7 +5,7 @@ slug: design-tokens-exist-in-source-and-meet-t
 epic: EPIC-03
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/THEME-001-design-tokens-exist-in-source-and-meet-t
 depends_on: [TUNE-001, CHAN-002]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -227,6 +227,7 @@ from an upstream story or spike (as noted above), amend it and re-run
 - PLANNED - `lead-po` - `claude-opus-5-5` (Opus 5.5, from the session's own model
   identification; the /plan-product dispatch reported no override). 2026-09-30.
 - RED - `test-developer` - `claude-fable-5-1` (explicit `model: fable`; agent reported no override; resumed once for the AC-4 amendment). 2026-10-08.
+- GREEN - `feature-developer` - `claude-opus-5-5` (explicit `model: opus`; agent reported no override). 2026-10-08.
 
 ## Test plan
 
@@ -582,6 +583,94 @@ gates that will judge them. Timings are local; no test here owns a timeout.
 - `ColourRef` keeps its Machado matrices in `ColourRef.MACHADO`; the shipped
   module's must agree to 1e-6 ΔE over the shipped tokens, which it will if
   copied from the same published table.
+
+### GREEN notes
+
+**Feature Developer, 2026-10-08. Agent definition `model: opus`; ran as Opus
+5.5 (`claude-opus-5-5`), no override reported in the dispatch.** No test, no
+design document and no AC was touched.
+
+**Files written (exactly three, all new, `--!strict`):**
+
+- `src/client/Theme.luau` - `color` (21), `size` (10, `{ x, y }`), `type` (5),
+  `icons` (`tags` 6, `patterns` 6, `system` 16, `presets` 10 keyed by
+  `Presets.ALL[i].key`), `audio` (14, two-cue rows split), `detents(n)`
+  (raises outside 2..6 and for a non-integer). Every value is `tokens.md`'s,
+  by token name; every level frozen. It requires nothing (C-8 holds
+  trivially): the preset keys are written as data rather than read from
+  `Presets`, and `theme_test`'s AC-5 case compares them with `Presets.ALL`.
+- `src/client/models/ScreenScale.luau` - `uiScale`, `breakpoint`, layout.md §2.
+- `src/client/models/ColourMath.luau` - `fromHex`, `toHex`, `luminance`,
+  `contrast`, `composite`, `chroma`, `toLab`, `deltaE`, `simulate`, plus
+  `toLinear`, `fromLinear` and `MACHADO` (unpinned extras). Written from C-6/C-7;
+  cites Machado, Oliveira & Fernandes, IEEE TVCG 15(6):1291-1298, 2009,
+  severity-1.0 rows, applied to linear RGB, clamped, D65 Lab.
+
+**Tests** (`lune run build/one_test.luau -- tests/client/theme_test
+tests/client/colour_math_test tests/client/client_requires_test
+tests/client/theme_controls_test`):
+
+    60 passed, 0 failed
+    (theme_test 15/15, colour_math_test 12/12, client_requires_test 2/2, theme_controls_test 31/31)
+
+**`bash scripts/gates.sh --fast`** (local, after `stylua src/client`;
+`stylua --check src/client` is clean):
+
+    1521 passed, 0 failed
+    project-counters: 40 passed, 1 failed
+    PASS         format (2s, observed 228)
+    PASS         lint (0s, observed 228, floor 1)
+    PASS         typecheck (3s, observed 40)
+    PASS         unit (402s, observed 1521, floor 507)
+    UNCONFIGURED coverage
+    PASS         build (0s, observed 146888)
+    FAIL         harness (26s, exit 1) -> .claude/state/gate-logs/harness.log
+
+The one harness failure is the stray-file precondition, as expected until the
+GREEN commit:
+
+    FAIL the working tree carries no stray .luau files, so the baselines mean what they say
+         actual:   ?? src/client/Theme.luau
+         ?? src/client/models/ColourMath.luau
+         ?? src/client/models/ScreenScale.luau
+
+Every counter case passed, so the counts read the predicted 228 / 229 / 40 /
+41 (format and lint 228, typecheck 40 shown above). Unit went from RED's
+1493 / 28 to 1521 / 0: the 28 client cases turned green, nothing else moved.
+
+**Control confirmation: shipped module vs the value RED recorded through
+`ColourRef`.** "Shipped" values are the `[measured, shipped]` lines
+`colour_math_test.luau` prints, plus a gitignored scratch script
+(`build/theme001_controls.luau`) that runs the shipped `ColourMath`, `Theme`
+and `ScreenScale` directly for the rows that file does not print.
+
+| Control | RED (reference) | Shipped | Agree |
+|---|---|---|---|
+| worst composite (C-6) | `#2B2E32` | `#2B2E32` | yes |
+| `mutedDarkened` `#6A727E` (AC-2, floor 4.5) | 2.82 | 2.82 | yes |
+| shipped `color.text.muted` | 7.47 | 7.47 | yes |
+| worst floor-3.0 item, vermillion | 4.17 | 4.17 | yes |
+| `transparencyRaised` 0.2 | refused at > 0.12; pairings still clear | Theme ships 0.12 (AC-2 green); 0.2 composite `#3E4145` | n/a (Theme-side) |
+| `strokeTinted` chroma (AC-4) | 0.800 | 0.800 | yes |
+| §1.1 max chroma | 0.133 (`signal.lens`) | 0.133 (`signal.lens`) | yes |
+| `playerTwoIsFive` seats 1-6, all four modes | 0.00 ×4 | 0.00 ×4 | yes |
+| `playerTwoIsFive` seats 2/3 protan / deutan | 20.71 / 14.06 | 20.71 / 14.06 | yes |
+| shipped PT-T7 minima | 34.93 / 20.71 / 13.46 / 11.18 / 28.64 / 16.82 | 34.93 / 20.71 / 13.46 / 11.18 / 28.64 / 16.82 | yes |
+| red under deutan / protan (C-7 worked example) | `#A39000` / `#6D5F00` | `#A39000` / `#6D5F00` | yes |
+| `targetShrunk` 48 × 0.9 / shipped targets × 0.9 | 43.20 | 43.2; shipped 50.4 / 64.8 / 86.4 | yes |
+| `captionShrunk` 17 × 0.9 / shipped caption × 0.9 | 15.30 | 15.3; shipped 16.2 | yes |
+| `scaleUnclamped` at the AC-3 sizes and (300, 800) | 0.67, 0.87, 1.79, 2.56, 0.77 | same unclamped; shipped clamps to 0.9, 0.9, 1.3, 1.3, 0.9 | yes |
+| `detentsAcceptSeven` | 7 and 8 returned | shipped raises for 7 and 8 | yes |
+| `contrastConstant21` (D-1 shape) | fires AC-1 only | not run - D-1 is GATES' | - |
+
+No divergence between reference and shipped module. One benign note, not a
+divergence: `tokens.md` §1.4 *prints* 13.6, 4.39 and 4.15 for text.primary,
+disabled/stroke and vermillion; the shipped module and the reference both
+measure 13.70, 4.41 and 4.17. C-6 already says those printed ratios are
+informative and rounded and the tests read only the floors; the gap is likely
+a different composite rounding in whatever produced the table. Every floor is
+met with room. Raise it with the Lead Designer if the table should be
+reprinted; nothing here depends on it.
 
 ## Regressions
 
