@@ -179,28 +179,32 @@ and both counts match RED's prediction table exactly.**
    `s/kindEvents\[kind\]:FireClient(player, payload)/kindEvents[kind]:FireAllClients(payload)/`
    on `Transport.luau:166`, run over `tests/net/transport_test`. Predicted 1 red; observed:
 
-       FAIL  tests/net/transport_test :: AC-3: sendTo for each of the six per-player kinds calls FireClient exactly once on that kind's own event ...
+   ```
+    FAIL  tests/net/transport_test :: AC-3: sendTo for each of the six per-player kinds calls FireClient exactly once on that kind's own event ...
              D:\first-roblox\tests\helpers\TransportContract:420: sendTo("p1", "SeatView") called FireAllClients (1 call(s) across every event) for a per-player payload (AC-3); a secret must never be broadcast
-       20 passed, 1 failed
-       === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_ReplicatedStorage_Net_Transport.luau.20261008T202453Z.1139635.bak) ===
+    20 passed, 1 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_ReplicatedStorage_Net_Transport.luau.20261008T202453Z.1139635.bak) ===
          166: 		kindEvents[kind]:FireClient(player, payload)
+   ```
 
 2. Guard bypassed in `bind`, keeping a `CallControl` (the 4-red form). Mutation
    replaces `Transport.luau:136` with
    `local h = handlers[definition.name]; local guarded = function(id, a) h(id, a, { decline = function() end }); return nil end`.
    Predicted 4 red; observed:
 
-       FAIL  tests/net/transport_test :: AC-1: a seated player's { token = "four" } on "Ping", and a non-table payload on "SendPreset", return a Rejection with reason "shape" ...
+   ```
+    FAIL  tests/net/transport_test :: AC-1: a seated player's { token = "four" } on "Ping", and a non-table payload on "SendPreset", return a Rejection with reason "shape" ...
              D:\first-roblox\tests\helpers\TransportContract:165: a seated player sending { token = "four" } on "Ping": expected a Rejection with reason "shape", got nil nil
-       FAIL  tests/net/transport_test :: AC-5 / C-3: a well-formed call from a player object idOf maps to nil returns a Rejection with reason "identity" ...
+    FAIL  tests/net/transport_test :: AC-5 / C-3: a well-formed call from a player object idOf maps to nil returns a Rejection with reason "identity" ...
              D:\first-roblox\tests\helpers\TransportContract:165: a well-formed call from a player object idOf cannot map: expected a Rejection with reason "identity", got nil nil
-       FAIL  tests/net/transport_test :: C-1: a handler that calls call.decline() makes the connected function return a Rejection with reason "declined" ...
+    FAIL  tests/net/transport_test :: C-1: a handler that calls call.decline() makes the connected function return a Rejection with reason "declined" ...
              D:\first-roblox\tests\helpers\TransportContract:165: a seated player whose "Ping" handler calls call.decline(): expected a Rejection with reason "declined", got nil nil
-       FAIL  tests/net/transport_test :: C-3: across a seated and an unseated mapped player, idOf is called once per call ...
+    FAIL  tests/net/transport_test :: C-3: across a seated and an unseated mapped player, idOf is called once per call ...
              D:\first-roblox\tests\helpers\TransportContract:165: a well-formed call from a mapped but unseated player: expected a Rejection with reason "identity", got nil nil
-       17 passed, 4 failed
-       === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_ReplicatedStorage_Net_Transport.luau.20261008T202500Z.1139733.bak) ===
+    17 passed, 4 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_ReplicatedStorage_Net_Transport.luau.20261008T202500Z.1139733.bak) ===
          136: 		local guarded = Wrapper.guard(definition, context, handlers[definition.name])
+   ```
 
 These two runs are also the orchestrator's check of RED's mutation table
 (`/complete-story`: "a mutation table in the handoff is a claim until you run
