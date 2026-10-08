@@ -70,7 +70,33 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # Read the number out of each command's own evidence line; do not count files
 # yourself, for the same reason the suite does not.
 #
-# LAST MEASURED: SLICE-008 (RED), which adds THREE test files
+# LAST MEASURED: SLICE-002 (RED), which adds FIVE test files
+# (tests/helpers/TransportContract.luau, tests/helpers/TransportStubs.luau,
+# tests/net/transport_test.luau, tests/net/transport_controls_test.luau,
+# tests/net/net_requires_test.luau) and no probe under src. GREEN adds TWO
+# source files, src/ReplicatedStorage/Net/Transport.luau and
+# src/ReplicatedStorage/Net/ClientTransport.luau (story `## Contract`,
+# "Modules"; the raw_remote_guard_test edit is to an existing test file).
+# SLICE-008's values (210/210/35, narrow 35/35/9) were confirmed on the tree
+# before this story's files were added: `bash scripts/gates.sh --fast` on
+# SLICE-008's DONE tree observed 210/210/35. Read on RED's uncommitted tree
+# with this story's five test files on disk and the baselines still at
+# SLICE-008's: `expected count: 210 / actual count: 215` for format and lint,
+# `211 / 216` for the untracked-file cases, typecheck and the narrow cases
+# unchanged (no src file yet), which is the measurement that src did not
+# move in RED. PREDICTED post-GREEN, which is what is pinned below:
+# 215 + 2 source = 217/217, typecheck 35 + 2 = 37, narrow 35 + 2 = 37/37,
+# NARROW_TYPECHECK unchanged at 9 (the two files are under
+# src/ReplicatedStorage/Net, not Shared). THE BASELINES BELOW ARE SET TO THOSE
+# PREDICTED GREEN VALUES NOW, IN RED, as SLICE-008 and the rest did and for
+# the same reason: check-boundaries refuses a .claude/tests/** change from any
+# other phase (TUNE-001 R-1). Expected under `gates.sh --fast` on RED's tree:
+# `expected count: 217 / actual count: 215` for format and lint, `218 / 216`
+# for the untracked-file cases, `37 / 35` for typecheck and the narrow src
+# cases, and the "no stray .luau files" precondition red until the RED
+# commit. GREEN confirms, never edits; a third source file is a counter
+# failure GREEN cannot fix.
+# BEFORE THAT: SLICE-008 (RED), which adds THREE test files
 # (tests/helpers/LayerRequires.luau, tests/shared/layer_requires_test.luau,
 # tests/shared/layer_requires_controls_test.luau) and ONE probe under src,
 # src/client/__probe_cross_layer.luau (AC-3's committed negative control;
@@ -531,11 +557,11 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=210    # stylua  over src tests lune   (210 = 35 src + 175 tests/lune: SLICE-008 RED adds 3 test files and 1 probe under src/client, GREEN moves files and adds none, predicted; MAP-001 read "observed 206")
-BASE_LINT=210      # selene  over src tests lune
-BASE_TYPECHECK=35  # analyze over src (+ SLICE-008's src/client/__probe_cross_layer.luau, predicted; + MAP-001's facility/Blockout and facility/BlockoutBuilder; NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView)
-NARROW_FORMAT=35   # stylua  over src alone (SLICE-008 predicted: + the client probe)
-NARROW_LINT=35     # selene  over src alone (SLICE-008 predicted: + the client probe)
+BASE_FORMAT=217    # stylua  over src tests lune   (217 = 37 src + 180 tests/lune: SLICE-002 RED adds 5 test files, GREEN adds Net/Transport and Net/ClientTransport, predicted; SLICE-008 read "observed 210")
+BASE_LINT=217      # selene  over src tests lune
+BASE_TYPECHECK=37  # analyze over src (+ SLICE-002's Net/Transport and Net/ClientTransport, predicted; + SLICE-008's src/client/__probe_cross_layer.luau; + MAP-001's facility/Blockout and facility/BlockoutBuilder; NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView)
+NARROW_FORMAT=37   # stylua  over src alone (SLICE-002 predicted: + the two Net modules)
+NARROW_LINT=37     # selene  over src alone (SLICE-002 predicted: + the two Net modules)
 NARROW_TYPECHECK=9 # analyze over src/ReplicatedStorage/Shared alone (the same nine files src/shared held; SLICE-008 moves the directory and adds nothing to it; moved by TUNE-001's MechanicsTuning; + CHAN-002's channel/Presets)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`
