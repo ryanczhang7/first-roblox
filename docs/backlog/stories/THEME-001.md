@@ -4,8 +4,8 @@ title: Design tokens exist in source and meet the accessibility floor
 slug: design-tokens-exist-in-source-and-meet-t
 epic: EPIC-03
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/THEME-001-design-tokens-exist-in-source-and-meet-t
 depends_on: [TUNE-001, CHAN-002]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -186,6 +186,32 @@ pass (wrongly), which shows the control depends on the function. The real
 suite, restored, must reject the control again. RED cannot run this. Owner:
 GATES.
 
+**Result (GATES, 2026-10-08, Lead PO, run before `gates.sh`). Held, and it
+matches RED's prediction exactly.** Mutation
+`s|return (lighter + 0.05) / (darker + 0.05)|return 21|` on
+`ColourMath.luau:127`, run over `tests/client/theme_test` and
+`tests/client/colour_math_test`. Predicted: theme_test's AC-2 stays green,
+because a constant 21 clears every floor, so the AC-2 control `#6A727E` now
+passes wrongly; colour_math_test goes red on exactly the two D-1 cases plus
+"agreement". Observed:
+
+```
+FAIL  tests/client/colour_math_test :: D-1, control (AC-2) through the shipped module: #6A727E over the worst composite reads 2.82, below the 4.5 floor, while the shipped color.text.muted reads 7.47
+      D:\first-roblox\tests\client\colour_math_test:303: the control reads 21.00, expected 2.82
+FAIL  tests/client/colour_math_test :: D-1: contrast(white, black) is 21, contrast(white, white) is 1, and the ratio is the same in either order
+      D:\first-roblox\tests\client\colour_math_test:67: white on white: got 21, expected 1 ± 1e-09
+FAIL  tests/client/colour_math_test :: agreement: over the player hues, the scrim and the two PT-T7 references, the shipped simulate/deltaE, contrast and chroma agree with the test-side reference to 1e-6
+      D:\first-roblox\tests\client\colour_math_test:288: 81 disagreement(s):
+24 passed, 3 failed
+=== mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_client_models_ColourMath.luau.20261008T225827Z.1443620.bak) ===
+  127: 	return (lighter + 0.05) / (darker + 0.05)
+```
+
+Restored, the suite rejects the control again. GREEN's `--fast` on this exact
+source read `unit … observed 1521` with 0 failed, and the full `gates.sh`
+below runs it once more. This run is also the orchestrator's check of RED's
+mutation table: 3 predicted, 3 observed.
+
 ## Out of scope
 
 - Any component model or view. Each belongs to its story.
@@ -228,6 +254,7 @@ from an upstream story or spike (as noted above), amend it and re-run
   identification; the /plan-product dispatch reported no override). 2026-09-30.
 - RED - `test-developer` - `claude-fable-5-1` (explicit `model: fable`; agent reported no override; resumed once for the AC-4 amendment). 2026-10-08.
 - GREEN - `feature-developer` - `claude-opus-5-5` (explicit `model: opus`; agent reported no override). 2026-10-08.
+- GATES - `lead-po` (orchestrator; no dispatch, no gate failed) - `claude-opus-5-5`. 2026-10-08.
 
 ## Test plan
 
@@ -695,10 +722,22 @@ reprinted; nothing here depends on it.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-08T23:32:56Z
+    commit: 65f7444 (working tree had uncommitted changes)
+    tree:   32cd152163185e6c64b31369e429672ac43df62d
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 228)
+    PASS         lint (2s, observed 228, floor 1)
+    PASS         typecheck (4s, observed 40)
+    PASS         unit (436s, observed 1521, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 146888)
+    PASS         harness (27s, observed 41)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -709,6 +748,45 @@ reprinted; nothing here depends on it.
        * what was broken, and where
        * the gate output proving it failed
        * confirmation the probe was reverted -->
+
+**`discovery | client` (run by `doctor.sh`; not a gate, probed anyway).**
+Added at GATES once `lune run test -- --list | grep -c tests/client/` read
+`60`. `doctor.sh` with the line in place, followed by the same command aimed
+at a directory that holds no tests:
+
+```
+Test discovery
+  ok       tests        discovered
+  ok       shared       discovered
+  ok       server       discovered
+  ok       net          discovered
+  ok       client       discovered
+  ok       sourcemap    discovered
+
+--- probe: same command, a directory with no tests
+exit 1
+```
+
+Nothing to revert: the probe was a separate command, and `project.conf` was
+not changed for it.
+
+**`covers | unit | src/client/**`** (added at PLANNED). It changes what `unit`
+is held to, not its command or evidence. Its effect is visible in the GREEN
+`--fast` run: `changes: 3 changed source path(s), all exercised by a required gate`.
+
+**`harness`: counter baselines moved** (RED, to 228/229/40/41), with no
+command or evidence change. Observed failing on exactly the predicted gap in
+the orchestrator's `--fast` run at the end of RED:
+
+```
+4×  expected count: 228   actual count: 225
+2×  expected count: 229   actual count: 226
+4×  expected count: 40    actual count: 37
+1×  expected count: 41    actual count: 38
+project-counters: 29 passed, 12 failed   (the twelfth: the stray-file precondition)
+```
+
+After the GREEN commit: `PASS harness (32s, observed 41)`.
 
 ## Scaffold inventory
 
