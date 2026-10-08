@@ -1,4 +1,4 @@
---!strict
+--!nocheck
 --[[
 	THE NEGATIVE CONTROL FOR SLICE-008 AC-3. NOT A MODULE ANYTHING MAY USE.
 

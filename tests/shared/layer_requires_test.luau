@@ -18,7 +18,7 @@
 	applies it to in-memory modules written to break it, so that "zero
 	violations" here is a statement about the tree and not about the rule.
 
-	In RED, before GREEN moves the directories: AC-1 fails because 32
+	In RED, before GREEN moves the directories: AC-1 fails because 27
 	requires still begin `@shared` and `src/shared` still exists; AC-2 fails
 	because `.luaurc` still aliases `shared`; AC-3 fails because every one of
 	those `@shared` requires is an `@…` the rule does not permit. The

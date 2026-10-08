@@ -5,7 +5,7 @@ slug: modules-load-in-a-real-place-shared-code
 epic: EPIC-03
 type: chore
 status: in-progress
-phase: GREEN
+phase: RED
 branch: story/SLICE-008-modules-load-in-a-real-place-shared-code
 depends_on: [SLICE-001]    # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -632,6 +632,97 @@ are measured, not claimed. GREEN confirms each against the moved tree.
          or Gate probes section describes a failure without showing one
        * whether GREEN was a no-op, and the command output proving the source
          was untouched and still passes -->
+
+### Return 1: GREEN -> RED (2026-10-08) - the AC-3 probe is not admissible to the typecheck gate
+
+**Which test.** `src/client/__probe_cross_layer.luau`, the AC-3 negative
+control owned by `tests/shared/layer_requires_test.luau`. It deliberately
+requires `@game/ServerScriptService/Server/round/PhaseMachine` from the client
+layer so the layer-require scanner has a crossing to refuse.
+
+**What was wrong.** The probe opened with `--!strict`. With `.luaurc` now
+aliasing `game -> src`, `luau-lsp analyze` resolves `@game` on the file tree,
+and `src/ServerScriptService/...` exists only in the DataModel, so the required
+`typecheck` gate failed on the probe:
+
+    src/client/__probe_cross_layer.luau(36,22): TypeError: Unknown require: d:\first-roblox\src\ServerScriptService\Server\round\PhaseMachine.lua
+
+The probe's job is to be scanned as text by the layer-require guard; it was
+never meant to be typechecked. `lune run test` was `1407 passed, 0 failed`
+throughout - the assertion was right, the file's header was not.
+
+**How it was found.** GREEN's `bash scripts/gates.sh --gate typecheck` (see
+`## Notes`, "GREEN blocked (2026-10-08)"). The Lead PO reproduced it
+independently with a scratch `src/server/zz/repro.luau` requiring a
+non-mirrored `@game/ServerScriptService/...` path, which answered D-3: the
+alias makes `luau-lsp` resolve `@game` through the tree, not the sourcemap.
+The fix is to a test-classified file, so it returned to RED.
+
+**What it is now.** Two edits, nothing else:
+
+1. `src/client/__probe_cross_layer.luau` line 1: `--!strict` -> `--!nocheck`.
+   The require, the docstring and the exported table are unchanged, so the
+   scanner still sees exactly the same offending string.
+2. `tests/shared/layer_requires_test.luau` docstring line 21: "32 requires"
+   -> "27 requires", matching the count amended in `## Contract` C-2.
+   Comment only; no assertion changed.
+
+No assertion was weakened, skipped, widened or deleted.
+
+**What earns it - the corrected probe passes on its first run, so it is
+probed.** First, the control on the corrected tree (`lune run test`, ~4 min):
+
+    pass  tests/shared/layer_requires_test.luau :: AC-3 control: the client probe's @game/ServerScriptService require is reported by file and by require
+    pass  tests/shared/layer_requires_test.luau :: AC-3 control: the probe is not in the source set the guard asserts over
+    1407 passed, 0 failed
+
+Then the mutation: swap the probe's require for a permitted
+`@game/ReplicatedStorage/` path, so the scanner has nothing to refuse. Exactly
+the AC-3 control went red, and the restore was verified:
+
+    $ bash scripts/mutate.sh src/client/__probe_cross_layer.luau 's|@game/ServerScriptService/Server/round/PhaseMachine|@game/ReplicatedStorage/Shared/Rng|' -- lune run test
+    === mutate: src/client/__probe_cross_layer.luau (1 line(s) changed by s|@game/ServerScriptService/Server/round/PhaseMachine|@game/ReplicatedStorage/Shared/Rng|) ===
+      36 - local PhaseMachine = require("@game/ServerScriptService/Server/round/PhaseMachine")
+      36 + local PhaseMachine = require("@game/ReplicatedStorage/Shared/Rng")
+
+    === mutate: running lune run test ===
+    ...
+      FAIL  tests/shared/layer_requires_test.luau :: AC-3 control: the client probe's @game/ServerScriptService require is reported by file and by require
+            D:\first-roblox\tests\shared\layer_requires_test:182: the scanner found nothing in src/client/__probe_cross_layer.luau, which requires @game/ServerScriptService/Server/round/PhaseMachine
+      pass  tests/shared/layer_requires_test.luau :: AC-3 control: the probe is not in the source set the guard asserts over
+      pass  tests/shared/layer_requires_test.luau :: AC-3: every scanned source module is in a layer the rule knows
+      pass  tests/shared/layer_requires_test.luau :: AC-3: no source module holds a string require that leaves its layer outside @game/ReplicatedStorage/
+    ...
+    1406 passed, 1 failed
+
+    === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_client___probe_cross_layer.luau.20261008T173909Z.863502.bak) ===
+      36: local PhaseMachine = require("@game/ServerScriptService/Server/round/PhaseMachine")
+
+One mutation, one run, one failure - the control's own message, naming the
+probe and the require - one verified revert. (The AC-3 positive assertion
+stayed green under the mutation, as it should: a permitted crossing is not a
+violation.)
+
+**Gates on the corrected tree** (partial runs, not recorded):
+
+    $ bash scripts/gates.sh --gate typecheck
+    PASS         typecheck (5s, observed 35)
+
+    $ bash scripts/gates.sh --gate harness
+    FAIL         harness (17s, exit 1) -> .claude/state/gate-logs/harness.log
+        FAIL the working tree carries no stray .luau files, so the baselines mean what they say
+             expected:
+             actual:    M src/client/__probe_cross_layer.luau
+              M tests/shared/layer_requires_test.luau
+
+The `harness` failure is only its "no stray .luau files" precondition, tripped
+by the two modified files being uncommitted at the time of the run; every other
+harness check passed (40 of 41). It clears once this RED commit lands.
+
+**GREEN should be a no-op.** No source change is needed: the move committed in
+`bb922b5` is untouched, `lune run test` is `1407 passed, 0 failed` on it, and
+`typecheck` now passes. GREEN need only re-run `bash scripts/frozen.sh verify`
+and the gates.
 
 ## Gate results
 
