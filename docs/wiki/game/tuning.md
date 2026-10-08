@@ -40,7 +40,7 @@ red without any source changing. That is deliberate: they are drift guards.
 
 | Reader | Reads | State on `main` (ROUND-006 DONE, PR #41, 2026-09-30) |
 |---|---|---|
-| `tests/helpers/TuningSpec.luau` (ROUND-002; re-pointed by ROUND-006) | every backticked-name row in **§1 and §5**, by `## N.` heading number; checks them against `src/shared/Tuning.luau` | **green.** `Tuning.luau` carries 420 and 60; ROUND-002's criteria were amended (A-1). Any new row in §1 or §5 turns it red until the module has it |
+| `tests/helpers/TuningSpec.luau` (ROUND-002; re-pointed by ROUND-006) | every backticked-name row in **§1 and §5**, by `## N.` heading number; checks them against `src/ReplicatedStorage/Shared/Tuning.luau` | **green.** `Tuning.luau` carries 420 and 60; ROUND-002's criteria were amended (A-1). Any new row in §1 or §5 turns it red until the module has it |
 | `tests/helpers/RateLimitSpec.luau` (NET-003; re-pointed by ROUND-006) | **exactly one** row anywhere whose first cell is `` `preset_rate_limit_seconds` ``, and exactly one for `` `ping_rate_limit_seconds` ``; and **no live row** for `` `signal_rate_limit_seconds` `` (§9's is struck through, so it does not count) | **green.** A second row starting with either live name, anywhere in this file, turns it red |
 | `tests/shared/tuning_spec_test.luau` AC-5 anchor | §7's text contains `hidden_faction_ratio`, `vote_`, `score`, `rank`, `MMR`, `ladder` | green; §7 keeps all six |
 | TUNE-001 drift guard (planned, M3) | every table row in **§2–§4** whose first cell is a bare backticked name | not yet built. Value cells here are kept to one of: a bare number, `true`/`false`, `` = `other_name` ``, or plain text for a rule that is not a module constant. Invariant rows start with `INV_` |

@@ -189,7 +189,7 @@ implementing agent will actually be reading.
 Decided by the operator (ryanczhang7) in chat on 2026-09-30, from the open
 questions in §0c. **Same authority as §0b. Where they conflict, it overrides §0c and
 Part A.** These decisions are recorded here. Carrying them into `docs/wiki/game/`
-(owned by the Game Designer) and into `src/shared/Tuning.luau` (which needs a story)
+(owned by the Game Designer) and into `src/ReplicatedStorage/Shared/Tuning.luau` (which needs a story)
 has **not** been done yet. See "Consequences" below.
 
 | # | Decision | Closes | Status |
@@ -279,7 +279,7 @@ T10 c, rest default".
 
 - ~~**The third-pass `docs/wiki/game/` specifies what M0–M2's code does not yet
   carry, and three test files read it.**~~ **Acted on by ROUND-006** (DONE
-  2026-09-30, PR #41). The third pass landed together with `src/shared/Tuning.luau` at
+  2026-09-30, PR #41). The third pass landed together with `src/ReplicatedStorage/Shared/Tuning.luau` at
   420 / 60 and the tests re-pointed at the preset design. It came with ROUND-002
   `## Amendments` A-1 and a NET-003 `## Notes` entry; NET-003's criteria did not
   change. The suite on `main` is `476 passed, 0 failed`.
@@ -463,7 +463,7 @@ value replicated to them, and modify any LocalScript.
   replicated state.
 - Every RemoteEvent handler validates: sender identity, argument types, argument ranges, rate
   limit, and whether the action is legal in the current round phase.
-- Every remote gets a server-side validation wrapper in `src/net/`. No raw
+- Every remote gets a server-side validation wrapper in `src/ReplicatedStorage/Net/`. No raw
   `OnServerEvent:Connect` in `src/server/`.
 - Client-supplied position, timing, and target selection are **claims**, not facts. Re-derive or
   sanity-check server-side.

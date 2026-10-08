@@ -93,7 +93,7 @@ operator.
 - **Client time** is `os.clock()` in the client, only inside
   `Main.client.luau`. The model takes `now` as an argument. The ROUND-001 guard
   (`tests/shared/source_guard_test.luau`) permits `os.clock` only in
-  `Clock.real`, so the client entry must use `Clock.real()` from `@shared`. RED
+  `Clock.real`, so the client entry must use `Clock.real()` from `@game/ReplicatedStorage/Shared/Clock`. RED
   confirms that the guard's scope includes `src/client/` and that the entry
   complies.
 - **RemoteEvents** are created by the driver under

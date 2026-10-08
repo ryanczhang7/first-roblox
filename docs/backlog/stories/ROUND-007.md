@@ -44,7 +44,7 @@ clock's (M1), and players stay in the server either way.
 
 ## Contract
 
-`src/net/GameRemotes.luau` gains:
+`src/ReplicatedStorage/Net/GameRemotes.luau` gains:
 
     GameRemotes.AcceptRematch: Remotes.RemoteDefinition
     -- args        = Schema.shape({})
@@ -90,7 +90,7 @@ this command runs again; the rest of the section is yours and is preserved.
 | REVIEW | `lead-po` | `opus` | reading review feedback against the contract is judgement, and a wrong call here ships |
 | SCAFFOLD | `lead-po` | `opus` | source, tests and config in one indivisible derivation, with no failing test in front of any of it |
 
-Lock coverage: SUPPRESSED by `src/net/GameRemotes.luau` (source), scanned from the Contract text — the phase lock freezes it, so RED follows the plain plan.
+Lock coverage: SUPPRESSED by `src/ReplicatedStorage/Net/GameRemotes.luau` (source), scanned from the Contract text — the phase lock freezes it, so RED follows the plain plan.
 <!-- plan.sh:generated:end -->
 
 Partition as in `## Contract`.

@@ -4,8 +4,8 @@ title: Modules load in a real place: shared code moves under the DataModel path 
 slug: modules-load-in-a-real-place-shared-code
 epic: EPIC-03
 type: chore
-status: in-progress
-phase: RED
+status: in-review
+phase: REVIEW
 branch: story/SLICE-008-modules-load-in-a-real-place-shared-code
 depends_on: [SLICE-001]    # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -199,6 +199,33 @@ Owner: GATES.
 (the file tree) or natively (the sourcemap). Record which it does, by probing a
 require of a path that exists only in one of the two, so the next person
 knows. Owner: GATES.
+
+**D-2 result (GATES, Lead PO, 2026-10-08, at `c18f9cc`).** The guard was
+mutated against the real tree:
+
+    $ bash scripts/mutate.sh src/server/round/RoundView.luau 's|require("@game/ReplicatedStorage/Shared/MechanicsTuning")|require("@game/ServerStorage/Shared/MechanicsTuning")|' -- lune run test
+      45 - local MechanicsTuning = require("@game/ReplicatedStorage/Shared/MechanicsTuning")
+      45 + local MechanicsTuning = require("@game/ServerStorage/Shared/MechanicsTuning")
+      FAIL  tests/shared/layer_requires_test.luau :: AC-3: no source module holds a string require that leaves its layer outside @game/ReplicatedStorage/
+            D:\first-roblox\tests\shared\layer_requires_test:143: 1 layer-crossing violation(s) over 35 source file(s):
+    src/server/round/RoundView.luau:45 requires "@game/ServerStorage/Shared/MechanicsTuning" from server: a require that leaves its layer must begin @game/ReplicatedStorage/Shared/ or @game/ReplicatedStorage/Net/
+    1317 passed, 54 failed
+    === mutate: command exited 1; restored (verified byte-for-byte against .../src_server_round_RoundView.luau.20261008T180659Z.906823.bak) ===
+
+The guard names the file, the line and the require. The other 53 failures
+are Lune failing to load `RoundView` through a path that does not exist, as
+expected. `git status --short src` was empty afterwards.
+
+**D-3 result (GATES).** Answered by the GREEN escalation and reproduced by the
+Lead PO (see `## Notes`, "GREEN blocked"). With `"game": "src"` in `.luaurc`,
+`luau-lsp` 1.69.0 resolves `@game/...` **through the alias, on the file tree**,
+not through the sourcemap. A scratch module requiring
+`@game/ServerScriptService/Server/seats/Ring` got `Unknown require:
+...\src\ServerScriptService\Server\seats\Ring.lua`, while
+`@game/ReplicatedStorage/Shared/Rng` resolved. Without the alias,
+`luau-lsp` resolves `@game` through the sourcemap: RED's probe typechecked
+before `.luaurc` changed, and GREEN measured exit 0 with the alias renamed.
+
 ## Amendments
 
 <!-- Acceptance criteria are frozen once the story leaves PLANNED. If one turns
@@ -726,10 +753,22 @@ and the gates.
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-08T18:22:45Z
+    commit: c18f9cc
+    tree:   6176306bf8412ec0f6b52e2f8c6de0e56c08e349
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 210)
+    PASS         lint (1s, observed 210, floor 1)
+    PASS         typecheck (2s, observed 35)
+    PASS         unit (257s, observed 1407, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 133987)
+    PASS         harness (23s, observed 41)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -781,3 +820,20 @@ cross-layer `@game` path other than the mirrored ones.
 `bash scripts/frozen.sh verify` → `frozen: OK — 200 path(s) unchanged since the snapshot for SLICE-008`.
 The fix is to the probe, which is a test file, so it is a return to RED, and
 that is put to the operator.
+
+**Models resolved (2026-10-08):**
+- RED: `test-developer` on `fable`, passed explicitly in the dispatch;
+- GREEN: `feature-developer` on `opus`, which reported `claude-opus-5-5`;
+- RED return 1: `test-developer` on `fable`, explicit; it reported Fable 5.1;
+- GREEN return 1: a verified no-op by the Lead PO, with no dispatch.
+
+**GATES (Lead PO):**
+- `frozen.sh verify` → `frozen: OK — 200 path(s) unchanged`;
+- D-2 and D-3 are pasted above;
+- C-6's docs sweep is done:
+  - wiki: `architecture.md` outside the §1 measurement block, `stack.md`,
+    `README.md`, `game/tuning.md` and `product-brief.md`;
+  - PLANNED stories: `ROUND-007`, `SLICE-002`, `SLICE-004` and `THEME-001`;
+  - stories already DONE keep their history.
+- The full `gates.sh` run is recorded in `## Gate results`.
+- D-1 (Studio) is open, owned by REVIEW and the operator.

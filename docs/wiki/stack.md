@@ -442,10 +442,10 @@ because it is the single easiest discipline to let slip.
 
     discovery | tests     | . | lune run test -- --list | grep -E '^[1-9][0-9]* tests?' > /dev/null
     discovery | shared    | . | lune run test -- --list | grep -E 'tests/shared/' > /dev/null
-    discovery | sourcemap | . | rojo sourcemap default.project.json --output sourcemap.json && grep -F 'src/shared/Scaffold.luau' sourcemap.json > /dev/null
+    discovery | sourcemap | . | rojo sourcemap default.project.json --output sourcemap.json && grep -F 'src/ReplicatedStorage/Shared/Scaffold.luau' sourcemap.json > /dev/null
 
 Two lines were added by `BOOT-001` beyond the planned one. `shared` is what makes
-`covers | unit | src/shared/**` an observation rather than a claim. `sourcemap`
+`covers | unit | src/ReplicatedStorage/Shared/**` an observation rather than a claim. `sourcemap`
 asks **Rojo** whether its mapping reaches a real file on disk, which is the only
 independent check on the failure mode §2 measured — a sourcemap that resolves
 nothing while every tool involved exits 0.
@@ -486,7 +486,7 @@ hidden.
     covers | lint      | src/**
     covers | typecheck | src/**
     covers | build     | src/**
-    covers | unit      | src/shared/**
+    covers | unit      | src/ReplicatedStorage/Shared/**
 
 Taken from what each tool was observed to read, and backed by the `discovery`
 lines above. `selene` and `luau-lsp` are handed `src` whole; Rojo maps all four
@@ -494,7 +494,7 @@ subtrees through `default.project.json`.
 
 **`unit` is narrower on purpose.** `lune run test -- --list` reports four tests,
 all under `tests/shared/`, and the only production module any of them requires is
-`src/shared/Scaffold.luau`. A `covers | unit | src/**` here would be a lie the
+`src/ReplicatedStorage/Shared/Scaffold.luau`. A `covers | unit | src/**` here would be a lie the
 check would believe — and the whole value of these lines is that the run **fails**
 when a story adds `src/server/` code no required test gate reads. `ROUND-001` and
 `NET-001` widen it as they add the suites that justify it.
@@ -632,7 +632,7 @@ Checked at the M3 `/plan-product` pass, 2026-09-30. M3 (the vertical slice,
 - **Studio** (the operator's install) becomes necessary for M3's Studio checks
   and its definition of done. It is not a gate and not in `rokit.toml`; nothing
   on CI needs it.
-- **One `.luaurc` alias** (`"net": "src/net"`, `architecture.md` D21) — a config
+- **One `.luaurc` alias** (`"game": "src"`, `architecture.md` §1 and `SLICE-008`; D21's `@net` is superseded) — a config
   line, not a tool.
 
 So `/setup-environment` has nothing new to install for M3. Re-run it only if
