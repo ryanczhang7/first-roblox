@@ -8,7 +8,7 @@
 	  1. THE MAPPING. `fromTuning` renames `ROUND-002`'s specification keys
 	     (`lobby_seconds`) to the Contract's field names (`lobbySeconds`). The
 	     values are SETTLED - `docs/wiki/game/tuning.md` is the specification,
-	     `src/shared/Tuning.luau` transcribes it and `tests/shared/tuning_spec_test.luau`
+	     `src/ReplicatedStorage/Shared/Tuning.luau` transcribes it and `tests/shared/tuning_spec_test.luau`
 	     guards the transcription. So this file READS THE NUMBERS OUT of `Tuning`
 	     and never writes one down: a literal 60 here would be a third place for
 	     the same constant to live and a quiet chance to re-tune a value a design
@@ -25,7 +25,7 @@
 ]]
 
 local Deep = require("../helpers/Deep")
-local Tuning = require("../../src/shared/Tuning")
+local Tuning = require("../../src/ReplicatedStorage/Shared/Tuning")
 
 local loaded, loadResult = pcall(require, "../../src/server/round/RoundConfig")
 

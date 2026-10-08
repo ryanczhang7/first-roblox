@@ -1,7 +1,7 @@
 --!strict
 --[[
 	ROUND-002 AC-4: the link between `docs/wiki/game/tuning.md` and
-	`src/shared/Tuning.luau`.
+	`src/ReplicatedStorage/Shared/Tuning.luau`.
 
 	That file's first paragraph says it IS the specification and that a
 	disagreement with the module is a defect. This guard is what makes the claim
@@ -32,10 +32,10 @@
 local fs = require("../helpers/GatedFs")
 local TuningSpec = require("../helpers/TuningSpec")
 
-local loaded, loadResult = pcall(require, "../../src/shared/Tuning")
+local loaded, loadResult = pcall(require, "../../src/ReplicatedStorage/Shared/Tuning")
 
 local function Tuning(): any
-	assert(loaded, `src/shared/Tuning.luau did not load: {tostring(loadResult)}`)
+	assert(loaded, `src/ReplicatedStorage/Shared/Tuning.luau did not load: {tostring(loadResult)}`)
 	return loadResult
 end
 
@@ -77,7 +77,7 @@ return {
 	["AC-4: every constant tuning.md §1 and §5 names is in the module with a matching value"] = function()
 		TuningSpec.assertNoFindings(
 			TuningSpec.missingOrMismatched(spec().rows, Tuning()),
-			"AC-4: tuning.md and src/shared/Tuning.luau disagree"
+			"AC-4: tuning.md and src/ReplicatedStorage/Shared/Tuning.luau disagree"
 		)
 	end,
 

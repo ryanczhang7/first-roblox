@@ -47,7 +47,7 @@
 local Deep = require("../helpers/Deep")
 local Finale = require("../helpers/FinaleContract")
 local Machines = require("../../src/server/facility/Machines")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local Turn = require("../helpers/TurnContract")
 
 type Defects = {

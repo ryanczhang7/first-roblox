@@ -52,7 +52,7 @@ local ROBLOX: { string } = {
 
 -- ROUND-001's committed probe, which calls `os.clock()`. Used below to prove the
 -- guard's file-reading path finds a real call in a real file.
-local CLOCK_PROBE = "src/shared/__probe_clock_leak.luau"
+local CLOCK_PROBE = "src/ReplicatedStorage/Shared/__probe_clock_leak.luau"
 
 return {
 	--[[

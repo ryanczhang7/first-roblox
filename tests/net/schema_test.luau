@@ -1,7 +1,7 @@
 --!strict
 --[[
 	NET-001: the structural validators. The unit level of AC-2 and AC-3,
-	applied to the real `src/net/Schema.luau` - where the logic lives, so
+	applied to the real `src/ReplicatedStorage/Net/Schema.luau` - where the logic lives, so
 	where the cheapest falsification is.
 
 	The module is required through a `pcall` at the top and re-checked inside
@@ -21,10 +21,10 @@
 
 local Contract = require("../helpers/NetContract")
 
-local loaded, loadResult = pcall(require, "../../src/net/Schema")
+local loaded, loadResult = pcall(require, "../../src/ReplicatedStorage/Net/Schema")
 
 local function net(): Contract.Net
-	assert(loaded, `src/net/Schema.luau did not load: {tostring(loadResult)}`)
+	assert(loaded, `src/ReplicatedStorage/Net/Schema.luau did not load: {tostring(loadResult)}`)
 	return { Schema = loadResult, Remotes = nil, Wrapper = nil }
 end
 

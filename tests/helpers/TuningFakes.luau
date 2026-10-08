@@ -24,7 +24,7 @@
 	`docs/wiki/game/tuning.md`.
 
 	IT IS NOT A SPECIFICATION OF THE MODULE. Nothing here pins how
-	`src/shared/Tuning.luau` is written - only what it must contain. In
+	`src/ReplicatedStorage/Shared/Tuning.luau` is written - only what it must contain. In
 	particular these tables are NOT frozen; AC-3 is asserted against the real
 	module, where freezing is the implementer's obligation.
 ]]

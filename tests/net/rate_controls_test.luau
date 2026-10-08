@@ -32,7 +32,7 @@
 	NOTHING HERE REQUIRES UNMERGED PRODUCTION CODE. The bundles are
 	`RateStubs.luau` over `PhaseStubs.luau` over `NetStubs.luau`, so these
 	controls EXECUTE in RED, while `rate_test.luau`'s assertions against the
-	real `src/net/` are red on their own terms.
+	real `src/ReplicatedStorage/Net/` are red on their own terms.
 ]]
 
 local NetContract = require("../helpers/NetContract")

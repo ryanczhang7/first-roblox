@@ -40,7 +40,7 @@ local EXEMPT = "tests/helpers/GatedFs.luau"
 local INSIDE = {
 	"docs/wiki/game/tuning.md",
 	"docs/wiki/stack.md",
-	"src/shared/Scaffold.luau",
+	"src/ReplicatedStorage/Shared/Scaffold.luau",
 }
 
 -- Mentioned in test comments and read by nothing (the HARNESS-021 control), a

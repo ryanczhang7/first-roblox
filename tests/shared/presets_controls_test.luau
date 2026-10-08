@@ -5,10 +5,10 @@
 	vacuity step in `tests/helpers/PresetSpec.luau` means what it says.
 
 	NOTHING HERE REQUIRES UNMERGED PRODUCTION CODE. In RED
-	`src/shared/channel/Presets.luau` does not exist, every test in
+	`src/ReplicatedStorage/Shared/channel/Presets.luau` does not exist, every test in
 	`tests/shared/presets_test.luau` stops at `presets()`, and so not one of
 	that file's checks has been observed to accept or refuse anything. This
-	file needs only `MechanicsTuning` (TUNE-001, merged), `src/net/Remotes.luau`
+	file needs only `MechanicsTuning` (TUNE-001, merged), `src/ReplicatedStorage/Net/Remotes.luau`
 	as text (NET-002, merged) and `docs/wiki/game/mechanics.md`, so what is
 	asserted here is MEASURED in RED rather than claimed for GREEN. The story's
 	handoff carries the table.
@@ -31,14 +31,14 @@
 ]]
 
 local Deep = require("../helpers/Deep")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local PhaseUnion = require("../helpers/PhaseUnion")
 local PresetContract = require("../helpers/PresetContract")
 local PresetSpec = require("../helpers/PresetSpec")
 local Stubs = require("../helpers/PresetStubs")
 local fs = require("../helpers/GatedFs")
 
-local REMOTES = "src/net/Remotes.luau"
+local REMOTES = "src/ReplicatedStorage/Net/Remotes.luau"
 
 local SPEC = "tableMatchesTheSpec"
 local COUNTS = "countsAgreeWithTheTuning"
@@ -194,7 +194,7 @@ return {
 		)
 	end,
 
-	["P-1: the Phase set is read out of src/net/Remotes.luau, is non-empty, and equals PhaseUnion.KNOWN as a set; a side with no declaration, and a side with a sixth phase, are each refused"] = function()
+	["P-1: the Phase set is read out of src/ReplicatedStorage/Net/Remotes.luau, is non-empty, and equals PhaseUnion.KNOWN as a set; a side with no declaration, and a side with a sixth phase, are each refused"] = function()
 		local set = context().phases
 		local names: { string } = {}
 		for name in set do
@@ -545,7 +545,7 @@ return {
 		local messages = expectFires("emptyPhaseSet", Stubs.reference, empty, { PHASES })
 		contains(
 			messages[PHASES],
-			"the Phase set read out of src/net/Remotes.luau is empty",
+			"the Phase set read out of src/ReplicatedStorage/Net/Remotes.luau is empty",
 			"empty set"
 		)
 	end,

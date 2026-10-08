@@ -1,10 +1,10 @@
 --!strict
 --[[
-	NET-002 AC-7: `src/net/Remotes.luau` and `src/server/round/PhaseMachine.luau`
+	NET-002 AC-7: `src/ReplicatedStorage/Net/Remotes.luau` and `src/server/round/PhaseMachine.luau`
 	both export a `Phase` union, and the two must name exactly the same phases.
 
 	WHY A GUARD AND NOT THE TYPECHECKER: the two unions never meet in any
-	expression - nothing constructs a `GuardContext`, nothing in `src/net/`
+	expression - nothing constructs a `GuardContext`, nothing in `src/ReplicatedStorage/Net/`
 	requires `PhaseMachine`, nothing in `src/server/` requires `Wrapper` - so
 	`luau-lsp` has nothing to reject and exits 0 whether or not they agree.
 	The Contract measured that; RED re-measured it. A `legalPhases` entry
@@ -42,7 +42,7 @@ local fs = require("../helpers/GatedFs")
 local PhaseUnion = require("../helpers/PhaseUnion")
 local SourceScan = require("../helpers/SourceScan")
 
-local NET = "src/net/Remotes.luau"
+local NET = "src/ReplicatedStorage/Net/Remotes.luau"
 local ROUND = "src/server/round/PhaseMachine.luau"
 
 local function readSide(path: string): PhaseUnion.Side
@@ -99,7 +99,7 @@ return {
 		)
 	end,
 
-	["AC-7: src/net/Remotes.luau and src/server/round/PhaseMachine.luau export Phase unions naming exactly the same phases - each non-empty, each holding all five known phases, compared as sets"] = function()
+	["AC-7: src/ReplicatedStorage/Net/Remotes.luau and src/server/round/PhaseMachine.luau export Phase unions naming exactly the same phases - each non-empty, each holding all five known phases, compared as sets"] = function()
 		local net = readSide(NET)
 		local round = readSide(ROUND)
 		-- Repeated here rather than trusted from the test above: this is the
@@ -126,7 +126,7 @@ return {
 		local violations = PhaseUnion.violations(net, round)
 		assert(
 			#violations == 0,
-			`the two Phase unions differ in {#violations} way(s); src/net/ re-declares the union `
+			`the two Phase unions differ in {#violations} way(s); src/ReplicatedStorage/Net/ re-declares the union `
 				.. `because it may not require src/server/, and a phase one names and the other does `
 				.. `not is a remote silently dead in that phase:\n`
 				.. PhaseUnion.describe(violations)
@@ -188,7 +188,7 @@ return {
 
 	["AC-7 control: the same five phases in a different order are not a difference"] = function()
 		local shuffled = PhaseUnion.read(
-			"src/net/Shuffled.luau",
+			"src/ReplicatedStorage/Net/Shuffled.luau",
 			'export type Phase = "Post" | "Round" | "Lobby" | "Resolution" | "Assignment"\n'
 		)
 		local round = readSide(ROUND)
@@ -209,7 +209,7 @@ return {
 			'local doc = \'export type Phase = "Lobby" | "Post"\'',
 			"return doc",
 		}, "\n")
-		local side = PhaseUnion.read("src/net/Decoy.luau", decoy)
+		local side = PhaseUnion.read("src/ReplicatedStorage/Net/Decoy.luau", decoy)
 		assert(side.declarations == 0, `the decoy yielded {side.declarations} declaration(s)`)
 		assert(#side.phases == 0, `the decoy yielded phases: {table.concat(side.phases, ", ")}`)
 
@@ -224,7 +224,7 @@ return {
 		assert(
 			has(
 				violations,
-				"src/net/Decoy.luau: the Phase union names no phases - the extraction matched nothing"
+				"src/ReplicatedStorage/Net/Decoy.luau: the Phase union names no phases - the extraction matched nothing"
 			),
 			"the empty extraction is not called out:\n" .. PhaseUnion.describe(violations)
 		)
@@ -232,7 +232,7 @@ return {
 			assert(
 				has(
 					violations,
-					`src/net/Decoy.luau: the Phase union lacks the known phase "{known}"`
+					`src/ReplicatedStorage/Net/Decoy.luau: the Phase union lacks the known phase "{known}"`
 				),
 				`"{known}" is not reported as lacking:\n` .. PhaseUnion.describe(violations)
 			)
@@ -252,7 +252,7 @@ return {
 			'local x = "Lobby"',
 			"return x",
 		}, "\n")
-		local side = PhaseUnion.read("src/net/Wrapped.luau", wrapped)
+		local side = PhaseUnion.read("src/ReplicatedStorage/Net/Wrapped.luau", wrapped)
 		assert(
 			side.declarations == 1,
 			`the wrapped union yielded {side.declarations} declaration(s)`
@@ -267,7 +267,7 @@ return {
 		)
 
 		local trailing = 'export type Phase = "Lobby" | "Round" -- | "Post" | "Setup"\n'
-		local trailingSide = PhaseUnion.read("src/net/Trailing.luau", trailing)
+		local trailingSide = PhaseUnion.read("src/ReplicatedStorage/Net/Trailing.luau", trailing)
 		assert(
 			table.concat(trailingSide.phases, ",") == "Lobby,Round",
 			`the trailing comment contributed a phase: {table.concat(trailingSide.phases, ", ")}`
@@ -275,7 +275,7 @@ return {
 
 		local twice =
 			'export type Phase = "Lobby" | "Assignment" | "Round" | "Resolution" | "Post" | "Round"\n'
-		local twiceSide = PhaseUnion.read("src/net/Twice.luau", twice)
+		local twiceSide = PhaseUnion.read("src/ReplicatedStorage/Net/Twice.luau", twice)
 		local violations = PhaseUnion.violations(twiceSide, readSide(ROUND))
 		assert(
 			#violations == 1,
@@ -283,7 +283,8 @@ return {
 				.. PhaseUnion.describe(violations)
 		)
 		assert(
-			violations[1] == 'src/net/Twice.luau: the Phase union names "Round" 2 times',
+			violations[1]
+				== 'src/ReplicatedStorage/Net/Twice.luau: the Phase union names "Round" 2 times',
 			`the duplicate is not named: {violations[1]}`
 		)
 	end,
@@ -293,7 +294,7 @@ return {
 			'export type Phase = "Lobby" | "Assignment" | "Round" | "Resolution" | "Post"',
 			'export type Phase = "Lobby" | "Assignment" | "Round" | "Resolution" | "Post"',
 		}, "\n")
-		local side = PhaseUnion.read("src/net/Doubled.luau", doubled)
+		local side = PhaseUnion.read("src/ReplicatedStorage/Net/Doubled.luau", doubled)
 		assert(
 			side.declarations == 2,
 			`the doubled file yielded {side.declarations} declaration(s)`
@@ -302,7 +303,7 @@ return {
 		assert(
 			has(
 				violations,
-				"src/net/Doubled.luau: found 2 'export type Phase =' declaration(s) standing as code; expected exactly one"
+				"src/ReplicatedStorage/Net/Doubled.luau: found 2 'export type Phase =' declaration(s) standing as code; expected exactly one"
 			),
 			"the declaration count is not reported:\n" .. PhaseUnion.describe(violations)
 		)

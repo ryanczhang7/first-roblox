@@ -4,7 +4,7 @@
 
 	AC-1 carries no control in the story's text - it is a mechanical criterion and
 	the partition says "pin exactly". These exist anyway, for one reason: in RED
-	`src/shared/Clock.luau` does not exist, so `clock_test.luau` fails at
+	`src/ReplicatedStorage/Shared/Clock.luau` does not exist, so `clock_test.luau` fails at
 	`require` and NOT ONE of its assertions has ever run. Applying the same checks
 	to a clock that does not advance is how those assertions get observed rejecting
 	something before GREEN starts.

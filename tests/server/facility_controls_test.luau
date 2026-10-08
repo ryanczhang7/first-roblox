@@ -39,7 +39,7 @@ local Deep = require("../helpers/Deep")
 local LayoutContract = require("../helpers/LayoutContract")
 local ProcedureContract = require("../helpers/ProcedureContract")
 local Ring = require("../../src/server/seats/Ring")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 local Stubs = require("../helpers/FacilityStubs")
 
 local TUNING = Contract.TUNING

@@ -3,7 +3,7 @@
 	NET-002 AC-1 through AC-6, plus the two promises the story's `## Contract`
 	makes about a phase rejection, written once as checks over a `Net` bundle -
 	`{ Schema, Remotes, Wrapper }` - handed in as a parameter rather than over
-	`src/net/*.luau` by name. The same arrangement as `NetContract.luau`, for
+	`src/ReplicatedStorage/Net/*.luau` by name. The same arrangement as `NetContract.luau`, for
 	the same reason: `tests/net/phase_test.luau` applies these to the real
 	modules and `tests/net/phase_controls_test.luau` applies them to the
 	deliberately wrong bundles in `PhaseStubs.luau`, so that every check here
@@ -39,7 +39,7 @@
 	guard asked.
 ]]
 
-local Clock = require("../../src/shared/Clock")
+local Clock = require("../../src/ReplicatedStorage/Shared/Clock")
 local Contract = require("./Contract")
 local Deep = require("./Deep")
 local NetContract = require("./NetContract")

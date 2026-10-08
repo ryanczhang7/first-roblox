@@ -34,18 +34,18 @@
 	shape (the rate mutated to 3) is `rateLiteral3` too; D-1 ITSELF stays with
 	GATES.
 
-	WHAT THIS IS NOT: `src/net/GameRemotes.luau`, or a sketch of one.
+	WHAT THIS IS NOT: `src/ReplicatedStorage/Net/GameRemotes.luau`, or a sketch of one.
 ]]
 
 local Contract = require("../helpers/PingRemoteContract")
 local Deep = require("../helpers/Deep")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local PingsContract = require("../helpers/PingsContract")
 local PingsStubs = require("../helpers/PingsStubs")
 local RateLimitSpec = require("../helpers/RateLimitSpec")
-local Remotes = require("../../src/net/Remotes")
-local Schema = require("../../src/net/Schema")
-local Wrapper = require("../../src/net/Wrapper")
+local Remotes = require("../../src/ReplicatedStorage/Net/Remotes")
+local Schema = require("../../src/ReplicatedStorage/Net/Schema")
+local Wrapper = require("../../src/ReplicatedStorage/Net/Wrapper")
 
 local net: Contract.Net = { Schema = Schema, Remotes = Remotes, Wrapper = Wrapper }
 

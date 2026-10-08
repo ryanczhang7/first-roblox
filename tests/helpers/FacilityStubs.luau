@@ -42,7 +42,7 @@
 local Contract = require("./FacilityContract")
 local Layout = require("../../src/server/facility/Layout")
 local Machines = require("../../src/server/facility/Machines")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 local Steps = require("../../src/server/facility/Steps")
 
 type LayoutValue = Contract.Layout

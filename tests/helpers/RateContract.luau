@@ -3,7 +3,7 @@
 	NET-003 AC-1 through AC-6, plus the two promises the story's `## Contract`
 	makes about a rate rejection, written once as checks over a `Net` bundle -
 	`{ Schema, Remotes, Wrapper, RateLimiter }` - handed in as a parameter
-	rather than over `src/net/*.luau` by name. The same arrangement as
+	rather than over `src/ReplicatedStorage/Net/*.luau` by name. The same arrangement as
 	`NetContract.luau` and `PhaseContract.luau`, for the same reason:
 	`tests/net/rate_test.luau` applies these to the real modules and
 	`tests/net/rate_controls_test.luau` applies them to the deliberately wrong
@@ -22,7 +22,7 @@
 	NET-003 read it out of `tuning.md` §3's `signal_rate_limit_seconds`; brief
 	§0d #19 superseded that constant on 2026-09-30 (`tuning.md` §9), and from
 	ROUND-006 on 1.5 has no design provenance. It is declared on the test
-	remote and never put into `src/shared/Tuning.luau`, whose scope is §1
+	remote and never put into `src/ReplicatedStorage/Shared/Tuning.luau`, whose scope is §1
 	and §5. The boundary is inclusive: `now - lastAccepted >=
 	minIntervalSeconds`, accepted exactly at the interval, and AC-1 is the ONLY
 	check that lands exactly on it - every other check keeps its acceptances
@@ -49,7 +49,7 @@
 	to AC-1 and AC-3 does not re-test it.
 ]]
 
-local Clock = require("../../src/shared/Clock")
+local Clock = require("../../src/ReplicatedStorage/Shared/Clock")
 local Contract = require("./Contract")
 local Deep = require("./Deep")
 local NetContract = require("./NetContract")
@@ -651,7 +651,7 @@ function RateContract.forgetRemovesThePlayerAndSizeCountsSeatedPlayers(net: Net)
 	local min = RateContract.MIN_INTERVAL_SECONDS
 	if net.RateLimiter == nil then
 		Contract.fail(
-			"AC-6: src/net/RateLimiter.luau did not load - the limiter is a new module and AC-6 is a unit "
+			"AC-6: src/ReplicatedStorage/Net/RateLimiter.luau did not load - the limiter is a new module and AC-6 is a unit "
 				.. "criterion on it"
 		)
 	end

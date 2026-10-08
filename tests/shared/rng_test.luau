@@ -1,6 +1,6 @@
 --!strict
 --[[
-	ROUND-001 AC-2, AC-3, AC-4 and the `src/shared/Rng.luau` Contract.
+	ROUND-001 AC-2, AC-3, AC-4 and the `src/ReplicatedStorage/Shared/Rng.luau` Contract.
 
 	The criteria themselves live in `tests/helpers/RngContract.luau`, applied here
 	to `Rng.fromSeed` and applied in `tests/shared/rng_controls_test.luau` to
@@ -20,10 +20,10 @@
 
 local RngContract = require("../helpers/RngContract")
 
-local loaded, loadResult = pcall(require, "../../src/shared/Rng")
+local loaded, loadResult = pcall(require, "../../src/ReplicatedStorage/Shared/Rng")
 
 local function Rng(): any
-	assert(loaded, `src/shared/Rng.luau did not load: {tostring(loadResult)}`)
+	assert(loaded, `src/ReplicatedStorage/Shared/Rng.luau did not load: {tostring(loadResult)}`)
 	return loadResult
 end
 

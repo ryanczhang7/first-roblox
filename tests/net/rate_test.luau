@@ -1,16 +1,16 @@
 --!strict
 --[[
 	NET-003: per-player rate limiting, position 5 of the fixed check order.
-	AC-1 through AC-6 applied to the real `src/net/Wrapper.luau` and the new
-	`src/net/RateLimiter.luau`, driving the real `Schema` and `Remotes` - the
+	AC-1 through AC-6 applied to the real `src/ReplicatedStorage/Net/Wrapper.luau` and the new
+	`src/ReplicatedStorage/Net/RateLimiter.luau`, driving the real `Schema` and `Remotes` - the
 	level at which the contract between them lives, so the level at which the
 	flooded-call cases are asserted.
 
-	THREE OF THE FOUR MODULES EXIST ON ARRIVAL: `src/net/` was built by
+	THREE OF THE FOUR MODULES EXIST ON ARRIVAL: `src/ReplicatedStorage/Net/` was built by
 	NET-001 and NET-002 and declares `rateLimit` without reading it, so the
 	wrapper-level tests below LOAD and RUN, and the ones that fail do so on
 	their own assertion - "the same player at t + 1.4 -> ACCEPTED (returned
-	nil)" - not on a missing import. `src/net/RateLimiter.luau` does NOT
+	nil)" - not on a missing import. `src/ReplicatedStorage/Net/RateLimiter.luau` does NOT
 	exist on arrival, and AC-6 is the one test that needs it: it is a unit
 	criterion on the limiter, and its first assertion says so by name. The
 	one wrapper test that passes on arrival (AC-4: no rateLimit, every call
@@ -33,18 +33,27 @@
 
 local Contract = require("../helpers/RateContract")
 
-local schemaLoaded, schemaResult = pcall(require, "../../src/net/Schema")
-local remotesLoaded, remotesResult = pcall(require, "../../src/net/Remotes")
-local wrapperLoaded, wrapperResult = pcall(require, "../../src/net/Wrapper")
-local limiterLoaded, limiterResult = pcall(require, "../../src/net/RateLimiter")
+local schemaLoaded, schemaResult = pcall(require, "../../src/ReplicatedStorage/Net/Schema")
+local remotesLoaded, remotesResult = pcall(require, "../../src/ReplicatedStorage/Net/Remotes")
+local wrapperLoaded, wrapperResult = pcall(require, "../../src/ReplicatedStorage/Net/Wrapper")
+local limiterLoaded, limiterResult = pcall(require, "../../src/ReplicatedStorage/Net/RateLimiter")
 
 -- The three NET-001 modules are required for every check; `RateLimiter` is
 -- carried as nil until GREEN writes it, so a wrapper-level test fails on its
 -- own assertion rather than on the module AC-6 alone needs.
 local function net(): Contract.Net
-	assert(schemaLoaded, `src/net/Schema.luau did not load: {tostring(schemaResult)}`)
-	assert(remotesLoaded, `src/net/Remotes.luau did not load: {tostring(remotesResult)}`)
-	assert(wrapperLoaded, `src/net/Wrapper.luau did not load: {tostring(wrapperResult)}`)
+	assert(
+		schemaLoaded,
+		`src/ReplicatedStorage/Net/Schema.luau did not load: {tostring(schemaResult)}`
+	)
+	assert(
+		remotesLoaded,
+		`src/ReplicatedStorage/Net/Remotes.luau did not load: {tostring(remotesResult)}`
+	)
+	assert(
+		wrapperLoaded,
+		`src/ReplicatedStorage/Net/Wrapper.luau did not load: {tostring(wrapperResult)}`
+	)
 	return {
 		Schema = schemaResult,
 		Remotes = remotesResult,

@@ -3,7 +3,7 @@
 	ROUND-002's criteria, written once, as checks over a MODULE-SHAPED TABLE.
 
 	`tests/shared/tuning_test.luau` and `tests/shared/tuning_spec_test.luau` apply
-	them to `src/shared/Tuning.luau`, which is the story.
+	them to `src/ReplicatedStorage/Shared/Tuning.luau`, which is the story.
 	`tests/shared/tuning_controls_test.luau` applies the same objects to the
 	deliberately wrong tables in `tests/helpers/TuningFakes.luau`, which is what
 	makes the word "control" mean something here: in RED the module does not

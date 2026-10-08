@@ -26,7 +26,7 @@
 
 	NOTHING HERE REQUIRES UNMERGED PRODUCTION CODE. The bundles are
 	`PhaseStubs.luau` over `NetStubs.luau`, so these controls EXECUTE in RED,
-	while `phase_test.luau`'s assertions against the real `src/net/` are
+	while `phase_test.luau`'s assertions against the real `src/ReplicatedStorage/Net/` are
 	red on their own terms.
 ]]
 

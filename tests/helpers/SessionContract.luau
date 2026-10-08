@@ -54,9 +54,9 @@ local Deep = require("./Deep")
 local PhaseMachine = require("../../src/server/round/PhaseMachine")
 local Projection = require("../../src/server/seats/Projection")
 local Ring = require("../../src/server/seats/Ring")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 local RoundConfig = require("../../src/server/round/RoundConfig")
-local Tuning = require("../../src/shared/Tuning")
+local Tuning = require("../../src/ReplicatedStorage/Shared/Tuning")
 
 local SessionContract = {}
 

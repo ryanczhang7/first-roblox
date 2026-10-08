@@ -33,7 +33,7 @@
 	the controls test records what each measured.
 ]]
 
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local PingsStubs = require("./PingsStubs")
 
 local PingLifecycleStubs = {}

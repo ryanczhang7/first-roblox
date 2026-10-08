@@ -13,7 +13,7 @@
 		AC-4  procedure_length 9 must fail the per_operation_seconds relation
 		AC-5  an unfrozen module, or one frozen only at the root, must fail
 
-	In RED `src/shared/MechanicsTuning.luau` does not exist, so no mutation of it
+	In RED `src/ReplicatedStorage/Shared/MechanicsTuning.luau` does not exist, so no mutation of it
 	can be made and `mechanics_tuning_spec_test.luau` runs no assertion. This
 	file requires NO production code - not even `Tuning.luau`; AC-4's §1/§5
 	operands come from `TuningFakes.correct()`, a test helper - so that the SAME
@@ -397,7 +397,7 @@ return {
 		local message = refuses(function()
 			MechanicsTuningSpec.assertNoFindings(
 				MechanicsTuningSpec.missingOrMismatched(realRows(), drifted),
-				"AC-2: tuning.md §2-§4 and src/shared/MechanicsTuning.luau disagree"
+				"AC-2: tuning.md §2-§4 and src/ReplicatedStorage/Shared/MechanicsTuning.luau disagree"
 			)
 		end, "a module whose dial_settings is 5 must fail AC-2")
 		saysAll(
@@ -445,7 +445,7 @@ return {
 		local message = refuses(function()
 			MechanicsTuningSpec.assertNoFindings(
 				MechanicsTuningSpec.missingOrMismatched(realRows(), missing),
-				"AC-2: tuning.md §2-§4 and src/shared/MechanicsTuning.luau disagree"
+				"AC-2: tuning.md §2-§4 and src/ReplicatedStorage/Shared/MechanicsTuning.luau disagree"
 			)
 		end, "a module missing ping_display_seconds must fail AC-2")
 		saysAll(
@@ -473,7 +473,7 @@ return {
 		local message = refuses(function()
 			MechanicsTuningSpec.assertNoFindings(
 				MechanicsTuningSpec.missingOrMismatched(realRows(), skewed),
-				"AC-2: tuning.md §2-§4 and src/shared/MechanicsTuning.luau disagree"
+				"AC-2: tuning.md §2-§4 and src/ReplicatedStorage/Shared/MechanicsTuning.luau disagree"
 			)
 		end, "a reference row whose value differs from its referent must fail AC-2")
 		saysAll(message, {
@@ -511,7 +511,7 @@ return {
 		local message = refuses(function()
 			MechanicsTuningSpec.assertNoFindings(
 				MechanicsTuningSpec.missingOrMismatched(realRows(), ruled),
-				"AC-2: tuning.md §2-§4 and src/shared/MechanicsTuning.luau disagree"
+				"AC-2: tuning.md §2-§4 and src/ReplicatedStorage/Shared/MechanicsTuning.luau disagree"
 			)
 		end, "a module carrying spawn_room must fail AC-2 - a rule row is absent from the module")
 		saysAll(message, { "spawn_room", "a rule row, not a constant" }, "AC-2's rule-row control")
@@ -535,7 +535,7 @@ return {
 		local message = refuses(function()
 			MechanicsTuningSpec.assertNoFindings(
 				MechanicsTuningSpec.missingOrMismatched(realRows(), typed),
-				"AC-2: tuning.md §2-§4 and src/shared/MechanicsTuning.luau disagree"
+				"AC-2: tuning.md §2-§4 and src/ReplicatedStorage/Shared/MechanicsTuning.luau disagree"
 			)
 		end, "a boolean row carried as the number 1 must fail AC-2")
 		saysAll(
@@ -551,7 +551,7 @@ return {
 		local message = refuses(function()
 			MechanicsTuningSpec.assertNoFindings(
 				MechanicsTuningSpec.missingOrMismatched(realRows(), fake),
-				"AC-2: tuning.md §2-§4 and src/shared/MechanicsTuning.luau disagree"
+				"AC-2: tuning.md §2-§4 and src/ReplicatedStorage/Shared/MechanicsTuning.luau disagree"
 			)
 		end, "a module with no channel table must fail AC-2")
 		saysAll(message, { "MechanicsTuning.channel is nil" }, "AC-2's missing-table control")

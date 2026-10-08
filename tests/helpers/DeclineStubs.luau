@@ -23,7 +23,7 @@
 	`RejectionReporter` is carried as the bundle's reporter: it treats any
 	non-rate reason alike, so AC-4's telemetry half needs no stub of it.
 
-	WHAT THIS IS NOT: `src/net/` or a sketch of it. GREEN writes the real
+	WHAT THIS IS NOT: `src/ReplicatedStorage/Net/` or a sketch of it. GREEN writes the real
 	refund into `RateLimiter.luau` and the real stage 5 into `Wrapper.luau`
 	from the story's `## Contract`. Nothing here is to be copied.
 
@@ -33,7 +33,7 @@
 ]]
 
 local PhaseStubs = require("./PhaseStubs")
-local RejectionReporter = require("../../src/net/RejectionReporter")
+local RejectionReporter = require("../../src/ReplicatedStorage/Net/RejectionReporter")
 
 local DeclineStubs = {}
 

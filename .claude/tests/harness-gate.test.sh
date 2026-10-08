@@ -64,7 +64,7 @@ THIS_SUITE="harness-gate.test.sh"
 # src/. Named `__probe_*` so paths.conf classifies it as `test` (rules.md), and
 # named for THIS story so it cannot collide with the probes project-counters
 # writes and removes on its own EXIT trap while it runs.
-PROBE_REL="src/shared/__probe_h008_added.luau"
+PROBE_REL="src/ReplicatedStorage/Shared/__probe_h008_added.luau"
 PROBE="$REPO_ROOT/$PROBE_REL"
 
 cleanup() { rm -f "$PROBE"; return 0; }

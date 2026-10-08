@@ -1,7 +1,7 @@
 --!strict
 --[[
 	NET-001: the validation pipeline. AC-1 through AC-6 applied to the real
-	`src/net/Wrapper.luau`, driving real `Schema` and `Remotes` modules - this
+	`src/ReplicatedStorage/Net/Wrapper.luau`, driving real `Schema` and `Remotes` modules - this
 	is the level at which the CONTRACT between the three lives, so it is where
 	the adversarial cases are asserted.
 
@@ -27,14 +27,23 @@
 
 local Contract = require("../helpers/NetContract")
 
-local schemaLoaded, schemaResult = pcall(require, "../../src/net/Schema")
-local remotesLoaded, remotesResult = pcall(require, "../../src/net/Remotes")
-local wrapperLoaded, wrapperResult = pcall(require, "../../src/net/Wrapper")
+local schemaLoaded, schemaResult = pcall(require, "../../src/ReplicatedStorage/Net/Schema")
+local remotesLoaded, remotesResult = pcall(require, "../../src/ReplicatedStorage/Net/Remotes")
+local wrapperLoaded, wrapperResult = pcall(require, "../../src/ReplicatedStorage/Net/Wrapper")
 
 local function net(): Contract.Net
-	assert(schemaLoaded, `src/net/Schema.luau did not load: {tostring(schemaResult)}`)
-	assert(remotesLoaded, `src/net/Remotes.luau did not load: {tostring(remotesResult)}`)
-	assert(wrapperLoaded, `src/net/Wrapper.luau did not load: {tostring(wrapperResult)}`)
+	assert(
+		schemaLoaded,
+		`src/ReplicatedStorage/Net/Schema.luau did not load: {tostring(schemaResult)}`
+	)
+	assert(
+		remotesLoaded,
+		`src/ReplicatedStorage/Net/Remotes.luau did not load: {tostring(remotesResult)}`
+	)
+	assert(
+		wrapperLoaded,
+		`src/ReplicatedStorage/Net/Wrapper.luau did not load: {tostring(wrapperResult)}`
+	)
 	return { Schema = schemaResult, Remotes = remotesResult, Wrapper = wrapperResult }
 end
 

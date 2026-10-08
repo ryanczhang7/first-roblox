@@ -33,7 +33,7 @@
 	record what each measured.
 ]]
 
-local Presets = require("../../src/shared/channel/Presets")
+local Presets = require("../../src/ReplicatedStorage/Shared/channel/Presets")
 
 local PresetSendsStubs = {}
 

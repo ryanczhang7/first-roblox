@@ -3,7 +3,7 @@
 	TUNE-001's criteria, written once, as checks over a MODULE-SHAPED TABLE.
 
 	`tests/shared/mechanics_tuning_spec_test.luau` applies them to
-	`src/shared/MechanicsTuning.luau`, which is the story.
+	`src/ReplicatedStorage/Shared/MechanicsTuning.luau`, which is the story.
 	`tests/shared/mechanics_tuning_controls_test.luau` applies the same objects
 	to deliberately wrong fixtures and fake tables, and requires NO production
 	code, so every control here RUNS during RED while the module does not exist.

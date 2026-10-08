@@ -4,7 +4,7 @@
 	makes about `RateLimiter.refund`, `CallControl` and the two stage-5
 	details, written once as checks over a bundle -
 	`{ Schema, Remotes, Wrapper, RateLimiter, RejectionReporter }` - handed in
-	as a parameter rather than over `src/net/*.luau` by name. The same
+	as a parameter rather than over `src/ReplicatedStorage/Net/*.luau` by name. The same
 	arrangement as `RateContract.luau` and `RejectionContract.luau`, for the
 	same reason: `tests/net/decline_test.luau` applies these to the real
 	modules and `tests/net/decline_controls_test.luau` applies them to the
@@ -25,7 +25,7 @@
 	gives, with the remote's name and the declared interval interpolated.
 
 	THE INTERVALS ARE FIXTURES, declared on the test remote and never read
-	out of `src/shared/`. SEND = 10 and ATTEMPT = 1 are the shape the design
+	out of `src/ReplicatedStorage/Shared/`. SEND = 10 and ATTEMPT = 1 are the shape the design
 	describes (`architecture.md` §9.5: a 10 s refundable send limit over a 1 s
 	non-refundable attempt floor), chosen so that "after the attempt floor but
 	well inside the send limit" is a wide window; the mechanism is
@@ -242,7 +242,7 @@ end
 -- addition to a module that exists, so its absence is named by field.
 local function newLimiter(bundle: Bundle, criterion: string, seconds: number): any
 	if bundle.RateLimiter == nil then
-		Contract.fail(`{criterion}: src/net/RateLimiter.luau did not load`)
+		Contract.fail(`{criterion}: src/ReplicatedStorage/Net/RateLimiter.luau did not load`)
 	end
 	local limiter = bundle.RateLimiter.new(seconds)
 	if typeof(limiter) ~= "table" then
@@ -1279,7 +1279,10 @@ function DeclineContract.declinedIsRecordedLikeAnyOtherReason(bundle: Bundle)
 
 	-- End to end, with the real reporter.
 	if bundle.RejectionReporter == nil then
-		table.insert(violations, `{criterion}: src/net/RejectionReporter.luau did not load`)
+		table.insert(
+			violations,
+			`{criterion}: src/ReplicatedStorage/Net/RejectionReporter.luau did not load`
+		)
 		finish(criterion, violations, "for a declined call's telemetry")
 		return
 	end

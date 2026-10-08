@@ -16,7 +16,7 @@
 	every control: a control that fires is then attributable to that one field.
 
 	WHAT THIS IS NOT, and it matters because the next agent to read it is the
-	one who has to write the real thing: it is NOT `src/shared/telemetry/` and
+	one who has to write the real thing: it is NOT `src/ReplicatedStorage/Shared/telemetry/` and
 	not a sketch of it. The baseline is the Contract only as far as the checks
 	can see - every type is `any`, and its error messages are whatever fell
 	out. GREEN writes the modules from the story's `## Contract`, against the

@@ -5,7 +5,7 @@
 
 	`tests/shared/clock_test.luau` applies these to `Clock.manual`.
 	`tests/shared/clock_controls_test.luau` applies them to the wrong clocks in
-	`Fakes.luau`, so that in RED - where `src/shared/Clock.luau` does not exist
+	`Fakes.luau`, so that in RED - where `src/ReplicatedStorage/Shared/Clock.luau` does not exist
 	and the real file cannot even load - the assertions themselves have still been
 	executed and observed to reject a clock that does not advance.
 

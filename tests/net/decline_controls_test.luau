@@ -34,7 +34,7 @@
 	NOTHING HERE REQUIRES UNMERGED PRODUCTION CODE. The bundles are
 	`DeclineStubs.luau` over `PhaseStubs.luau` over `NetStubs.luau`, with the
 	merged `RejectionReporter` and `Event`, so these controls EXECUTE in RED
-	while `decline_test.luau`'s assertions against the real `src/net/` are
+	while `decline_test.luau`'s assertions against the real `src/ReplicatedStorage/Net/` are
 	red on their own terms.
 ]]
 
@@ -45,7 +45,7 @@ local RateContract = require("../helpers/RateContract")
 local RejectionContract = require("../helpers/RejectionContract")
 local Stubs = require("../helpers/DeclineStubs")
 
-local Event = require("../../src/shared/telemetry/Event")
+local Event = require("../../src/ReplicatedStorage/Shared/telemetry/Event")
 
 type Check = (any) -> ()
 type Named = { label: string, check: Check }

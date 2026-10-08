@@ -1,7 +1,7 @@
 --!strict
 --[[
 	TUNE-001 AC-1 to AC-5: `docs/wiki/game/tuning.md` §2, §3 and §4 against
-	`src/shared/MechanicsTuning.luau`, with `src/shared/Tuning.luau` supplying
+	`src/ReplicatedStorage/Shared/MechanicsTuning.luau`, with `src/ReplicatedStorage/Shared/Tuning.luau` supplying
 	the §1 and §5 operands of AC-4's relations.
 
 	The document's first paragraph says it IS the specification and that a
@@ -34,12 +34,15 @@
 ]]
 
 local MechanicsTuningSpec = require("../helpers/MechanicsTuningSpec")
-local Tuning = require("../../src/shared/Tuning")
+local Tuning = require("../../src/ReplicatedStorage/Shared/Tuning")
 
-local loaded, loadResult = pcall(require, "../../src/shared/MechanicsTuning")
+local loaded, loadResult = pcall(require, "../../src/ReplicatedStorage/Shared/MechanicsTuning")
 
 local function MechanicsTuning(): any
-	assert(loaded, `src/shared/MechanicsTuning.luau did not load: {tostring(loadResult)}`)
+	assert(
+		loaded,
+		`src/ReplicatedStorage/Shared/MechanicsTuning.luau did not load: {tostring(loadResult)}`
+	)
 	return loadResult
 end
 
@@ -69,7 +72,7 @@ return {
 		MechanicsTuningSpec.assertEverySectionHasRows(spec())
 		MechanicsTuningSpec.assertNoFindings(
 			MechanicsTuningSpec.missingOrMismatched(spec().rows, MechanicsTuning()),
-			"AC-2: tuning.md §2-§4 and src/shared/MechanicsTuning.luau disagree"
+			"AC-2: tuning.md §2-§4 and src/ReplicatedStorage/Shared/MechanicsTuning.luau disagree"
 		)
 	end,
 

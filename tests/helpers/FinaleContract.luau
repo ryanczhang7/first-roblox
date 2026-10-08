@@ -52,7 +52,7 @@
 
 local Contract = require("./Contract")
 local Deep = require("./Deep")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local Turn = require("./TurnContract")
 
 local FinaleContract = {}

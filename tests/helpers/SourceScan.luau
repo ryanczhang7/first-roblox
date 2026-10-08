@@ -2,8 +2,8 @@
 --[[
 	The source guard behind ROUND-001 AC-5 and AC-6.
 
-	AC-5 says no module other than `src/shared/Clock.luau` may reference a real
-	time source, and no module other than `src/shared/Rng.luau` may reference a
+	AC-5 says no module other than `src/ReplicatedStorage/Shared/Clock.luau` may reference a real
+	time source, and no module other than `src/ReplicatedStorage/Shared/Rng.luau` may reference a
 	real random source. AC-6 says the file list this scan runs over comes from
 	`scripts/classify.sh`, never from a private glob, regex or directory walk.
 
@@ -54,14 +54,18 @@ export type Hit = {
 
 -- AC-5's two lists, verbatim. `owner` is the one module allowed to say it.
 local RULES: { Rule } = {
-	{ symbol = "os.clock", owner = "src/shared/Clock.luau", kind = "time" },
-	{ symbol = "os.time", owner = "src/shared/Clock.luau", kind = "time" },
-	{ symbol = "tick", owner = "src/shared/Clock.luau", kind = "time" },
-	{ symbol = "DateTime.now", owner = "src/shared/Clock.luau", kind = "time" },
-	{ symbol = "task.wait", owner = "src/shared/Clock.luau", kind = "time" },
-	{ symbol = "math.random", owner = "src/shared/Rng.luau", kind = "random" },
-	{ symbol = "math.randomseed", owner = "src/shared/Rng.luau", kind = "random" },
-	{ symbol = "Random.new", owner = "src/shared/Rng.luau", kind = "random" },
+	{ symbol = "os.clock", owner = "src/ReplicatedStorage/Shared/Clock.luau", kind = "time" },
+	{ symbol = "os.time", owner = "src/ReplicatedStorage/Shared/Clock.luau", kind = "time" },
+	{ symbol = "tick", owner = "src/ReplicatedStorage/Shared/Clock.luau", kind = "time" },
+	{ symbol = "DateTime.now", owner = "src/ReplicatedStorage/Shared/Clock.luau", kind = "time" },
+	{ symbol = "task.wait", owner = "src/ReplicatedStorage/Shared/Clock.luau", kind = "time" },
+	{ symbol = "math.random", owner = "src/ReplicatedStorage/Shared/Rng.luau", kind = "random" },
+	{
+		symbol = "math.randomseed",
+		owner = "src/ReplicatedStorage/Shared/Rng.luau",
+		kind = "random",
+	},
+	{ symbol = "Random.new", owner = "src/ReplicatedStorage/Shared/Rng.luau", kind = "random" },
 }
 
 SourceScan.RULES = RULES
@@ -417,7 +421,7 @@ end
 	`text` with every comment and string literal replaced by spaces, newlines
 	kept so line numbers still mean something.
 
-	This is not decoration. `src/shared/Scaffold.luau` names `os.clock`, `tick`,
+	This is not decoration. `src/ReplicatedStorage/Shared/Scaffold.luau` names `os.clock`, `tick`,
 	`task.wait`, `math.random` and `Random.new` in a doc comment explaining that
 	nothing may call them, and a line-grep guard fires on that comment - flagging
 	the one file in the tree that documents the rule it is enforcing. A guard

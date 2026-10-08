@@ -29,7 +29,7 @@
 	one.
 ]]
 
-local Clock = require("../../src/shared/Clock")
+local Clock = require("../../src/ReplicatedStorage/Shared/Clock")
 local Contract = require("../helpers/PhaseMachineContract")
 local Deep = require("../helpers/Deep")
 

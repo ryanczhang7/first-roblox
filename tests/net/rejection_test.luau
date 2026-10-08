@@ -2,14 +2,14 @@
 --[[
 	TEL-003: every rejected remote call emits a telemetry event naming the
 	reason. AC-1 through AC-6 and the Contract's promises applied to the real
-	`src/net/Wrapper.luau` and the new `src/net/RejectionReporter.luau`,
+	`src/ReplicatedStorage/Net/Wrapper.luau` and the new `src/ReplicatedStorage/Net/RejectionReporter.luau`,
 	driving the real `Schema`, `Remotes`, `RateLimiter` and the real
-	`src/shared/telemetry/Event.luau`.
+	`src/ReplicatedStorage/Shared/telemetry/Event.luau`.
 
 	THREE RIGHT REASONS TO BE RED, and the file is arranged so each surfaces
 	as its own assertion rather than as one LOAD FAIL:
 
-	  * `src/net/RejectionReporter.luau` does NOT exist on arrival. It is
+	  * `src/ReplicatedStorage/Net/RejectionReporter.luau` does NOT exist on arrival. It is
 	    required through a `pcall` and carried as nil, so the reporter unit
 	    tests fail on "did not load" - the module is the story's artifact.
 	  * `Wrapper.guard` does not read `context.telemetry`. The WIRING tests
@@ -33,22 +33,39 @@
 
 local Contract = require("../helpers/RejectionContract")
 
-local schemaLoaded, schemaResult = pcall(require, "../../src/net/Schema")
-local remotesLoaded, remotesResult = pcall(require, "../../src/net/Remotes")
-local wrapperLoaded, wrapperResult = pcall(require, "../../src/net/Wrapper")
-local limiterLoaded, limiterResult = pcall(require, "../../src/net/RateLimiter")
-local eventLoaded, eventResult = pcall(require, "../../src/shared/telemetry/Event")
-local reporterLoaded, reporterResult = pcall(require, "../../src/net/RejectionReporter")
+local schemaLoaded, schemaResult = pcall(require, "../../src/ReplicatedStorage/Net/Schema")
+local remotesLoaded, remotesResult = pcall(require, "../../src/ReplicatedStorage/Net/Remotes")
+local wrapperLoaded, wrapperResult = pcall(require, "../../src/ReplicatedStorage/Net/Wrapper")
+local limiterLoaded, limiterResult = pcall(require, "../../src/ReplicatedStorage/Net/RateLimiter")
+local eventLoaded, eventResult =
+	pcall(require, "../../src/ReplicatedStorage/Shared/telemetry/Event")
+local reporterLoaded, reporterResult =
+	pcall(require, "../../src/ReplicatedStorage/Net/RejectionReporter")
 
 -- The merged modules are required for every check; `RejectionReporter` is
 -- carried as nil until GREEN writes it, so a wiring test fails on its own
 -- assertion rather than on the module the reporter tests alone need.
 local function bundle(): Contract.Bundle
-	assert(schemaLoaded, `src/net/Schema.luau did not load: {tostring(schemaResult)}`)
-	assert(remotesLoaded, `src/net/Remotes.luau did not load: {tostring(remotesResult)}`)
-	assert(wrapperLoaded, `src/net/Wrapper.luau did not load: {tostring(wrapperResult)}`)
-	assert(limiterLoaded, `src/net/RateLimiter.luau did not load: {tostring(limiterResult)}`)
-	assert(eventLoaded, `src/shared/telemetry/Event.luau did not load: {tostring(eventResult)}`)
+	assert(
+		schemaLoaded,
+		`src/ReplicatedStorage/Net/Schema.luau did not load: {tostring(schemaResult)}`
+	)
+	assert(
+		remotesLoaded,
+		`src/ReplicatedStorage/Net/Remotes.luau did not load: {tostring(remotesResult)}`
+	)
+	assert(
+		wrapperLoaded,
+		`src/ReplicatedStorage/Net/Wrapper.luau did not load: {tostring(wrapperResult)}`
+	)
+	assert(
+		limiterLoaded,
+		`src/ReplicatedStorage/Net/RateLimiter.luau did not load: {tostring(limiterResult)}`
+	)
+	assert(
+		eventLoaded,
+		`src/ReplicatedStorage/Shared/telemetry/Event.luau did not load: {tostring(eventResult)}`
+	)
 	return {
 		Schema = schemaResult,
 		Remotes = remotesResult,
@@ -60,7 +77,7 @@ local function bundle(): Contract.Bundle
 end
 
 return {
-	--[[ The reporter: src/net/RejectionReporter.luau ]]
+	--[[ The reporter: src/ReplicatedStorage/Net/RejectionReporter.luau ]]
 
 	["Contract: RejectionReporter exports INTERVAL_SECONDS = 1 and new(intervalSeconds, sessionId) returning a reporter with record and flush methods"] = function()
 		Contract.reporterExportsTheIntervalAndAConstructor(bundle())

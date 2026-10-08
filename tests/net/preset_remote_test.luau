@@ -2,8 +2,8 @@
 --[[
 	CHAN-004: the `SendPreset` remote is declared, validated, and its
 	refusals decline. AC-1, AC-2, AC-3, AC-4's guarded half and AC-7, applied
-	to the real `src/net/GameRemotes.luau` through the real
-	`src/net/Wrapper.luau`, `Remotes.luau` and `Schema.luau`, and - for AC-4
+	to the real `src/ReplicatedStorage/Net/GameRemotes.luau` through the real
+	`src/ReplicatedStorage/Net/Wrapper.luau`, `Remotes.luau` and `Schema.luau`, and - for AC-4
 	and AC-7 - to the real `src/server/channel/PresetSends.luau`.
 
 	`GameRemotes` and `PresetSends` are required through a `pcall` at the top
@@ -37,16 +37,26 @@
 local Contract = require("../helpers/PresetRemoteContract")
 local Deep = require("../helpers/Deep")
 
-local schemaLoaded, schemaResult = pcall(require, "../../src/net/Schema")
-local remotesLoaded, remotesResult = pcall(require, "../../src/net/Remotes")
-local wrapperLoaded, wrapperResult = pcall(require, "../../src/net/Wrapper")
-local gameRemotesLoaded, gameRemotesResult = pcall(require, "../../src/net/GameRemotes")
+local schemaLoaded, schemaResult = pcall(require, "../../src/ReplicatedStorage/Net/Schema")
+local remotesLoaded, remotesResult = pcall(require, "../../src/ReplicatedStorage/Net/Remotes")
+local wrapperLoaded, wrapperResult = pcall(require, "../../src/ReplicatedStorage/Net/Wrapper")
+local gameRemotesLoaded, gameRemotesResult =
+	pcall(require, "../../src/ReplicatedStorage/Net/GameRemotes")
 local sendsLoaded, sendsResult = pcall(require, "../../src/server/channel/PresetSends")
 
 local function net(): Contract.Net
-	assert(schemaLoaded, `src/net/Schema.luau did not load: {tostring(schemaResult)}`)
-	assert(remotesLoaded, `src/net/Remotes.luau did not load: {tostring(remotesResult)}`)
-	assert(wrapperLoaded, `src/net/Wrapper.luau did not load: {tostring(wrapperResult)}`)
+	assert(
+		schemaLoaded,
+		`src/ReplicatedStorage/Net/Schema.luau did not load: {tostring(schemaResult)}`
+	)
+	assert(
+		remotesLoaded,
+		`src/ReplicatedStorage/Net/Remotes.luau did not load: {tostring(remotesResult)}`
+	)
+	assert(
+		wrapperLoaded,
+		`src/ReplicatedStorage/Net/Wrapper.luau did not load: {tostring(wrapperResult)}`
+	)
 	return { Schema = schemaResult, Remotes = remotesResult, Wrapper = wrapperResult }
 end
 
@@ -54,7 +64,7 @@ end
 local function sendPreset(): any
 	assert(
 		gameRemotesLoaded,
-		`src/net/GameRemotes.luau did not load: {tostring(gameRemotesResult)}`
+		`src/ReplicatedStorage/Net/GameRemotes.luau did not load: {tostring(gameRemotesResult)}`
 	)
 	local found: any = nil
 	for _, entry in net().Remotes.all() do

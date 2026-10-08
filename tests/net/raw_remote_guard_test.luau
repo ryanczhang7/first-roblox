@@ -3,7 +3,7 @@
 	NET-001 AC-7: the tree-scanning guard behind B4's one enforceable rule -
 	"no raw `OnServerEvent:Connect` in `src/server/`", generalised by the
 	criterion to: `OnServerEvent`, `OnServerInvoke` and `.OnClientEvent`
-	appear in no source module outside `src/net/`.
+	appear in no source module outside `src/ReplicatedStorage/Net/`.
 
 	THE FILE LIST COMES FROM `scripts/classify.sh`, through
 	`tests/helpers/SourceScan.luau`, never from a glob or a directory walk of
@@ -29,7 +29,7 @@
 	catches the way the call is actually written.
 
 	THREE ASSERTIONS HERE ARE RED IN RED for a reason that is not the matcher:
-	`src/net/` is empty, so the three Contract modules are not yet in the
+	`src/ReplicatedStorage/Net/` is empty, so the three Contract modules are not yet in the
 	scanned set. That is the right failure - it is the first thing the story
 	requires - and it is what makes the scanned-set assertion mean something
 	once they exist.
@@ -39,20 +39,20 @@ local SourceScan = require("../helpers/SourceScan")
 
 local NEEDLES: { string } = { "OnServerEvent", "OnServerInvoke", ".OnClientEvent" }
 
-local NET_PREFIX = "src/net/"
+local NET_PREFIX = "src/ReplicatedStorage/Net/"
 local PROBE = "src/server/__probe_raw_remote.luau"
 
--- Modules the scanned set must contain: two that exist today, outside src/net/,
+-- Modules the scanned set must contain: two that exist today, outside src/ReplicatedStorage/Net/,
 -- so the exemption cannot have emptied the set; and the three this story adds.
 local EXISTING: { string } = {
 	"src/server/round/PhaseMachine.luau",
 	"src/server/seats/Ring.luau",
-	"src/shared/Clock.luau",
+	"src/ReplicatedStorage/Shared/Clock.luau",
 }
 local NET_MODULES: { string } = {
-	"src/net/Schema.luau",
-	"src/net/Remotes.luau",
-	"src/net/Wrapper.luau",
+	"src/ReplicatedStorage/Net/Schema.luau",
+	"src/ReplicatedStorage/Net/Remotes.luau",
+	"src/ReplicatedStorage/Net/Wrapper.luau",
 }
 
 local function isUnderNet(path: string): boolean
@@ -84,7 +84,7 @@ return {
 		files satisfy it; the floor is there as well so the set cannot be five
 		files and nothing else.
 	]]
-	["AC-7: the scanned set is the real source tree - at least six modules, including three outside src/net/ and this story's three inside it"] = function()
+	["AC-7: the scanned set is the real source tree - at least six modules, including three outside src/ReplicatedStorage/Net/ and this story's three inside it"] = function()
 		local sources = SourceScan.sourceFiles()
 		assert(#sources >= 6, `the guard scanned {#sources} file(s); a guard over nothing passes`)
 		for _, path in EXISTING do
@@ -107,28 +107,28 @@ return {
 		)
 	end,
 
-	["AC-7: OnServerEvent, OnServerInvoke and .OnClientEvent appear in no source module outside src/net/"] = function()
+	["AC-7: OnServerEvent, OnServerInvoke and .OnClientEvent appear in no source module outside src/ReplicatedStorage/Net/"] = function()
 		local sources = SourceScan.sourceFiles()
 		-- The same vacuity check as above, repeated rather than trusted from
 		-- there: this is the assertion that can pass while proving nothing.
 		local scanned = outsideNet(sources)
 		assert(
 			#scanned >= 3 and SourceScan.contains(scanned, EXISTING[1]),
-			`this assertion would pass over the {#scanned} file(s) outside src/net/ the classifier `
+			`this assertion would pass over the {#scanned} file(s) outside src/ReplicatedStorage/Net/ the classifier `
 				.. `returned, and {EXISTING[1]} is not among them: {table.concat(scanned, ", ")}`
 		)
 		local exempt = #sources - #scanned
 		assert(
 			exempt >= #NET_MODULES,
-			`only {exempt} file(s) under src/net/ were exempted; the wrapper layer is the one place `
+			`only {exempt} file(s) under src/ReplicatedStorage/Net/ were exempted; the wrapper layer is the one place `
 				.. `these names may appear and it must be in the tree`
 		)
 
 		local hits = SourceScan.scanForMembers(scanned, NEEDLES)
 		assert(
 			#hits == 0,
-			`{#hits} raw-remote reference(s) across {#scanned} scanned file(s) outside src/net/. `
-				.. `B4: every remote goes through the wrapper in src/net/:\n`
+			`{#hits} raw-remote reference(s) across {#scanned} scanned file(s) outside src/ReplicatedStorage/Net/. `
+				.. `B4: every remote goes through the wrapper in src/ReplicatedStorage/Net/:\n`
 				.. SourceScan.describeHits(hits)
 		)
 	end,
@@ -229,7 +229,7 @@ return {
 	["control: the member matcher does not fire on the needles in comments or string literals"] = function()
 		local text = table.concat({
 			"--!strict",
-			"--[[ No OnServerEvent:Connect outside src/net/; no OnServerInvoke either ]]",
+			"--[[ No OnServerEvent:Connect outside src/ReplicatedStorage/Net/; no OnServerInvoke either ]]",
 			"-- and nothing reads .OnClientEvent",
 			'local rule = "OnServerEvent, OnServerInvoke and .OnClientEvent are banned here"',
 			"local other = 'remote.OnServerEvent:Connect'",
@@ -255,13 +255,18 @@ return {
 		assert(#hits == 0, `word boundaries are wrong:\n` .. SourceScan.describeHits(hits))
 	end,
 
-	["control: the member matcher exempts nothing by itself - a src/net/ path scans like any other, and the guard is what exempts it"] = function()
+	["control: the member matcher exempts nothing by itself - a src/ReplicatedStorage/Net/ path scans like any other, and the guard is what exempts it"] = function()
 		local text = "remote.OnServerEvent:Connect(handler)"
-		local hits = SourceScan.memberHitsIn("src/net/Wrapper.luau", text, NEEDLES)
-		assert(#hits == 1, `expected the matcher to report 1 hit under src/net/, got {#hits}`)
+		local hits =
+			SourceScan.memberHitsIn("src/ReplicatedStorage/Net/Wrapper.luau", text, NEEDLES)
 		assert(
-			#outsideNet({ "src/net/Wrapper.luau", "src/server/X.luau", "src/network/Y.luau" }) == 2,
-			"outsideNet exempts exactly the src/net/ prefix"
+			#hits == 1,
+			`expected the matcher to report 1 hit under src/ReplicatedStorage/Net/, got {#hits}`
 		)
+		assert(#outsideNet({
+			"src/ReplicatedStorage/Net/Wrapper.luau",
+			"src/server/X.luau",
+			"src/network/Y.luau",
+		}) == 2, "outsideNet exempts exactly the src/ReplicatedStorage/Net/ prefix")
 	end,
 }

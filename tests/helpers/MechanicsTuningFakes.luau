@@ -26,7 +26,7 @@
 	attribution of each control to its one change.
 
 	IT IS NOT A SPECIFICATION OF THE MODULE. Nothing here pins how
-	`src/shared/MechanicsTuning.luau` is written - only what it must contain.
+	`src/ReplicatedStorage/Shared/MechanicsTuning.luau` is written - only what it must contain.
 	`correct()` is NOT frozen; `frozen()` and `frozenRootOnly()` are the AC-5
 	fixtures and say so.
 ]]

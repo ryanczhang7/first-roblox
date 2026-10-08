@@ -6,7 +6,7 @@
 	"the AC-2, AC-3 and AC-5 controls each fail against a plausible wrong
 	implementation, demonstrated in the handoff - not merely described".
 
-	It requires NO production code, deliberately. In RED `src/shared/Rng.luau` does
+	It requires NO production code, deliberately. In RED `src/ReplicatedStorage/Shared/Rng.luau` does
 	not exist, `rng_test.luau` cannot load, and not one assertion in that file
 	runs - which is exactly the condition `.claude/harness/rules.md` warns leaves
 	every threshold in a suite unverified for a whole phase. The checks in

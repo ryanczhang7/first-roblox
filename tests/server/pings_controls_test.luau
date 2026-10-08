@@ -32,7 +32,7 @@
 
 local Contract = require("../helpers/PingsContract")
 local Deep = require("../helpers/Deep")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local Stubs = require("../helpers/PingsStubs")
 
 local function failingNames(P: any): ({ string }, { [string]: string })
