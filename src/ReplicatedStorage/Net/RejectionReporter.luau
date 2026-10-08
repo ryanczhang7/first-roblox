@@ -28,7 +28,7 @@
 	requires this module, and the reverse edge would be a cycle.
 ]]
 
-local Event = require("@shared/telemetry/Event")
+local Event = require("@game/ReplicatedStorage/Shared/telemetry/Event")
 
 local RejectionReporter = {}
 

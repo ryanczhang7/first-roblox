@@ -29,7 +29,7 @@
 local Generator = require("./Generator")
 local Layout = require("./Layout")
 local Machines = require("./Machines")
-local MechanicsTuning = require("@shared/MechanicsTuning")
+local MechanicsTuning = require("@game/ReplicatedStorage/Shared/MechanicsTuning")
 
 export type Vec3 = { x: number, y: number, z: number }
 export type PartSpec = {

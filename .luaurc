@@ -5,6 +5,6 @@
   },
   "globals": [],
   "aliases": {
-    "shared": "src/shared"
+    "game": "src"
   }
 }

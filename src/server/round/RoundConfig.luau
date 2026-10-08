@@ -6,7 +6,7 @@
 	This module does exactly one thing: it RENAMES `ROUND-002`'s specification
 	keys (`lobby_seconds`) to the Contract's field names (`lobbySeconds`). It
 	chooses no value and it computes none - `docs/wiki/game/tuning.md` is the
-	specification, `src/shared/Tuning.luau` transcribes it, and
+	specification, `src/ReplicatedStorage/Shared/Tuning.luau` transcribes it, and
 	`tests/shared/tuning_spec_test.luau` guards the transcription. A literal 60
 	here would be a third place for the same constant to live.
 
@@ -21,7 +21,7 @@
 	machine is handed a config, the config knows nothing about the machine.
 ]]
 
-local Tuning = require("@shared/Tuning")
+local Tuning = require("@game/ReplicatedStorage/Shared/Tuning")
 
 local RoundConfig = {}
 

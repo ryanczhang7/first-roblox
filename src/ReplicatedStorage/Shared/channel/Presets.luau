@@ -18,8 +18,8 @@
 	name for code and for the client's `Theme`, which owns the icon. There is
 	no icon field here on purpose: presentation lives in `docs/wiki/design/`.
 
-	`phases` IS `{ string }`, NOT A PHASE UNION. `src/shared/` cannot import
-	`src/net/` (`architecture.md` §1), and a third textual copy of the union is
+	`phases` IS `{ string }`, NOT A PHASE UNION. `src/ReplicatedStorage/Shared/` cannot import
+	`src/ReplicatedStorage/Net/` (`architecture.md` §1), and a third textual copy of the union is
 	what `phase_union_guard_test` exists to prevent. The test checks each name
 	against the set it reads out of `Remotes.luau` instead.
 

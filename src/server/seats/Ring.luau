@@ -57,8 +57,8 @@
 	`rejoin` is handed `now` - nothing but arithmetic over tables.
 ]]
 
-local Rng = require("@shared/Rng")
-local Tuning = require("@shared/Tuning")
+local Rng = require("@game/ReplicatedStorage/Shared/Rng")
+local Tuning = require("@game/ReplicatedStorage/Shared/Tuning")
 
 local Ring = {}
 

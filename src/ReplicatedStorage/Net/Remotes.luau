@@ -2,7 +2,7 @@
 --[[
 	NET-001: the declaration registry. Every remote of this game is declared
 	here with the schema its arguments must satisfy, per B4: "Every remote gets
-	a server-side validation wrapper in `src/net/`."
+	a server-side validation wrapper in `src/ReplicatedStorage/Net/`."
 
 	A DUPLICATE NAME FAILS rather than replacing the first declaration (AC-8).
 	A silently replaced declaration is a validated remote quietly becoming an

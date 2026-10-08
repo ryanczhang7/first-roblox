@@ -31,7 +31,7 @@
 
 local Layout = require("./Layout")
 local Machines = require("./Machines")
-local MechanicsTuning = require("@shared/MechanicsTuning")
+local MechanicsTuning = require("@game/ReplicatedStorage/Shared/MechanicsTuning")
 local Ring = require("../seats/Ring")
 local Steps = require("./Steps")
 

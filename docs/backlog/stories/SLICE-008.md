@@ -5,7 +5,7 @@ slug: modules-load-in-a-real-place-shared-code
 epic: EPIC-03
 type: chore
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/SLICE-008-modules-load-in-a-real-place-shared-code
 depends_on: [SLICE-001]    # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -664,3 +664,29 @@ are measured, not claimed. GREEN confirms each against the moved tree.
 
 ## Notes
 
+
+**GREEN blocked (2026-10-08). The Lead PO reproduced the escalation independently.**
+GREEN finished the move, and `lune run test` gives `1407 passed, 0 failed`.
+But the required `typecheck` gate fails on the frozen AC-3 probe:
+
+    src/client/__probe_cross_layer.luau [...](36,22): TypeError: Unknown require: d:\first-roblox\src\ServerScriptService\Server\round\PhaseMachine.lua
+
+The Lead PO reproduced it on a different input, without GREEN's code. A
+scratch `src/server/zz/repro.luau` (source-named; deleted after) required
+`@game/ReplicatedStorage/Shared/Rng` and `@game/ServerScriptService/Server/seats/Ring`.
+The gate's own `luau-lsp analyze` command, with `.luaurc` declaring
+`"game": "src"`, reported exactly one error:
+
+    [game/ServerScriptService/Server/zz/repro](3,11): TypeError: Unknown require: d:\first-roblox\src\ServerScriptService\Server\seats\Ring.lua
+    exit 1
+
+**This answers D-3:** with the alias present, `luau-lsp` resolves `@game` through
+`.luaurc`, on the file tree, not through the sourcemap. `ReplicatedStorage/...`
+mirrors the disk, so every real require resolves. Only a path that exists
+solely in the DataModel fails, and that is what the AC-3 probe deliberately
+spells. A side effect worth keeping: `typecheck` now also refuses any
+cross-layer `@game` path other than the mirrored ones.
+
+`bash scripts/frozen.sh verify` → `frozen: OK — 200 path(s) unchanged since the snapshot for SLICE-008`.
+The fix is to the probe, which is a test file, so it is a return to RED, and
+that is put to the operator.

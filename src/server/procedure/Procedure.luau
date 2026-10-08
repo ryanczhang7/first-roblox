@@ -57,10 +57,10 @@
 
 local Generator = require("../facility/Generator")
 local Machines = require("../facility/Machines")
-local MechanicsTuning = require("@shared/MechanicsTuning")
+local MechanicsTuning = require("@game/ReplicatedStorage/Shared/MechanicsTuning")
 local PhaseMachine = require("../round/PhaseMachine")
 local Ring = require("../seats/Ring")
-local Rng = require("@shared/Rng")
+local Rng = require("@game/ReplicatedStorage/Shared/Rng")
 
 export type Vec = { x: number, y: number, z: number }
 export type DialView = { setting: number?, state: "unset" | "committed" | "rejected" }

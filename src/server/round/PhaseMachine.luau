@@ -146,8 +146,8 @@
 	Lobby and Round should be unseated is SEAT-003's question, not this one's.
 ]]
 
-local Event = require("@shared/telemetry/Event")
-local Rng = require("@shared/Rng")
+local Event = require("@game/ReplicatedStorage/Shared/telemetry/Event")
+local Rng = require("@game/ReplicatedStorage/Shared/Rng")
 local RoundConfig = require("./RoundConfig")
 
 local PhaseMachine = {}
