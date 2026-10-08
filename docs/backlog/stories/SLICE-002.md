@@ -4,8 +4,8 @@ title: Every declared remote is bound through the wrapper and secrets reach only
 slug: every-declared-remote-is-bound-through-t
 epic: EPIC-03
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/SLICE-002-every-declared-remote-is-bound-through-t
 depends_on: [SLICE-001, SLICE-008]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -760,3 +760,5 @@ commit `--fast` read `PASS harness (16s, observed 41)`.
    `tests/shared/layer_requires_test.luau` and the `.luaurc` checks. A test
    that passes on arrival must be earned by a `scripts/mutate.sh` probe in RED.
 
+
+**REVIEW → DONE (2026-10-08).** PR https://github.com/ryanczhang7/first-roblox/pull/68 merged as `12e70a9`. CI run https://github.com/ryanczhang7/first-roblox/actions/runs/37840589440: `gates` 7m54s against `timeout-minutes: 45`, unit 270s, `1461 passed, 0 failed`, every required gate PASS. `boundaries` passed in 8s. No timing is near a limit.
