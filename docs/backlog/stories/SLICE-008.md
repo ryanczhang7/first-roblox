@@ -4,8 +4,8 @@ title: Modules load in a real place: shared code moves under the DataModel path 
 slug: modules-load-in-a-real-place-shared-code
 epic: EPIC-03
 type: chore
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/SLICE-008-modules-load-in-a-real-place-shared-code
 depends_on: [SLICE-001]    # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -855,3 +855,5 @@ that is put to the operator.
   - stories already DONE keep their history.
 - The full `gates.sh` run is recorded in `## Gate results`.
 - D-1 (Studio) is open, owned by REVIEW and the operator.
+
+**DONE (2026-10-08).** PR https://github.com/ryanczhang7/first-roblox/pull/67 merged. CI on `b130cc6`: `gates` passed in about 5.5 min against `timeout-minutes: 45`, and `boundaries` passed. D-1 passed in Studio.
