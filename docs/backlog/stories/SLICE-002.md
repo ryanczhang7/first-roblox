@@ -4,8 +4,8 @@ title: Every declared remote is bound through the wrapper and secrets reach only
 slug: every-declared-remote-is-bound-through-t
 epic: EPIC-03
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/SLICE-002-every-declared-remote-is-bound-through-t
 depends_on: [SLICE-001, SLICE-008]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -172,6 +172,40 @@ changed by `scripts/mutate.sh` to call `FireAllClients`, AC-3's test **must**
 fail; with `bind`'s guard call bypassed, AC-1's must. RED cannot run this —
 there is no `Transport` to mutate. Owner: GATES.
 
+**Result (GATES, 2026-10-08, Lead PO, run before `gates.sh`). Both held,
+and both counts match RED's prediction table exactly.**
+
+1. `sendTo` → `FireAllClients`. Mutation
+   `s/kindEvents\[kind\]:FireClient(player, payload)/kindEvents[kind]:FireAllClients(payload)/`
+   on `Transport.luau:166`, run over `tests/net/transport_test`. Predicted 1 red; observed:
+
+       FAIL  tests/net/transport_test :: AC-3: sendTo for each of the six per-player kinds calls FireClient exactly once on that kind's own event ...
+             D:\first-roblox\tests\helpers\TransportContract:420: sendTo("p1", "SeatView") called FireAllClients (1 call(s) across every event) for a per-player payload (AC-3); a secret must never be broadcast
+       20 passed, 1 failed
+       === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_ReplicatedStorage_Net_Transport.luau.20261008T202453Z.1139635.bak) ===
+         166: 		kindEvents[kind]:FireClient(player, payload)
+
+2. Guard bypassed in `bind`, keeping a `CallControl` (the 4-red form). Mutation
+   replaces `Transport.luau:136` with
+   `local h = handlers[definition.name]; local guarded = function(id, a) h(id, a, { decline = function() end }); return nil end`.
+   Predicted 4 red; observed:
+
+       FAIL  tests/net/transport_test :: AC-1: a seated player's { token = "four" } on "Ping", and a non-table payload on "SendPreset", return a Rejection with reason "shape" ...
+             D:\first-roblox\tests\helpers\TransportContract:165: a seated player sending { token = "four" } on "Ping": expected a Rejection with reason "shape", got nil nil
+       FAIL  tests/net/transport_test :: AC-5 / C-3: a well-formed call from a player object idOf maps to nil returns a Rejection with reason "identity" ...
+             D:\first-roblox\tests\helpers\TransportContract:165: a well-formed call from a player object idOf cannot map: expected a Rejection with reason "identity", got nil nil
+       FAIL  tests/net/transport_test :: C-1: a handler that calls call.decline() makes the connected function return a Rejection with reason "declined" ...
+             D:\first-roblox\tests\helpers\TransportContract:165: a seated player whose "Ping" handler calls call.decline(): expected a Rejection with reason "declined", got nil nil
+       FAIL  tests/net/transport_test :: C-3: across a seated and an unseated mapped player, idOf is called once per call ...
+             D:\first-roblox\tests\helpers\TransportContract:165: a well-formed call from a mapped but unseated player: expected a Rejection with reason "identity", got nil nil
+       17 passed, 4 failed
+       === mutate: command exited 1; restored (verified byte-for-byte against /d/first-roblox/.claude/state/mutations/src_ReplicatedStorage_Net_Transport.luau.20261008T202500Z.1139733.bak) ===
+         136: 		local guarded = Wrapper.guard(definition, context, handlers[definition.name])
+
+These two runs are also the orchestrator's check of RED's mutation table
+(`/complete-story`: "a mutation table in the handoff is a claim until you run
+one") — the predicted catch counts 1 and 4 were observed as 1 and 4.
+
 ## Out of scope
 
 - The real `RemoteEvent` creation in a place and the driver that calls `bind`
@@ -216,6 +250,7 @@ from an upstream story or spike (as noted above), amend it and re-run
   identification; the /plan-product dispatch reported no override). 2026-09-30.
 - RED - `test-developer` - `claude-fable-5-1` (dispatched with an explicit `model: fable`; the agent reported no override). 2026-10-08.
 - GREEN - `feature-developer` - `claude-opus-5-5` (dispatched with an explicit `model: opus`; the agent reported no override). 2026-10-08.
+- GATES - `lead-po` (orchestrator, no dispatch: no gate failed) - `claude-opus-5-5`. 2026-10-08.
 
 ## Test plan
 
@@ -644,10 +679,22 @@ module is shaped:
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-08T20:33:05Z
+    commit: a9c267d
+    tree:   4d0058ad30a289b303ee07302e14a7cc3b066b01
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (1s, observed 217)
+    PASS         lint (1s, observed 217, floor 1)
+    PASS         typecheck (2s, observed 37)
+    PASS         unit (306s, observed 1461, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (0s, observed 138085)
+    PASS         harness (17s, observed 41)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -658,6 +705,24 @@ module is shaped:
        * what was broken, and where
        * the gate output proving it failed
        * confirmation the probe was reverted -->
+
+**`harness` — counter baselines moved, no command or evidence line changed.**
+RED set `BASE_*`/`NARROW_*` in `.claude/tests/project-counters.test.sh` to
+the post-GREEN prediction (217 / 37). Nothing was broken on purpose: the two
+modules GREEN adds were simply absent, and the gate failed on exactly that
+gap, in the orchestrator's `gates.sh --fast` at the end of RED:
+
+    FAIL lint does not count the ignored file (still 92)
+         expected count: 217
+         actual count:   215
+    FAIL typecheck does not count the ignored file (still 17)
+         expected count: 37
+         actual count:   35
+    project-counters: 29 passed, 12 failed
+    FAIL         harness (20s, exit 1) -> .claude/state/gate-logs/harness.log
+
+Nothing to revert: GREEN's two source files closed the gap, and after the GREEN
+commit `--fast` read `PASS harness (16s, observed 41)`.
 
 ## Scaffold inventory
 
