@@ -226,6 +226,24 @@ not through the sourcemap. A scratch module requiring
 `luau-lsp` resolves `@game` through the sourcemap: RED's probe typechecked
 before `.luaurc` changed, and GREEN measured exit 0 with the alias renamed.
 
+
+**D-1 result (REVIEW, operator, read by the Lead PO from Studio's log,
+2026-10-08).** Studio 0.742.0.7421053, Rojo 7.7.0 serving this branch, Edit
+mode, command bar
+(`%LOCALAPPDATA%\Roblox\logs\0.742.0.7421053_20261008T183815Z_Studio_543DF_last.log`):
+
+    2026-10-08T18:40:58.664Z ... > print(pcall(require, game.ServerScriptService.Server.facility.Generator))
+    2026-10-08T18:40:58.684Z ... [FLog::Output] true table: 0xd66605a991bc0c28
+
+`Generator` loads in a real place, and so do the requires it chains through:
+`./Layout`, `../seats/Ring` and `@game/ReplicatedStorage/Shared/...`. On
+2026-10-07 the same chain failed at `Layout`'s `@shared` line
+(`SLICE-001`). The first attempts that session failed with
+`Server is not a valid member of ServerScriptService`, because Rojo was not
+yet connected (it refuses to connect during Play). Once connected, the result
+is the line above.
+MAP-001's own D-1 (walk the blockout) is still the operator's, and can now run.
+
 ## Amendments
 
 <!-- Acceptance criteria are frozen once the story leaves PLANNED. If one turns
