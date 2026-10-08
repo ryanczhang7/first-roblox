@@ -112,27 +112,64 @@ Lead PO through `scripts/mutate.sh` against the shipped module:
 There is no relative spelling that both `luau-lsp` and Lune accept across that
 boundary, which is what makes this a convention rather than a preference.
 
-**The limit, recorded rather than left in a comment.** Two of the three things
-that read a require have been measured — `luau-lsp analyze` exits 0 and
-`lune run test` resolves the alias — and the third has not: **nothing in this
-repository executes a module inside a Roblox runtime**, `.luaurc` is not synced
-by `default.project.json`, and the `build` gate proves only that the place file
-builds. So alias resolution *in a real place* is untested as of `ROUND-003`. The
-first story that runs a module in a place — the `RoundService` driver, or the
-first `src/net/` story with a live remote — verifies it, and if it does not hold
-the fix is a Rojo-side instance require behind a Lune-side shim, not a return to
-relative paths.
+**Measured in a real place: `@shared` does not resolve; `@game` does
+(`SLICE-001`, 2026-10-07).** Roblox Studio 0.742, with Rojo 7.7.0 serving
+`default.project.json` into a new Baseplate, then Play:
 
-**M3 settles this first.** The spike `SLICE-001` runs the check in a real place,
-before any M3 story depends on the answer, and records the result here. M3 also
-needs a second alias, `"net": "src/net"` (D21), because `src/server/` and
-`src/client/` both require `src/net/` across the instance tree; it is added by
-the first story that needs it (`SLICE-002`), under the same limit until
-`SLICE-001` reports.
+    server alias: false error requiring "@shared/Clock": @shared is not a valid alias
+    client alias: false error requiring "@shared/Clock": @shared is not a valid alias
+    server game alias: true table: 0x9e333e8e77839707
+    client game alias: true table: 0xace9ede3db5a50b3
 
-Note that this does not weaken §1's dependency rule: the aliases are `shared`
-and `net` and nothing else, so a `client` module cannot spell a require for
-`server` at all.
+- **Same-layer relative requires work in a place.** `Generator`'s `./Layout`
+  loaded, and the failure came one level down, at `Layout`'s `@shared` line. So
+  **no module that requires `@shared` loads in a place today**, which is every
+  module that crosses into shared.
+- **Roblox reads no `.luaurc`.** As of the latest staff statement (2026-01-08,
+  the require-by-string announcement on the DevForum), it has not shipped custom
+  aliases. Only the built-in `@self` and `@game` exist. So no file Rojo could
+  map into the place would make `@shared` work. That rules out the fallback
+  this section used to name first.
+- **`@game` is resolved by all three readers, given one condition.**
+  - Studio: natively.
+  - `luau-lsp` 1.69.0: through the sourcemap. A probe annotating
+    `require("@game/ReplicatedStorage/Shared/Clock")` as `number` got
+    `Expected this to be 'number', but got 'Clock'`.
+  - `lune` 0.10.5: only when `.luaurc` defines `game` as a directory. Without
+    it, Lune reports `@game is not a valid alias`; with
+    `"game": "<dir>"` it resolves `<dir>/ReplicatedStorage/Shared/X`.
+
+**Decision (operator, 2026-10-07): mirror the DataModel on disk for the shared
+layers, and spell cross-layer requires with `@game`.** `src/shared` becomes
+`src/ReplicatedStorage/Shared`, and `src/net` becomes
+`src/ReplicatedStorage/Net`. `.luaurc` declares exactly one alias,
+`"game": "src"`. A cross-layer require reads:
+
+    local Rng = require("@game/ReplicatedStorage/Shared/Rng")
+
+That one spelling resolves natively in Studio, in `luau-lsp` and in Lune, with
+no generated files and no shim. `src/server` and `src/client` keep their
+paths: nothing may require them across a layer.
+
+Two alternatives were weighed and rejected:
+- **A generated junction or symlink tree for Lune** would change fewer files.
+  But it adds platform-specific generated state, and it gives Lune two paths to
+  one file, so a test requiring `src/shared/X` would load a second instance of
+  the module that source loads through `@game`.
+- **Instance requires behind a Lune shim** (this section's earlier fallback)
+  would need a fake `game` and a replaced global `require` in Lune. That is the
+  most fragile of the three, now that `@game` exists.
+
+`SLICE-008` implements the decision. Until it merges, the `@shared` spelling
+above is still what the repository uses, and it still fails in a place.
+
+**The dependency rule needs a guard now.** `@game` is a path from the
+DataModel root, so in Studio and `luau-lsp` it can name
+`@game/ServerScriptService/…` from the client, which `@shared` could never
+spell. Lune would refuse it, because no `src/ServerScriptService` exists, but
+that is incidental. So `SLICE-008` adds a guard test: a string require in
+`src/` that leaves its own layer must begin `@game/ReplicatedStorage/`. D21's
+`@net` alias is superseded: `src/ReplicatedStorage/Net` is reached the same way.
 
 ### The pure core
 
@@ -502,7 +539,7 @@ round, and never when they leave during `Resolution` or `Post`.
 | D18 | A handler may **decline** a call so the wrapper refunds its **send limit**; a separate, non-refundable **attempt floor** runs first (§9.5) | (a) filter and validate targets before the wrapper; (b) move the 10 s cooldown out of the wrapper into channel state | (a): nothing may run before identity and shape (D6, D7). (b): C4 is checked "by the net wrapper's rate stage, declared at 10" (`mechanics.md` §4.3), and moving it would leave the remotes' declared limit at 1 s and the provenance test comparing the wrong number. G9 made refused targets and out-of-phase presets "not sends", so the refund is no longer a filter-only special case. |
 | D19 | `tuning.md` §2–§4 in **`MechanicsTuning.luau`** with its own drift guard | add sub-tables to `Tuning.luau` | ROUND-002's frozen guard asserts `Tuning.luau` is exactly §1 and §5. |
 | D20 | Client UI in **plain Instances**, no UI package | a Wally UI library | a dependency is an operator decision (B1 #5); M3's UI is minimal; pure view models give the testability a framework would. Revisit at M4. |
-| D21 | A second alias, **`@net`** | relative requires into `src/net` | the same instance-tree resolution as §1 makes the relative form fail; contingent on `SLICE-001`. |
+| D21 | ~~A second alias, **`@net`**~~ **superseded by `SLICE-001`** | relative requires into `src/net` | Roblox has no custom aliases; `src/net` moves to `src/ReplicatedStorage/Net` and is required as `@game/ReplicatedStorage/Net/…` (§1, `SLICE-008`). |
 | D22 | A **pure `Session`** composition root, and a **headless full round** as M3's integration test | integration verified only in Studio | Studio is manual and gates nothing; a headless round is the only evidence a required gate can hold that the pieces compose. |
 | D23 | **Which player holds which key class is not a secret**; the secrets are required settings and turn cues | permute the class-to-pattern mapping per round and replicate only viewer-relative "mine / partner's / neither" flags | the Game Designer's ruling (`mechanics.md` §1): the mapping is learnable within a round by watching who turns what, nothing can be addressed to a player, and `Ring` deals class *i* to seat *i* with `seatOrder` public anyway. SEAT-002's "no other player's key class in the projection" stays true of the projection and is **not** a secrecy guarantee; `FacilityView` publishes each machine's key class. Revisit only if playtesting shows the mapping being used to steer. |
 | D24 | **Two public payloads**: `FacilityView` once per round, `RoundView` on change | one view carrying static and dynamic facts | the layout and machine placement never change in a round; resending them every second is waste, and a smaller dynamic view is easier to hold to its allowlist. |

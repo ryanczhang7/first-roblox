@@ -7,7 +7,7 @@ type: feature
 status: todo
 phase: PLANNED
 branch: story/SLICE-002-every-declared-remote-is-bound-through-t
-depends_on: [SLICE-001]      # story ids; phase.sh refuses to start this story until they are DONE
+depends_on: [SLICE-001, SLICE-008]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
 ---
 
@@ -22,8 +22,8 @@ the one module allowed to, on both sides, and makes the second trust rule of M3
 structural: **a per-player payload is sent to its player only** (`architecture.md`
 §9.7, D13).
 
-It also adds the `@net` alias (D21), because `src/server/` and `src/client/`
-will require `src/net/` across the instance tree.
+It reaches `src/net/` (moved to `src/ReplicatedStorage/Net` by `SLICE-008`) through
+`@game/ReplicatedStorage/Net/…`; the `@net` alias (D21) is superseded (`SLICE-001`).
 
 **Which required gate would fail if this story's artifact broke:** `unit` — the
 binding and routing are tested against injected fakes of `RemoteEvent`. The
@@ -61,9 +61,11 @@ real `RemoteEvent` adapter is a Studio check (`SLICE-004`).
   remote's event with `args` as the single payload. `.OnClientEvent` appears in
   no source module outside `src/net/` (the existing guard, which must still pass
   with the new modules in its scanned set).
-- **AC-7** — Given `.luaurc`, when it is read, then it declares exactly the
-  aliases `shared` → `src/shared` and `net` → `src/net`, and no alias whose
-  target is under `src/server` or `src/client`.
+- **AC-7** — Given `.luaurc`, when it is read, then it still declares exactly
+  one alias, `game` → `src` (`SLICE-008`); this story adds no alias. Every
+  require of the net layer from `src/server` or `src/client` begins
+  `@game/ReplicatedStorage/Net/` (re-planned by the Lead PO at `SLICE-001`'s
+  close, 2026-10-07, while this story is PLANNED: `@net` is superseded).
 
 ## Contract
 
@@ -105,12 +107,14 @@ ports so the tests can pass fakes.
     ClientTransport.send(remoteName: string, args: any) -> ()
     ClientTransport.init(ports: { remoteEvent: (name: string) -> any }) -> ()
 
-**`.luaurc`** gains `"net": "src/net"`. This is `config`, written in GREEN.
-AC-7's test reads it through `tests/helpers/GatedFs.luau` (HARNESS-022), never
-`@lune/fs` directly; if `classify.sh --gated` does not include `.luaurc`, RED
-stops and says so rather than reading around the gate.
-`SLICE-001`'s result decides whether this alias resolves in a place; this story
-starts only after it (`depends_on`).
+**`.luaurc`** is not changed by this story. **Re-planned at `SLICE-001`'s close
+(2026-10-07):** Roblox has no custom aliases, so `@net` (D21) is superseded.
+After `SLICE-008`, the net layer lives at `src/ReplicatedStorage/Net` and is
+required as `@game/ReplicatedStorage/Net/…`. Every `src/net/` path in this story
+means that directory. AC-7's test reads `.luaurc` through
+`tests/helpers/GatedFs.luau` (HARNESS-022), never `@lune/fs` directly; if
+`classify.sh --gated` does not include `.luaurc`, RED stops and says so rather
+than reading around the gate.
 
 **Existing exports: no signature changes.**
 
