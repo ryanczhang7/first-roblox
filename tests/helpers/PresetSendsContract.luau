@@ -38,7 +38,7 @@
 local Contract = require("./Contract")
 local Deep = require("./Deep")
 local PhaseUnion = require("./PhaseUnion")
-local Presets = require("../../src/shared/channel/Presets")
+local Presets = require("../../src/ReplicatedStorage/Shared/channel/Presets")
 
 local PresetSendsContract = {}
 

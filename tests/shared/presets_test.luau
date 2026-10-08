@@ -2,12 +2,12 @@
 --[[
 	CHAN-002: the preset table obeys the countable preset-guideline rules.
 	AC-1 .. AC-5 and the Contract's P-3, P-4 and P-5, applied to the real
-	`src/shared/channel/Presets.luau`.
+	`src/ReplicatedStorage/Shared/channel/Presets.luau`.
 
 	The module is required through a `pcall` at the top and re-checked inside
 	every test, as every suite here does. In RED the module does not exist,
 	so each test below fails at `presets()` with
-	"src/shared/channel/Presets.luau did not load" - per criterion rather
+	"src/ReplicatedStorage/Shared/channel/Presets.luau did not load" - per criterion rather
 	than one LOAD FAIL, so each missing behaviour is named separately. That is
 	the right failure: the module is absent, and no stub is made to stand in
 	for it.
@@ -24,7 +24,7 @@
 	`MechanicsTuning.channel`. AC-3's denylist is INVENTED and lives in
 	`PresetContract.DENYLIST`; its control is the hand-built bad table in the
 	controls file. AC-4, AC-5 and P-3 .. P-5 are MECHANICAL. P-1: the Phase
-	set is READ out of `src/net/Remotes.luau` by `PhaseUnion` and asserted
+	set is READ out of `src/ReplicatedStorage/Net/Remotes.luau` by `PhaseUnion` and asserted
 	equal to `PhaseUnion.KNOWN` before any membership check; no list of phase
 	names is written here.
 
@@ -34,18 +34,21 @@
 	or `{ string }` inline; any member beyond `ALL` and `byId`.
 ]]
 
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local PhaseUnion = require("../helpers/PhaseUnion")
 local PresetContract = require("../helpers/PresetContract")
 local PresetSpec = require("../helpers/PresetSpec")
 local fs = require("../helpers/GatedFs")
 
-local REMOTES = "src/net/Remotes.luau"
+local REMOTES = "src/ReplicatedStorage/Net/Remotes.luau"
 
-local loaded, loadResult = pcall(require, "../../src/shared/channel/Presets")
+local loaded, loadResult = pcall(require, "../../src/ReplicatedStorage/Shared/channel/Presets")
 
 local function presets(): any
-	assert(loaded, `src/shared/channel/Presets.luau did not load: {tostring(loadResult)}`)
+	assert(
+		loaded,
+		`src/ReplicatedStorage/Shared/channel/Presets.luau did not load: {tostring(loadResult)}`
+	)
 	return loadResult
 end
 
@@ -79,7 +82,7 @@ return {
 		PresetContract.noWordEndsInTerminalPunctuation(presets(), context())
 	end,
 
-	["AC-5: every preset's phase list is non-empty and every entry is one of the phases Remotes.Phase declares, the set read out of src/net/Remotes.luau and equal to PhaseUnion.KNOWN"] = function()
+	["AC-5: every preset's phase list is non-empty and every entry is one of the phases Remotes.Phase declares, the set read out of src/ReplicatedStorage/Net/Remotes.luau and equal to PhaseUnion.KNOWN"] = function()
 		PresetContract.phasesAreNonEmptyAndKnown(presets(), context())
 	end,
 

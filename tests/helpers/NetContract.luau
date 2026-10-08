@@ -2,7 +2,7 @@
 --[[
 	NET-001 AC-1 through AC-6 and AC-8, plus the Contract's own promises, written
 	once as checks over a `Net` bundle - `{ Schema, Remotes, Wrapper }` - handed
-	in as a parameter rather than over `src/net/*.luau` by name. The same
+	in as a parameter rather than over `src/ReplicatedStorage/Net/*.luau` by name. The same
 	arrangement as `TelemetryContract.luau` and `ProjectionContract.luau`, for
 	the same reason.
 
@@ -47,7 +47,7 @@
 	Every message names its criterion, because the controls assert on the text.
 ]]
 
-local Clock = require("../../src/shared/Clock")
+local Clock = require("../../src/ReplicatedStorage/Shared/Clock")
 local Contract = require("./Contract")
 local Deep = require("./Deep")
 

@@ -33,7 +33,7 @@
 	the real, merged `Wrapper.guard`; events are checked against TEL-001's
 	reference `Event` (which knows `remote_rejected`). So these controls
 	EXECUTE in RED, while `rejection_test.luau`'s assertions against the real
-	`src/net/` are red on their own terms.
+	`src/ReplicatedStorage/Net/` are red on their own terms.
 ]]
 
 local RateContract = require("../helpers/RateContract")

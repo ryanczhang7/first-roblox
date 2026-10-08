@@ -30,14 +30,14 @@
 	Contract, against the failing tests in `tests/server/layout_test.luau`;
 	nothing here is to be copied.
 
-	NOTHING HERE REQUIRES PRODUCTION CODE - `src/shared/Rng.luau` and
-	`src/shared/MechanicsTuning.luau` are merged - so these controls are
+	NOTHING HERE REQUIRES PRODUCTION CODE - `src/ReplicatedStorage/Shared/Rng.luau` and
+	`src/ReplicatedStorage/Shared/MechanicsTuning.luau` are merged - so these controls are
 	EXECUTED in RED, and `tests/server/layout_controls_test.luau` records what
 	each one measured.
 ]]
 
 local LayoutContract = require("./LayoutContract")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 
 type Cell = LayoutContract.Cell
 type Room = LayoutContract.Room

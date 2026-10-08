@@ -47,7 +47,7 @@
 	`PlayerId` IS RE-DECLARED rather than imported from `Wrapper`: `Wrapper`
 	requires this module, and the reverse edge would be a cycle. It is the same
 	string alias. `minIntervalSeconds` arrives from the remote's own
-	declaration and is never read out of `src/shared/Tuning.luau`, whose scope
+	declaration and is never read out of `src/ReplicatedStorage/Shared/Tuning.luau`, whose scope
 	is §1 and §5. For M3's remotes that declaration is `tuning.md` §3's
 	`preset_rate_limit_seconds` / `ping_rate_limit_seconds`.
 ]]

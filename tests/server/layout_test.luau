@@ -38,7 +38,7 @@
 
 local Contract = require("../helpers/LayoutContract")
 local Deep = require("../helpers/Deep")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 
 local TUNING = Contract.TUNING
 

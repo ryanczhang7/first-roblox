@@ -39,10 +39,10 @@ local Deep = require("./Deep")
 local Layout = require("../../src/server/facility/Layout")
 local LayoutContract = require("./LayoutContract")
 local Machines = require("../../src/server/facility/Machines")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local PlacementContract = require("./PlacementContract")
 local Ring = require("../../src/server/seats/Ring")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 
 local ProcedureContract = {}
 

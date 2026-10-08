@@ -58,13 +58,13 @@
 	Declining twice is a no-op the second time.
 
 	`PlayerId` and `Phase` are re-declared rather than imported, per
-	`architecture.md` section 1: `src/net/` may not require `src/server/`, and
-	there is no alias that would spell it. `Clock` comes from `@shared/Clock`,
+	`architecture.md` section 1: `src/ReplicatedStorage/Net/` may not require `src/server/`, and
+	there is no alias that would spell it. `Clock` comes from `@game/ReplicatedStorage/Shared/Clock`,
 	which is the permitted direction.
 ]]
 
-local Clock = require("@shared/Clock")
-local Event = require("@shared/telemetry/Event")
+local Clock = require("@game/ReplicatedStorage/Shared/Clock")
+local Event = require("@game/ReplicatedStorage/Shared/telemetry/Event")
 local RateLimiter = require("./RateLimiter")
 local RejectionReporter = require("./RejectionReporter")
 local Remotes = require("./Remotes")

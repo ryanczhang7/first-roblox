@@ -22,7 +22,7 @@
 	AC-4 as well as AC-6, because each of those asserts the REASON and `false`
 	has none. Those are properties of the defects, not of the checks.
 
-	NOTHING HERE REQUIRES UNMERGED PRODUCTION CODE. In RED `src/net/` does not
+	NOTHING HERE REQUIRES UNMERGED PRODUCTION CODE. In RED `src/ReplicatedStorage/Net/` does not
 	exist and every test in `schema_test`, `remotes_test` and `wrapper_test`
 	fails before reaching its check. These controls need only `Clock.manual`
 	from ROUND-001 and `Deep` from ROUND-003, both merged, so the numbers

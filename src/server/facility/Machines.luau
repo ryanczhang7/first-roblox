@@ -30,9 +30,9 @@
 ]]
 
 local Layout = require("./Layout")
-local MechanicsTuning = require("@shared/MechanicsTuning")
+local MechanicsTuning = require("@game/ReplicatedStorage/Shared/MechanicsTuning")
 local Ring = require("../seats/Ring")
-local Rng = require("@shared/Rng")
+local Rng = require("@game/ReplicatedStorage/Shared/Rng")
 
 export type Machine = {
 	id: number, -- 1..actuator_count, in (room id, slot) order

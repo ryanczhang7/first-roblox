@@ -127,7 +127,7 @@
 ]]
 
 local Generator = require("../facility/Generator")
-local MechanicsTuning = require("@shared/MechanicsTuning")
+local MechanicsTuning = require("@game/ReplicatedStorage/Shared/MechanicsTuning")
 local Pings = require("../channel/Pings")
 local PhaseMachine = require("../round/PhaseMachine")
 local Positions = require("./Positions")
@@ -137,7 +137,7 @@ local Projection = require("../seats/Projection")
 local RoundConfig = require("../round/RoundConfig")
 local RoundView = require("../round/RoundView")
 local Ring = require("../seats/Ring")
-local Rng = require("@shared/Rng")
+local Rng = require("@game/ReplicatedStorage/Shared/Rng")
 local TurnRequests = require("../procedure/TurnRequests")
 
 local Session = {}

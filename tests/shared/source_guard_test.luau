@@ -2,8 +2,8 @@
 --[[
 	ROUND-001 AC-5 and AC-6: the tree-scanning guard.
 
-	AC-5 - no source module other than `src/shared/Clock.luau` references a real
-	time source, and none other than `src/shared/Rng.luau` references a real
+	AC-5 - no source module other than `src/ReplicatedStorage/Shared/Clock.luau` references a real
+	time source, and none other than `src/ReplicatedStorage/Shared/Rng.luau` references a real
 	random source.
 	AC-6 - the file list comes from `scripts/classify.sh`, not from a private
 	glob, and an uncommitted source file is in it.
@@ -18,9 +18,9 @@
 local fs = require("../helpers/GatedFs")
 local SourceScan = require("../helpers/SourceScan")
 
-local PROBE = "src/shared/__probe_clock_leak.luau"
-local CLOCK = "src/shared/Clock.luau"
-local RNG = "src/shared/Rng.luau"
+local PROBE = "src/ReplicatedStorage/Shared/__probe_clock_leak.luau"
+local CLOCK = "src/ReplicatedStorage/Shared/Clock.luau"
+local RNG = "src/ReplicatedStorage/Shared/Rng.luau"
 
 -- AC-6's fixture. Written, listed, removed, all inside the one test that needs
 -- it - `tdd-cycle` warns that a probe writer and a tree scanner in the same
@@ -28,7 +28,7 @@ local RNG = "src/shared/Rng.luau"
 -- the tree while this file exists. It is valid strict Luau with no violations in
 -- it, so that a run killed between the write and the remove leaves a tree the
 -- lint, typecheck and build gates still pass over.
-local FIXTURE = "src/shared/__ac6_uncommitted_fixture.luau"
+local FIXTURE = "src/ReplicatedStorage/Shared/__ac6_uncommitted_fixture.luau"
 local FIXTURE_SOURCE = table.concat({
 	"--!strict",
 	"-- Transient fixture for ROUND-001 AC-6. Written and removed by",
@@ -181,7 +181,7 @@ return {
 			"-- not even task.wait or Random.new",
 			"return {}",
 		}, "\n")
-		local findings = SourceScan.findingsIn("src/shared/Doc.luau", text)
+		local findings = SourceScan.findingsIn("src/ReplicatedStorage/Shared/Doc.luau", text)
 		assert(#findings == 0, `comments produced findings:\n` .. SourceScan.describe(findings))
 	end,
 
@@ -191,7 +191,7 @@ return {
 			"local other = 'math.random is banned'",
 			"return message .. other",
 		}, "\n")
-		local findings = SourceScan.findingsIn("src/shared/Message.luau", text)
+		local findings = SourceScan.findingsIn("src/ReplicatedStorage/Shared/Message.luau", text)
 		assert(
 			#findings == 0,
 			`string literals produced findings:\n` .. SourceScan.describe(findings)
@@ -204,7 +204,7 @@ return {
 			"local started = os.clock()",
 			"return started",
 		}, "\n")
-		local findings = SourceScan.findingsIn("src/shared/Leaky.luau", text)
+		local findings = SourceScan.findingsIn("src/ReplicatedStorage/Shared/Leaky.luau", text)
 		assert(#findings == 1, `expected 1 finding, got {#findings}`)
 		assert(findings[1].symbol == "os.clock", `expected os.clock, got {findings[1].symbol}`)
 		assert(findings[1].line == 2, `expected line 2, got {findings[1].line}`)
@@ -212,7 +212,7 @@ return {
 
 	["the guard fires on a call written inside a string interpolation"] = function()
 		local text = "print(`elapsed {os.clock()}s`)"
-		local findings = SourceScan.findingsIn("src/shared/Interp.luau", text)
+		local findings = SourceScan.findingsIn("src/ReplicatedStorage/Shared/Interp.luau", text)
 		assert(
 			#findings == 1,
 			`interpolation holes are code; expected 1 finding, got {#findings}:\n`
@@ -227,7 +227,7 @@ return {
 			"local self = { tick = 2 }",
 			"return ticket + self.tick + (if ticking then 0 else 1)",
 		}, "\n")
-		local findings = SourceScan.findingsIn("src/shared/Words.luau", text)
+		local findings = SourceScan.findingsIn("src/ReplicatedStorage/Shared/Words.luau", text)
 		assert(#findings == 0, `word boundaries are wrong:\n` .. SourceScan.describe(findings))
 	end,
 
@@ -240,7 +240,7 @@ return {
 			"local ready = os.clock ~= nil",
 			"return grab, ready",
 		}, "\n")
-		local findings = SourceScan.findingsIn("src/shared/Held.luau", text)
+		local findings = SourceScan.findingsIn("src/ReplicatedStorage/Shared/Held.luau", text)
 		assert(
 			#findings == 2,
 			`expected 2 findings, got {#findings}:\n` .. SourceScan.describe(findings)
@@ -248,13 +248,15 @@ return {
 	end,
 
 	["the guard fires on a bare tick() call"] = function()
-		local findings = SourceScan.findingsIn("src/shared/Bare.luau", "return tick()")
+		local findings =
+			SourceScan.findingsIn("src/ReplicatedStorage/Shared/Bare.luau", "return tick()")
 		assert(#findings == 1, `expected 1 finding, got {#findings}`)
 		assert(findings[1].symbol == "tick", `expected tick, got {findings[1].symbol}`)
 	end,
 
 	["the guard counts math.randomseed once, as itself"] = function()
-		local findings = SourceScan.findingsIn("src/shared/Seeded.luau", "math.randomseed(1)")
+		local findings =
+			SourceScan.findingsIn("src/ReplicatedStorage/Shared/Seeded.luau", "math.randomseed(1)")
 		assert(
 			#findings == 1,
 			`expected 1 finding, got {#findings}:\n` .. SourceScan.describe(findings)

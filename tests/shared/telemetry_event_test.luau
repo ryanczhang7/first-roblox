@@ -1,7 +1,7 @@
 --!strict
 --[[
 	TEL-001: the telemetry envelope. AC-1, AC-2, AC-3 and AC-6, applied to the
-	real `src/shared/telemetry/Event.luau`.
+	real `src/ReplicatedStorage/Shared/telemetry/Event.luau`.
 
 	The module is required through a `pcall` at the top and re-checked inside
 	every test, as `projection_test.luau` does. In RED it does not exist, and a
@@ -26,10 +26,13 @@
 
 local Contract = require("../helpers/TelemetryContract")
 
-local loaded, loadResult = pcall(require, "../../src/shared/telemetry/Event")
+local loaded, loadResult = pcall(require, "../../src/ReplicatedStorage/Shared/telemetry/Event")
 
 local function Event(): any
-	assert(loaded, `src/shared/telemetry/Event.luau did not load: {tostring(loadResult)}`)
+	assert(
+		loaded,
+		`src/ReplicatedStorage/Shared/telemetry/Event.luau did not load: {tostring(loadResult)}`
+	)
 	return loadResult
 end
 

@@ -4,7 +4,7 @@
 	each check in `tests/helpers/TurnRemoteContract.luau` means what it says.
 
 	NOTHING HERE REQUIRES UNMERGED PRODUCTION CODE. In RED
-	`src/net/GameRemotes.luau` does not exist, every test in
+	`src/ReplicatedStorage/Net/GameRemotes.luau` does not exist, every test in
 	`tests/net/turn_remote_test.luau` fails before its assertion runs, and so
 	not one of that file's checks has been observed to accept or reject
 	anything. The declarations below need only `Schema`, `Remotes`, `Wrapper`
@@ -29,18 +29,18 @@
 	those two edits made to the reference, so that what is measured here is
 	that the checks WOULD see them. D-3 ITSELF stays with GATES.
 
-	WHAT THIS IS NOT: `src/net/GameRemotes.luau`, or a sketch of one. GREEN
+	WHAT THIS IS NOT: `src/ReplicatedStorage/Net/GameRemotes.luau`, or a sketch of one. GREEN
 	writes the module from the story's Contract against
 	`turn_remote_test.luau`; nothing here is to be copied.
 ]]
 
 local Contract = require("../helpers/TurnRemoteContract")
 local Deep = require("../helpers/Deep")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local NetContract = require("../helpers/NetContract")
-local Remotes = require("../../src/net/Remotes")
-local Schema = require("../../src/net/Schema")
-local Wrapper = require("../../src/net/Wrapper")
+local Remotes = require("../../src/ReplicatedStorage/Net/Remotes")
+local Schema = require("../../src/ReplicatedStorage/Net/Schema")
+local Wrapper = require("../../src/ReplicatedStorage/Net/Wrapper")
 
 local net: Contract.Net = { Schema = Schema, Remotes = Remotes, Wrapper = Wrapper }
 

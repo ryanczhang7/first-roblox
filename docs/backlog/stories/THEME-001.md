@@ -93,8 +93,8 @@ module read only by optional gates fails the run (`quality-gates`).
   comment. A wrong matrix is caught by AC-6's control only if the matrix is
   right, so RED checks one known value (for example, a pure red under deutan
   simulation) against a published worked example before trusting the rest.
-- **Client imports** are `@shared` only (`MechanicsTuning`, `Presets`). The
-  `@net` alias does not exist until `SLICE-002`, and this story does not need
+- **Client imports** are `@game/ReplicatedStorage/Shared/…` only (`MechanicsTuning`, `Presets`; spelling per `SLICE-008`). The
+  net layer (`@game/ReplicatedStorage/Net/…`) is not needed until `SLICE-002`, and this story does not need
   it.
 
 **The spec reader** is `tests/helpers/TokenSpec.luau`, which reads

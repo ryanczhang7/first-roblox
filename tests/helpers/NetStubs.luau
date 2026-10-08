@@ -19,7 +19,7 @@
 	every stub.
 
 	WHAT THIS IS NOT, and it matters because the next agent to read it is the
-	one who has to write the real thing: it is NOT `src/net/` and not a sketch
+	one who has to write the real thing: it is NOT `src/ReplicatedStorage/Net/` and not a sketch
 	of it. The baseline is the Contract only as far as the checks can see -
 	every type is `any`, and its failure strings are whatever fell out. GREEN
 	writes the modules from the story's `## Contract`, against the failing

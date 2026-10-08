@@ -1,8 +1,8 @@
 --!strict
 --[[
 	PROC-005: the `Turn` remote is declared and validated. AC-1 through AC-3,
-	applied to the real `src/net/GameRemotes.luau` through the real
-	`src/net/Wrapper.luau`, `Remotes.luau` and `Schema.luau`.
+	applied to the real `src/ReplicatedStorage/Net/GameRemotes.luau` through the real
+	`src/ReplicatedStorage/Net/Wrapper.luau`, `Remotes.luau` and `Schema.luau`.
 
 	`GameRemotes` is required through a `pcall` at the top and re-checked
 	inside every test, as every suite here does. In RED it does not exist, and
@@ -31,15 +31,25 @@
 local Contract = require("../helpers/TurnRemoteContract")
 local Deep = require("../helpers/Deep")
 
-local schemaLoaded, schemaResult = pcall(require, "../../src/net/Schema")
-local remotesLoaded, remotesResult = pcall(require, "../../src/net/Remotes")
-local wrapperLoaded, wrapperResult = pcall(require, "../../src/net/Wrapper")
-local gameRemotesLoaded, gameRemotesResult = pcall(require, "../../src/net/GameRemotes")
+local schemaLoaded, schemaResult = pcall(require, "../../src/ReplicatedStorage/Net/Schema")
+local remotesLoaded, remotesResult = pcall(require, "../../src/ReplicatedStorage/Net/Remotes")
+local wrapperLoaded, wrapperResult = pcall(require, "../../src/ReplicatedStorage/Net/Wrapper")
+local gameRemotesLoaded, gameRemotesResult =
+	pcall(require, "../../src/ReplicatedStorage/Net/GameRemotes")
 
 local function net(): Contract.Net
-	assert(schemaLoaded, `src/net/Schema.luau did not load: {tostring(schemaResult)}`)
-	assert(remotesLoaded, `src/net/Remotes.luau did not load: {tostring(remotesResult)}`)
-	assert(wrapperLoaded, `src/net/Wrapper.luau did not load: {tostring(wrapperResult)}`)
+	assert(
+		schemaLoaded,
+		`src/ReplicatedStorage/Net/Schema.luau did not load: {tostring(schemaResult)}`
+	)
+	assert(
+		remotesLoaded,
+		`src/ReplicatedStorage/Net/Remotes.luau did not load: {tostring(remotesResult)}`
+	)
+	assert(
+		wrapperLoaded,
+		`src/ReplicatedStorage/Net/Wrapper.luau did not load: {tostring(wrapperResult)}`
+	)
 	return { Schema = schemaResult, Remotes = remotesResult, Wrapper = wrapperResult }
 end
 
@@ -47,7 +57,7 @@ end
 local function turn(): any
 	assert(
 		gameRemotesLoaded,
-		`src/net/GameRemotes.luau did not load: {tostring(gameRemotesResult)}`
+		`src/ReplicatedStorage/Net/GameRemotes.luau did not load: {tostring(gameRemotesResult)}`
 	)
 	local found: any = nil
 	for _, entry in net().Remotes.all() do

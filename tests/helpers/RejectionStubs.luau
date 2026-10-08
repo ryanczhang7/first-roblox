@@ -29,7 +29,7 @@
 	(`assumesTelemetry`), and a control that fires is attributable to one
 	field of `defects`.
 
-	WHAT THIS IS NOT: `src/net/RejectionReporter.luau` or a sketch of it, and
+	WHAT THIS IS NOT: `src/ReplicatedStorage/Net/RejectionReporter.luau` or a sketch of it, and
 	not the wrapper change either. GREEN writes both from the story's
 	`## Contract` against the failing tests. Events here are built BY HAND as
 	plain tables - deliberately not through `Event.new`, so that a defective
@@ -41,11 +41,11 @@
 	each one actually did.
 ]]
 
-local RateLimiter = require("../../src/net/RateLimiter")
-local Remotes = require("../../src/net/Remotes")
-local Schema = require("../../src/net/Schema")
+local RateLimiter = require("../../src/ReplicatedStorage/Net/RateLimiter")
+local Remotes = require("../../src/ReplicatedStorage/Net/Remotes")
+local Schema = require("../../src/ReplicatedStorage/Net/Schema")
 local TelemetryStubs = require("./TelemetryStubs")
-local Wrapper = require("../../src/net/Wrapper")
+local Wrapper = require("../../src/ReplicatedStorage/Net/Wrapper")
 
 local Real: any = Wrapper
 

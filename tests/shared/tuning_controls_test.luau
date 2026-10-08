@@ -8,7 +8,7 @@
 		      must name `lobby_seconds`
 		AC-5  adding `vote_seconds = 30` must make this fail
 
-	In RED `src/shared/Tuning.luau` does not exist, so neither mutation can be
+	In RED `src/ReplicatedStorage/Shared/Tuning.luau` does not exist, so neither mutation can be
 	made and neither file that requires the module runs a single assertion. This
 	file requires NO production code, deliberately, so that the SAME check
 	objects the guard uses are observed rejecting modules whose defects are known
@@ -175,7 +175,7 @@ return {
 		local message = refuses(function()
 			TuningSpec.assertNoFindings(
 				TuningSpec.missingOrMismatched(realRows(), drifted),
-				"AC-4: tuning.md and src/shared/Tuning.luau disagree"
+				"AC-4: tuning.md and src/ReplicatedStorage/Shared/Tuning.luau disagree"
 			)
 		end, "a module whose lobby_seconds is 61 must fail AC-4")
 		saysAll(message, { "lobby_seconds", "spec 60", "module 61" }, "AC-4's value control")
@@ -196,7 +196,7 @@ return {
 		local message = refuses(function()
 			TuningSpec.assertNoFindings(
 				TuningSpec.missingOrMismatched(realRows(), missing),
-				"AC-4: tuning.md and src/shared/Tuning.luau disagree"
+				"AC-4: tuning.md and src/ReplicatedStorage/Shared/Tuning.luau disagree"
 			)
 		end, "a module missing season_length_days must fail AC-4")
 		saysAll(
@@ -229,7 +229,7 @@ return {
 		local message = refuses(function()
 			TuningSpec.assertNoFindings(
 				TuningSpec.missingOrMismatched(realRows(), stringy),
-				"AC-4: tuning.md and src/shared/Tuning.luau disagree"
+				"AC-4: tuning.md and src/ReplicatedStorage/Shared/Tuning.luau disagree"
 			)
 		end, 'a module whose round_seconds is the string "420" must fail AC-4')
 		saysAll(message, { "round_seconds", "spec 420", "string" }, "AC-4's wrong-type control")

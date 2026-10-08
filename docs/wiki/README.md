@@ -9,7 +9,7 @@ read by everyone.
 | `stack.md` | `/plan-product` | pinned technology choices, each tied to a constraint |
 | `environment.md` | `/setup-environment` | what to install on a fresh machine, and how to verify it |
 | `architecture.md` | `/plan-product` | components, data model, decisions and their alternatives |
-| `game/` | Game Designer | the loop, mechanics, roles, every tuning constant (the specification `src/shared/Tuning.luau` and `MechanicsTuning.luau` implement), the playtest protocol |
+| `game/` | Game Designer | the loop, mechanics, roles, every tuning constant (the specification `src/ReplicatedStorage/Shared/Tuning.luau` and `MechanicsTuning.luau` implement), the playtest protocol |
 | `design/` | Lead Designer | tokens, components, layout, accessibility floor, voice |
 | `audits/` | Mutation Tester, or anyone auditing the harness | test-quality and harness audits. Structure from `audits/TEMPLATE.md`, which keeps what was **decided** apart from what was **measured** |
 

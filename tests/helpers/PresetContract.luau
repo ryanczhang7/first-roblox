@@ -3,8 +3,8 @@
 	CHAN-002 AC-1 .. AC-5 and the Contract's P-3 (id, key, shape), P-4 (`byId`)
 	and P-5 (frozen), written once as checks over a `Presets` MODULE handed in
 	as a parameter - `{ ALL, byId }` - and a `Context` - the §4.2 rows read
-	off disk, the Phase set read out of `src/net/Remotes.luau`, and the
-	tuning - rather than over `src/shared/channel/Presets.luau` by name.
+	off disk, the Phase set read out of `src/ReplicatedStorage/Net/Remotes.luau`, and the
+	tuning - rather than over `src/ReplicatedStorage/Shared/channel/Presets.luau` by name.
 	`tests/shared/presets_test.luau` applies these to the real module;
 	`tests/shared/presets_controls_test.luau` applies them to
 	`PresetStubs.luau`'s reference and to tables with EXACTLY ONE defect each,
@@ -43,7 +43,7 @@ local PresetContract = {}
 export type Presets = any
 export type Context = {
 	rows: { PresetSpec.Row }, -- mechanics.md §4.2, read off disk
-	phases: { [string]: boolean }, -- the Phase union of src/net/Remotes.luau, read as text
+	phases: { [string]: boolean }, -- the Phase union of src/ReplicatedStorage/Net/Remotes.luau, read as text
 	tuning: any, -- MechanicsTuning, or a substituted tuning
 }
 export type Check = { name: string, ac: string, run: (Presets, Context) -> () }
@@ -192,7 +192,7 @@ end
 
 --[[
 	P-1: the Phase set AC-5 checks membership against, built from one side of
-	`PhaseUnion.read` over `src/net/Remotes.luau` - READ, not copied. Raises
+	`PhaseUnion.read` over `src/ReplicatedStorage/Net/Remotes.luau` - READ, not copied. Raises
 	unless exactly one declaration was found, it names at least one phase, and
 	the set equals `PhaseUnion.KNOWN` as a set; a membership check against a
 	set that was not read would refuse everything or nothing.
@@ -436,7 +436,7 @@ function PresetContract.phasesAreNonEmptyAndKnown(P: Presets, ctx: Context)
 	table.sort(known)
 	if #known == 0 then
 		Contract.fail(
-			`{criterion}: the Phase set read out of src/net/Remotes.luau is empty - membership against `
+			`{criterion}: the Phase set read out of src/ReplicatedStorage/Net/Remotes.luau is empty - membership against `
 				.. `nothing would refuse everything or nothing`
 		)
 	end

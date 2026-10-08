@@ -1,7 +1,7 @@
 --!strict
 --[[
 	TEL-001: the sink interface. AC-4 and AC-5, applied to the real
-	`src/shared/telemetry/Sink.luau`.
+	`src/ReplicatedStorage/Shared/telemetry/Sink.luau`.
 
 	The module is required through a `pcall` at the top and re-checked inside
 	every test, as `telemetry_event_test.luau` and `projection_test.luau` do:
@@ -22,10 +22,13 @@
 
 local Contract = require("../helpers/TelemetryContract")
 
-local loaded, loadResult = pcall(require, "../../src/shared/telemetry/Sink")
+local loaded, loadResult = pcall(require, "../../src/ReplicatedStorage/Shared/telemetry/Sink")
 
 local function Sink(): any
-	assert(loaded, `src/shared/telemetry/Sink.luau did not load: {tostring(loadResult)}`)
+	assert(
+		loaded,
+		`src/ReplicatedStorage/Shared/telemetry/Sink.luau did not load: {tostring(loadResult)}`
+	)
 	return loadResult
 end
 

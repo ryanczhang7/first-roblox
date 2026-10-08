@@ -26,7 +26,7 @@
 	defects, not of the checks, and they are in the story's mutation table.
 
 	NOTHING HERE REQUIRES UNMERGED PRODUCTION CODE. In RED
-	`src/shared/telemetry/` does not exist and every test in
+	`src/ReplicatedStorage/Shared/telemetry/` does not exist and every test in
 	`telemetry_event_test.luau` and `telemetry_sink_test.luau` fails before
 	reaching its check. These controls need only `Clock.manual` from ROUND-001,
 	which is merged, so the numbers below are measurements taken in RED rather

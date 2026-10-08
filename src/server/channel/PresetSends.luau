@@ -34,7 +34,7 @@
 	given. A failure returns the given state unchanged.
 ]]
 
-local Presets = require("@shared/channel/Presets")
+local Presets = require("@game/ReplicatedStorage/Shared/channel/Presets")
 
 local PresetSends = {}
 

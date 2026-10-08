@@ -2,8 +2,8 @@
 --[[
 	CHAN-003: a call its handler declines costs the attempt floor but not the
 	send cooldown. AC-1 through AC-5 and the Contract's promises applied to
-	the real `src/net/Wrapper.luau`, `src/net/RateLimiter.luau`,
-	`src/net/Remotes.luau` and `src/net/RejectionReporter.luau`, driving the
+	the real `src/ReplicatedStorage/Net/Wrapper.luau`, `src/ReplicatedStorage/Net/RateLimiter.luau`,
+	`src/ReplicatedStorage/Net/Remotes.luau` and `src/ReplicatedStorage/Net/RejectionReporter.luau`, driving the
 	real `Schema`.
 
 	EVERY MODULE EXISTS ON ARRIVAL, so every test below LOADS and RUNS and
@@ -43,20 +43,33 @@
 
 local Contract = require("../helpers/DeclineContract")
 
-local schemaLoaded, schemaResult = pcall(require, "../../src/net/Schema")
-local remotesLoaded, remotesResult = pcall(require, "../../src/net/Remotes")
-local wrapperLoaded, wrapperResult = pcall(require, "../../src/net/Wrapper")
-local limiterLoaded, limiterResult = pcall(require, "../../src/net/RateLimiter")
-local reporterLoaded, reporterResult = pcall(require, "../../src/net/RejectionReporter")
+local schemaLoaded, schemaResult = pcall(require, "../../src/ReplicatedStorage/Net/Schema")
+local remotesLoaded, remotesResult = pcall(require, "../../src/ReplicatedStorage/Net/Remotes")
+local wrapperLoaded, wrapperResult = pcall(require, "../../src/ReplicatedStorage/Net/Wrapper")
+local limiterLoaded, limiterResult = pcall(require, "../../src/ReplicatedStorage/Net/RateLimiter")
+local reporterLoaded, reporterResult =
+	pcall(require, "../../src/ReplicatedStorage/Net/RejectionReporter")
 
 local function bundle(): Contract.Bundle
-	assert(schemaLoaded, `src/net/Schema.luau did not load: {tostring(schemaResult)}`)
-	assert(remotesLoaded, `src/net/Remotes.luau did not load: {tostring(remotesResult)}`)
-	assert(wrapperLoaded, `src/net/Wrapper.luau did not load: {tostring(wrapperResult)}`)
-	assert(limiterLoaded, `src/net/RateLimiter.luau did not load: {tostring(limiterResult)}`)
+	assert(
+		schemaLoaded,
+		`src/ReplicatedStorage/Net/Schema.luau did not load: {tostring(schemaResult)}`
+	)
+	assert(
+		remotesLoaded,
+		`src/ReplicatedStorage/Net/Remotes.luau did not load: {tostring(remotesResult)}`
+	)
+	assert(
+		wrapperLoaded,
+		`src/ReplicatedStorage/Net/Wrapper.luau did not load: {tostring(wrapperResult)}`
+	)
+	assert(
+		limiterLoaded,
+		`src/ReplicatedStorage/Net/RateLimiter.luau did not load: {tostring(limiterResult)}`
+	)
 	assert(
 		reporterLoaded,
-		`src/net/RejectionReporter.luau did not load: {tostring(reporterResult)}`
+		`src/ReplicatedStorage/Net/RejectionReporter.luau did not load: {tostring(reporterResult)}`
 	)
 	return {
 		Schema = schemaResult,

@@ -44,8 +44,8 @@
 	at index N" rather than two whole lists.
 ]]
 
-local Clock = require("../../src/shared/Clock")
-local Event = require("../../src/shared/telemetry/Event")
+local Clock = require("../../src/ReplicatedStorage/Shared/Clock")
+local Event = require("../../src/ReplicatedStorage/Shared/telemetry/Event")
 local Contract = require("./PhaseMachineContract")
 local Deep = require("./Deep")
 local Raise = require("./Contract")

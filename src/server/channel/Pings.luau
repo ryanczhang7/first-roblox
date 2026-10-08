@@ -64,7 +64,7 @@
 ]]
 
 local Machines = require("../facility/Machines")
-local MechanicsTuning = require("@shared/MechanicsTuning")
+local MechanicsTuning = require("@game/ReplicatedStorage/Shared/MechanicsTuning")
 local Procedure = require("../procedure/Procedure")
 
 local Pings = {}

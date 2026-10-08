@@ -30,7 +30,7 @@
 local Contract = require("../helpers/PresetSendsContract")
 local Deep = require("../helpers/Deep")
 local PhaseUnion = require("../helpers/PhaseUnion")
-local Presets = require("../../src/shared/channel/Presets")
+local Presets = require("../../src/ReplicatedStorage/Shared/channel/Presets")
 local Stubs = require("../helpers/PresetSendsStubs")
 
 local function failingNames(P: any): ({ string }, { [string]: string })

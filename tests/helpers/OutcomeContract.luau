@@ -59,9 +59,9 @@ local Contract = require("./Contract")
 local Deep = require("./Deep")
 local Finale = require("./FinaleContract")
 local Generator = require("../../src/server/facility/Generator")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
-local Rng = require("../../src/shared/Rng")
-local Tuning = require("../../src/shared/Tuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
+local Tuning = require("../../src/ReplicatedStorage/Shared/Tuning")
 local Turn = require("./TurnContract")
 
 local OutcomeContract = {}

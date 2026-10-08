@@ -24,7 +24,7 @@
 	and a control, and what keeps NET-001's 12 and NET-002's 8 checks
 	satisfiable by every bundle here that is not built to break one.
 
-	WHAT THIS IS NOT: `src/net/` or a sketch of it. GREEN writes the real
+	WHAT THIS IS NOT: `src/ReplicatedStorage/Net/` or a sketch of it. GREEN writes the real
 	limiter into `RateLimiter.luau` and the real check into `Wrapper.luau`
 	from the story's `## Contract`. Nothing here is to be copied.
 

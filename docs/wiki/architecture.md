@@ -67,9 +67,9 @@ know about the channel") paid off.
 
 Repository layout follows brief B3 and the `roblox-luau` profile:
 
-    src/shared/    types, constants, pure helpers, validation schemas
+    src/ReplicatedStorage/Shared/    types, constants, pure helpers, validation schemas
     src/server/    authoritative logic: phase machine, seats, round driver
-    src/net/       remote definitions and server-side validation wrappers
+    src/ReplicatedStorage/Net/       remote definitions and server-side validation wrappers
     src/client/    presentation only: input, UI, camera, audio   (empty in M0-M2; M3, §9.9)
     tests/         Lune tests, mirroring src/
     lune/          test.luau, build.luau, analyze.luau
@@ -91,16 +91,16 @@ guard test over the import graph.
 `ROUND-003` was the first story to need a cross-layer require and the obvious
 spelling fails a required gate:
 
-    local Rng = require("@shared/Rng")        -- crossing from server to shared
+    local Rng = require("@game/ReplicatedStorage/Shared/Rng")  -- crossing from server to shared (SLICE-008)
     local RoundConfig = require("./RoundConfig")  -- same directory: relative is fine
 
 The alias lives in `.luaurc`:
 
-    "aliases": { "shared": "src/shared" }
+    "aliases": { "game": "src" }   -- SLICE-008; was { "shared": "src/shared" }
 
 **Why the relative form cannot work.** `luau-lsp` resolves a relative string
 require *through the sourcemap*, in the Roblox instance tree — not in the
-directory tree. `src/shared` maps to `game/ReplicatedStorage/Shared` while
+directory tree. `src/ReplicatedStorage/Shared` maps to `game/ReplicatedStorage/Shared` while
 `src/server/round` maps to `game/ServerScriptService/Server/round`, so
 `require("../../shared/Rng")` asks for `game/ServerScriptService/shared/Rng`,
 which does not exist. Measured on this machine, 2026-09-15, reproduced by the
@@ -173,7 +173,7 @@ that is incidental. So `SLICE-008` adds a guard test: a string require in
 
 ### The pure core
 
-Every rule in `src/server/` and `src/net/` is written as a **pure function of
+Every rule in `src/server/` and `src/ReplicatedStorage/Net/` is written as a **pure function of
 state**. Impurity — a clock, a random source, a RemoteEvent, a DataStore — is
 confined to a thin *driver* at the composition root, which:
 
@@ -198,7 +198,7 @@ is written down as one — not faked in a unit test.
 first story.** Retrofitting either means rewriting the phase machine and the
 generator, so there is no cheap moment to add it later.
 
-### `src/shared/Clock.luau`
+### `src/ReplicatedStorage/Shared/Clock.luau`
 
     export type Clock = { now: () -> number }          -- seconds, monotonic
 
@@ -214,7 +214,7 @@ mentions them.
 Time enters the pure core **only** as the `now` argument of `PhaseMachine.step`.
 The machine never asks what time it is.
 
-### `src/shared/Rng.luau`
+### `src/ReplicatedStorage/Shared/Rng.luau`
 
     Rng.fromSeed(seed: number) -> Rng
     Rng:nextInteger(min: number, max: number) -> number
@@ -330,7 +330,7 @@ agent-generated code, because generated Luau is prone to trusting its arguments.
 
 ### The rule that is actually enforceable
 
-> **No `OnServerEvent:Connect` outside `src/net/`.**
+> **No `OnServerEvent:Connect` outside `src/ReplicatedStorage/Net/`.**
 
 A guard test enumerates source modules through `scripts/classify.sh --list` and
 asserts the string appears nowhere in `src/server/` or `src/client/`. Every remote
@@ -339,10 +339,10 @@ stops being a per-story question.
 
 ### The pipeline
 
-    src/net/Remotes.luau      the declaration registry
-    src/net/Schema.luau       structural validators
-    src/net/RateLimiter.luau  per-player, clock-injected
-    src/net/Wrapper.luau      guard(definition, handler) -> guardedHandler
+    src/ReplicatedStorage/Net/Remotes.luau      the declaration registry
+    src/ReplicatedStorage/Net/Schema.luau       structural validators
+    src/ReplicatedStorage/Net/RateLimiter.luau  per-player, clock-injected
+    src/ReplicatedStorage/Net/Wrapper.luau      guard(definition, handler) -> guardedHandler
 
 A remote is **declared**, not connected:
 
@@ -442,8 +442,8 @@ required settings I am reading now".
 
 ## 6. Telemetry (M2, per B6)
 
-    src/shared/telemetry/Event.luau   the envelope and the bucket mapping
-    src/shared/telemetry/Sink.luau    the interface, plus recording() and noop()
+    src/ReplicatedStorage/Shared/telemetry/Event.luau   the envelope and the bucket mapping
+    src/ReplicatedStorage/Shared/telemetry/Sink.luau    the interface, plus recording() and noop()
 
     type TelemetryEvent = {
         name:      string,
@@ -524,7 +524,7 @@ round, and never when they leave during `Resolution` or `Post`.
 | D3 | Pure `step` returning **effects as values** | perform side effects inside the machine | effects-as-values is what makes telemetry, replication and the trace assertable in a test with no runtime, no sink and no network. Cost: a driver that interprets them. |
 | D4 | Phase machine is **outcome-agnostic** | machine computes win/loss from the Procedure | it would bind M1 to M3's unsettled mechanics; the scope line in §0 would not hold. |
 | D5 | Unknown event → ignored | unknown event → error | late and duplicate delivery is normal; throwing turns a lagging client into a server fault. |
-| D6 | Remotes **declared**, connected only in `src/net/` | connect where convenient, validate in the handler | validation you must remember is validation you will forget once. A guard test makes the rule mechanical. |
+| D6 | Remotes **declared**, connected only in `src/ReplicatedStorage/Net/` | connect where convenient, validate in the handler | validation you must remember is validation you will forget once. A guard test makes the rule mechanical. |
 | D7 | Distinct rejection reason per pipeline stage | a single boolean reject | a reject-everything wrapper passes an adversarial test that only asserts "rejected". |
 | D8 | Replication by **allowlist projection** | copy the state and strip private fields | the two failure modes are not symmetric: a denylist leaks the game silently, an allowlist shows a missing feature loudly. |
 | D9 | Telemetry buckets declared for all nine B6 events, three unemitted | declare only what M2 emits | M5 then adds an emitter, not a vocabulary — and the gap is visible now rather than found later. |
@@ -539,7 +539,7 @@ round, and never when they leave during `Resolution` or `Post`.
 | D18 | A handler may **decline** a call so the wrapper refunds its **send limit**; a separate, non-refundable **attempt floor** runs first (§9.5) | (a) filter and validate targets before the wrapper; (b) move the 10 s cooldown out of the wrapper into channel state | (a): nothing may run before identity and shape (D6, D7). (b): C4 is checked "by the net wrapper's rate stage, declared at 10" (`mechanics.md` §4.3), and moving it would leave the remotes' declared limit at 1 s and the provenance test comparing the wrong number. G9 made refused targets and out-of-phase presets "not sends", so the refund is no longer a filter-only special case. |
 | D19 | `tuning.md` §2–§4 in **`MechanicsTuning.luau`** with its own drift guard | add sub-tables to `Tuning.luau` | ROUND-002's frozen guard asserts `Tuning.luau` is exactly §1 and §5. |
 | D20 | Client UI in **plain Instances**, no UI package | a Wally UI library | a dependency is an operator decision (B1 #5); M3's UI is minimal; pure view models give the testability a framework would. Revisit at M4. |
-| D21 | ~~A second alias, **`@net`**~~ **superseded by `SLICE-001`** | relative requires into `src/net` | Roblox has no custom aliases; `src/net` moves to `src/ReplicatedStorage/Net` and is required as `@game/ReplicatedStorage/Net/…` (§1, `SLICE-008`). |
+| D21 | ~~A second alias, **`@net`**~~ **superseded by `SLICE-001`** | relative requires into `src/ReplicatedStorage/Net` | Roblox has no custom aliases; `src/ReplicatedStorage/Net` moves to `src/ReplicatedStorage/Net` and is required as `@game/ReplicatedStorage/Net/…` (§1, `SLICE-008`). |
 | D22 | A **pure `Session`** composition root, and a **headless full round** as M3's integration test | integration verified only in Studio | Studio is manual and gates nothing; a headless round is the only evidence a required gate can hold that the pieces compose. |
 | D23 | **Which player holds which key class is not a secret**; the secrets are required settings and turn cues | permute the class-to-pattern mapping per round and replicate only viewer-relative "mine / partner's / neither" flags | the Game Designer's ruling (`mechanics.md` §1): the mapping is learnable within a round by watching who turns what, nothing can be addressed to a player, and `Ring` deals class *i* to seat *i* with `seatOrder` public anyway. SEAT-002's "no other player's key class in the projection" stays true of the projection and is **not** a secrecy guarantee; `FacilityView` publishes each machine's key class. Revisit only if playtesting shows the mapping being used to steer. |
 | D24 | **Two public payloads**: `FacilityView` once per round, `RoundView` on change | one view carrying static and dynamic facts | the layout and machine placement never change in a round; resending them every second is waste, and a smaller dynamic view is easier to hold to its allowlist. |
@@ -556,8 +556,8 @@ pieces talk, and where state is held. It does not restate the rules.
 
 | Path | Kind | Responsibility |
 |---|---|---|
-| `src/shared/MechanicsTuning.luau` | pure, data | `tuning.md` §2–§4 as a frozen table, keys verbatim (D19) |
-| `src/shared/channel/Presets.luau` | pure, data | the preset table (`mechanics.md` §4.2): id, word, icon key, legal phases. Shared because the client draws the wheel from it |
+| `src/ReplicatedStorage/Shared/MechanicsTuning.luau` | pure, data | `tuning.md` §2–§4 as a frozen table, keys verbatim (D19) |
+| `src/ReplicatedStorage/Shared/channel/Presets.luau` | pure, data | the preset table (`mechanics.md` §4.2): id, word, icon key, legal phases. Shared because the client draws the wheel from it |
 | `src/server/facility/Layout.luau` | pure | rooms, doorways, shortest-path distances |
 | `src/server/facility/Machines.luau` | pure | machine placement, key classes, tags, required settings |
 | `src/server/facility/Steps.luau` | pure | which machines are steps, the tracks, the finale |
@@ -577,8 +577,8 @@ pieces talk, and where state is held. It does not restate the rules.
 | `src/server/session/Session.luau` | pure | the composition root's logic: holds every piece of round state, routes events, returns effects (D22) |
 | `src/server/session/Interpreter.luau` | pure over ports | maps each effect to exactly one port call |
 | `src/server/RoundService.server.luau` | **impure driver** | builds the real ports, feeds events in, hands effects to the interpreter. Logic-free |
-| `src/net/GameRemotes.luau` | pure, data | `SendPreset`, `Ping`, `Turn` declared through `Remotes.define` |
-| `src/net/Transport.luau` | impure edge | the **only** `OnServerEvent:Connect` site: binds each declaration through `Wrapper.guard`; `sendTo` / `broadcast` for server-to-client payloads |
+| `src/ReplicatedStorage/Net/GameRemotes.luau` | pure, data | `SendPreset`, `Ping`, `Turn` declared through `Remotes.define` |
+| `src/ReplicatedStorage/Net/Transport.luau` | impure edge | the **only** `OnServerEvent:Connect` site: binds each declaration through `Wrapper.guard`; `sendTo` / `broadcast` for server-to-client payloads |
 | `src/client/Theme.luau` | pure, data | `docs/wiki/design/tokens.md` implemented by token name, with a drift guard (`THEME-001`) |
 | `src/client/models/*.luau` | pure | view models: data in, text/icon/colour/layout out |
 | `src/client/views/*.luau` | impure | build and update Instances from a model. Studio-verified |
@@ -696,7 +696,7 @@ par. It is **never replicated whole**; clients see it only through §9.7.
 
 ### 9.5 The channel
 
-Four remotes, declared in `src/net/GameRemotes.luau` and nowhere else:
+Four remotes, declared in `src/ReplicatedStorage/Net/GameRemotes.luau` and nowhere else:
 
 | Remote | Args (schema) | Legal phases | Send limit (refundable) | Attempt floor |
 |---|---|---|---|---|
@@ -914,7 +914,7 @@ check and is deliberately not game tuning.
 
 ### 9.9 The client
 
-`src/client/` imports only `@shared` and `@net` (§1). Everything it shows arrives
+`src/client/` imports only `@game/ReplicatedStorage/Shared` and `@game/ReplicatedStorage/Net` (§1). Everything it shows arrives
 as one of §9.7's payloads; it computes nothing a server rule depends on. Its logic
 is split so the gates can see it:
 
@@ -931,7 +931,7 @@ Tokens, components and the accessibility floor are `docs/wiki/design/`'s; a
 
 ### 9.10 Tuning for M3
 
-`tuning.md` §2–§4 land in **`src/shared/MechanicsTuning.luau`**, not in
+`tuning.md` §2–§4 land in **`src/ReplicatedStorage/Shared/MechanicsTuning.luau`**, not in
 `Tuning.luau` (D19): ROUND-002's frozen guard asserts `Tuning.luau` carries §1
 and §5 exactly. A second guard (`TUNE-001`) reads §2–§4 by name and compares
 every numeric, boolean and `= other` row to the module. Rows whose value is a

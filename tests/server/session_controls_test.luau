@@ -37,8 +37,8 @@ local Deep = require("../helpers/Deep")
 local PhaseMachine = require("../../src/server/round/PhaseMachine")
 local Projection = require("../../src/server/seats/Projection")
 local Ring = require("../../src/server/seats/Ring")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
-local Rng = require("../../src/shared/Rng")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 
 type Defects = {
 	-- AC-1

@@ -3,7 +3,7 @@
 	CHAN-004 AC-1, AC-2, AC-3, AC-4's guarded half and AC-7, written once as
 	checks over a `Net` bundle - `{ Schema, Remotes, Wrapper }` - and a
 	`SendPreset` REMOTE DEFINITION handed in as a parameter, rather than over
-	`src/net/GameRemotes.luau` by name. The same arrangement as
+	`src/ReplicatedStorage/Net/GameRemotes.luau` by name. The same arrangement as
 	`PingRemoteContract.luau`, for the same reason:
 	`tests/net/preset_remote_test.luau` applies these to the real
 	`GameRemotes.SendPreset`, and `tests/net/preset_remote_controls_test.luau`
@@ -58,10 +58,10 @@
 local Contract = require("./Contract")
 local DeclineContract = require("./DeclineContract")
 local Deep = require("./Deep")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local NetContract = require("./NetContract")
 local PhaseUnion = require("./PhaseUnion")
-local Presets = require("../../src/shared/channel/Presets")
+local Presets = require("../../src/ReplicatedStorage/Shared/channel/Presets")
 local PresetSendsContract = require("./PresetSendsContract")
 local RateContract = require("./RateContract")
 local RateLimitSpec = require("./RateLimitSpec")

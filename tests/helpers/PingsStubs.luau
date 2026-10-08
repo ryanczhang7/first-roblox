@@ -33,7 +33,7 @@
 ]]
 
 local Machines = require("../../src/server/facility/Machines")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 
 local PingsStubs = {}
 

@@ -35,7 +35,7 @@
 
 local Contract = require("../helpers/PingLifecycleContract")
 local Deep = require("../helpers/Deep")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local Stubs = require("../helpers/PingLifecycleStubs")
 
 local function failingNames(P: any): ({ string }, { [string]: string })

@@ -35,7 +35,7 @@
 ]]
 
 local Contract = require("./PlacementContract")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 
 type Machine = Contract.Machine
 type Placement = Contract.Placement

@@ -26,7 +26,7 @@
 ]]
 
 local Machines = require("../../src/server/facility/Machines")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local Procedure = require("../../src/server/procedure/Procedure")
 local Ring = require("../../src/server/seats/Ring")
 

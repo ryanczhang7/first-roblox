@@ -37,13 +37,13 @@
 	one limiter, not one per preset (C4) - and one ATTEMPT per
 	`channel_attempt_min_interval_seconds`.
 
-	TUNING IS READ THROUGH `@shared`. `architecture.md` section 1 forbids
-	`net` -> `server`, and `MechanicsTuning` lives in `src/shared/`, so the
+	TUNING IS READ THROUGH `@game/ReplicatedStorage/Shared`. `architecture.md` section 1 forbids
+	`net` -> `server`, and `MechanicsTuning` lives in `src/ReplicatedStorage/Shared/`, so the
 	bounds and the limits come from the constants rather than from literals
 	that could drift.
 ]]
 
-local MechanicsTuning = require("@shared/MechanicsTuning")
+local MechanicsTuning = require("@game/ReplicatedStorage/Shared/MechanicsTuning")
 local Remotes = require("./Remotes")
 local Schema = require("./Schema")
 

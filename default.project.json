@@ -6,10 +6,10 @@
     "ReplicatedStorage": {
       "$className": "ReplicatedStorage",
       "Shared": {
-        "$path": "src/shared"
+        "$path": "src/ReplicatedStorage/Shared"
       },
       "Net": {
-        "$path": "src/net"
+        "$path": "src/ReplicatedStorage/Net"
       }
     },
 

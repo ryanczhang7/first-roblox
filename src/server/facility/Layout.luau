@@ -21,8 +21,8 @@
 	then column), and `rooms[i].id == i`.
 ]]
 
-local MechanicsTuning = require("@shared/MechanicsTuning")
-local Rng = require("@shared/Rng")
+local MechanicsTuning = require("@game/ReplicatedStorage/Shared/MechanicsTuning")
+local Rng = require("@game/ReplicatedStorage/Shared/Rng")
 
 export type Cell = { column: number, row: number }
 export type Room = { id: number, column: number, row: number }

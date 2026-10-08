@@ -4,7 +4,7 @@
 	about `RejectionReporter` and the `telemetry` field of `GuardContext`,
 	written once as checks over a bundle -
 	`{ Schema, Remotes, Wrapper, RateLimiter, RejectionReporter, Event }` - handed
-	in as a parameter rather than over `src/net/*.luau` by name. The same
+	in as a parameter rather than over `src/ReplicatedStorage/Net/*.luau` by name. The same
 	arrangement as `RateContract.luau`, for the same reason:
 	`tests/net/rejection_test.luau` applies these to the real modules and
 	`tests/net/rejection_controls_test.luau` applies them to the deliberately
@@ -14,7 +14,7 @@
 
 	THREE LEVELS, so that RED fails for three different right reasons:
 
-	  * REPORTER checks are unit criteria on `src/net/RejectionReporter.luau`,
+	  * REPORTER checks are unit criteria on `src/ReplicatedStorage/Net/RejectionReporter.luau`,
 	    which does not exist on arrival; each opens by saying so.
 	  * WIRING checks drive the real `Wrapper.guard` with a SPY reporter that
 	    needs no production module, so they fail on "emit was never called" -
@@ -226,7 +226,7 @@ end
 local function module(bundle: Bundle, criterion: string): any
 	if bundle.RejectionReporter == nil then
 		Contract.fail(
-			`{criterion}: src/net/RejectionReporter.luau did not load - the reporter is a new module `
+			`{criterion}: src/ReplicatedStorage/Net/RejectionReporter.luau did not load - the reporter is a new module `
 				.. `and this check is a unit criterion on it`
 		)
 	end

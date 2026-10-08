@@ -48,7 +48,7 @@ local Deep = require("./Deep")
 local FacilityContract = require("./FacilityContract")
 local Generator = require("../../src/server/facility/Generator")
 local LayoutContract = require("./LayoutContract")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local PlacementContract = require("./PlacementContract")
 local Raise = require("./Contract")
 

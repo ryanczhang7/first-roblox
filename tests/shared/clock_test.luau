@@ -1,9 +1,9 @@
 --!strict
 --[[
-	ROUND-001 AC-1 and the `src/shared/Clock.luau` Contract.
+	ROUND-001 AC-1 and the `src/ReplicatedStorage/Shared/Clock.luau` Contract.
 
 	The module is required through a `pcall` at the top and re-checked inside each
-	test. That is not defensive dressing: in RED `src/shared/Clock.luau` does not
+	test. That is not defensive dressing: in RED `src/ReplicatedStorage/Shared/Clock.luau` does not
 	exist, and a bare top-level `require` would make the whole file a single LOAD
 	FAIL - one line of red covering four criteria. Per-criterion failures say
 	which behaviours are missing, which is what the next phase needs.
@@ -14,10 +14,10 @@
 
 local ClockContract = require("../helpers/ClockContract")
 
-local loaded, loadResult = pcall(require, "../../src/shared/Clock")
+local loaded, loadResult = pcall(require, "../../src/ReplicatedStorage/Shared/Clock")
 
 local function Clock(): any
-	assert(loaded, `src/shared/Clock.luau did not load: {tostring(loadResult)}`)
+	assert(loaded, `src/ReplicatedStorage/Shared/Clock.luau did not load: {tostring(loadResult)}`)
 	return loadResult
 end
 

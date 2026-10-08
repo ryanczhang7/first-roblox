@@ -21,7 +21,7 @@
 	a rate lowered below compliance.
 
 	WHY `TuningSpec.parse` IS NOT REUSED: its scope is `tuning.md` §1 and §5
-	only, by the same `SECTION_TABLE` filter that keeps `src/shared/Tuning.luau`
+	only, by the same `SECTION_TABLE` filter that keeps `src/ReplicatedStorage/Shared/Tuning.luau`
 	out of §3. A §3 constant added to `Tuning` would red ROUND-002's module-to-
 	spec guard. So this is a small local reader over the whole document.
 

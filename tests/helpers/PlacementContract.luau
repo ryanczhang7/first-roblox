@@ -45,8 +45,8 @@
 local Deep = require("./Deep")
 local Layout = require("../../src/server/facility/Layout")
 local LayoutContract = require("./LayoutContract")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
-local Rng = require("../../src/shared/Rng")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 
 local PlacementContract = {}
 

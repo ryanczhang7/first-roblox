@@ -42,7 +42,7 @@
 
 local Generator = require("../facility/Generator")
 local Machines = require("../facility/Machines")
-local MechanicsTuning = require("@shared/MechanicsTuning")
+local MechanicsTuning = require("@game/ReplicatedStorage/Shared/MechanicsTuning")
 local PhaseMachine = require("./PhaseMachine")
 local Pings = require("../channel/Pings")
 local Procedure = require("../procedure/Procedure")

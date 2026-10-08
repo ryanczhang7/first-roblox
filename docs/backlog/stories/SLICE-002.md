@@ -14,15 +14,15 @@ required_gates: []  # gate ids that are optional for the repo but binding for TH
 ## Context
 
 Epic: `EPIC-03`. B4's one enforceable rule is "no `OnServerEvent:Connect`
-outside `src/net/`" (`architecture.md` §4, D6), and it is already guarded by
+outside `src/ReplicatedStorage/Net/`" (`architecture.md` §4, D6), and it is already guarded by
 `tests/net/raw_remote_guard_test.luau` — which also forbids `.OnClientEvent`
-outside `src/net/`. M0–M2 built the pipeline (`Remotes`, `Schema`, `Wrapper`,
+outside `src/ReplicatedStorage/Net/`. M0–M2 built the pipeline (`Remotes`, `Schema`, `Wrapper`,
 `RateLimiter`) and **never connected it to a `RemoteEvent`**. This story builds
 the one module allowed to, on both sides, and makes the second trust rule of M3
 structural: **a per-player payload is sent to its player only** (`architecture.md`
 §9.7, D13).
 
-It reaches `src/net/` (moved to `src/ReplicatedStorage/Net` by `SLICE-008`) through
+It reaches `src/ReplicatedStorage/Net/` (moved from `src/net` by `SLICE-008`) through
 `@game/ReplicatedStorage/Net/…`; the `@net` alias (D21) is superseded (`SLICE-001`).
 
 **Which required gate would fail if this story's artifact broke:** `unit` — the
@@ -59,7 +59,7 @@ real `RemoteEvent` adapter is a Studio check (`SLICE-004`).
   registered and the server fires that kind, then `fn` receives the payload;
   and `ClientTransport.send(remoteName, args)` calls `FireServer` on that
   remote's event with `args` as the single payload. `.OnClientEvent` appears in
-  no source module outside `src/net/` (the existing guard, which must still pass
+  no source module outside `src/ReplicatedStorage/Net/` (the existing guard, which must still pass
   with the new modules in its scanned set).
 - **AC-7** — Given `.luaurc`, when it is read, then it still declares exactly
   one alias, `game` → `src` (`SLICE-008`); this story adds no alias. Every
@@ -69,8 +69,8 @@ real `RemoteEvent` adapter is a Studio check (`SLICE-004`).
 
 ## Contract
 
-**Modules.** `src/net/Transport.luau` (server) and
-`src/net/ClientTransport.luau` (client). Both take their Roblox objects through
+**Modules.** `src/ReplicatedStorage/Net/Transport.luau` (server) and
+`src/ReplicatedStorage/Net/ClientTransport.luau` (client). Both take their Roblox objects through
 ports so the tests can pass fakes.
 
     export type PayloadKind = "SeatView" | "LensView" | "TurnCues" | "TurnResult" | "PresetFailed" | "PingRefused"  -- per-player: sendTo only
@@ -110,7 +110,7 @@ ports so the tests can pass fakes.
 **`.luaurc`** is not changed by this story. **Re-planned at `SLICE-001`'s close
 (2026-10-07):** Roblox has no custom aliases, so `@net` (D21) is superseded.
 After `SLICE-008`, the net layer lives at `src/ReplicatedStorage/Net` and is
-required as `@game/ReplicatedStorage/Net/…`. Every `src/net/` path in this story
+required as `@game/ReplicatedStorage/Net/…`. Every net-layer path in this story
 means that directory. AC-7's test reads `.luaurc` through
 `tests/helpers/GatedFs.luau` (HARNESS-022), never `@lune/fs` directly; if
 `classify.sh --gated` does not include `.luaurc`, RED stops and says so rather
@@ -155,7 +155,7 @@ this command runs again; the rest of the section is yours and is preserved.
 | REVIEW | `lead-po` | `opus` | reading review feedback against the contract is judgement, and a wrong call here ships |
 | SCAFFOLD | `lead-po` | `opus` | source, tests and config in one indivisible derivation, with no failing test in front of any of it |
 
-Lock coverage: SUPPRESSED by `src/net/ClientTransport.luau` (source), `src/net/Transport.luau` (source), `tests/helpers/GatedFs.luau` (test), scanned from the Contract text — the phase lock freezes them, so RED follows the plain plan.
+Lock coverage: SUPPRESSED by `src/ReplicatedStorage/Net/ClientTransport.luau` (source), `src/ReplicatedStorage/Net/Transport.luau` (source), `tests/helpers/GatedFs.luau` (test), scanned from the Contract text — the phase lock freezes them, so RED follows the plain plan.
 <!-- plan.sh:generated:end -->
 
 Oracle partition as in `## Contract`: every criterion is mechanical. Brief RED

@@ -59,10 +59,10 @@
 local Contract = require("./Contract")
 local Deep = require("./Deep")
 local Generator = require("../../src/server/facility/Generator")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local Procedure = require("../../src/server/procedure/Procedure")
 local Ring = require("../../src/server/seats/Ring")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 
 local TurnCuesContract = {}
 

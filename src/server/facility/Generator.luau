@@ -27,7 +27,7 @@
 	`stagesOverride` for AC-3; production passes nil for both. A stage
 	override is called with exactly the real stage's signature.
 
-	`round_seconds` IS READ FROM `@shared/Tuning` AT LOAD, as `Ring` reads
+	`round_seconds` IS READ FROM `@game/ReplicatedStorage/Shared/Tuning` AT LOAD, as `Ring` reads
 	`min_players_to_continue`. `MechanicsTuning` does not carry it, and a
 	second copy would be a second place for it to live. Everything else is
 	read from the `tuning` argument.
@@ -39,12 +39,12 @@
 
 local Layout = require("./Layout")
 local Machines = require("./Machines")
-local MechanicsTuning = require("@shared/MechanicsTuning")
+local MechanicsTuning = require("@game/ReplicatedStorage/Shared/MechanicsTuning")
 local Par = require("./Par")
 local Ring = require("../seats/Ring")
-local Rng = require("@shared/Rng")
+local Rng = require("@game/ReplicatedStorage/Shared/Rng")
 local Steps = require("./Steps")
-local Tuning = require("@shared/Tuning")
+local Tuning = require("@game/ReplicatedStorage/Shared/Tuning")
 
 export type Facility = {
 	layout: Layout.Layout,

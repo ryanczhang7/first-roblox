@@ -33,19 +33,19 @@
 	shape (the rate set to the attempt floor) is `rateIsTheAttemptFloor`.
 	D-1 and D-5 THEMSELVES stay with GATES.
 
-	WHAT THIS IS NOT: `src/net/GameRemotes.luau`, or a sketch of one.
+	WHAT THIS IS NOT: `src/ReplicatedStorage/Net/GameRemotes.luau`, or a sketch of one.
 ]]
 
 local Contract = require("../helpers/PresetRemoteContract")
 local Deep = require("../helpers/Deep")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local PhaseUnion = require("../helpers/PhaseUnion")
-local Presets = require("../../src/shared/channel/Presets")
+local Presets = require("../../src/ReplicatedStorage/Shared/channel/Presets")
 local PresetSendsStubs = require("../helpers/PresetSendsStubs")
 local RateLimitSpec = require("../helpers/RateLimitSpec")
-local Remotes = require("../../src/net/Remotes")
-local Schema = require("../../src/net/Schema")
-local Wrapper = require("../../src/net/Wrapper")
+local Remotes = require("../../src/ReplicatedStorage/Net/Remotes")
+local Schema = require("../../src/ReplicatedStorage/Net/Schema")
+local Wrapper = require("../../src/ReplicatedStorage/Net/Wrapper")
 
 local net: Contract.Net = { Schema = Schema, Remotes = Remotes, Wrapper = Wrapper }
 

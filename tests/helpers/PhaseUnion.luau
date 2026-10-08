@@ -1,6 +1,6 @@
 --!strict
 --[[
-	NET-002 AC-7: the two `Phase` unions - `src/net/Remotes.luau` re-declares
+	NET-002 AC-7: the two `Phase` unions - `src/ReplicatedStorage/Net/Remotes.luau` re-declares
 	the one `src/server/round/PhaseMachine.luau` exports, because
 	`architecture.md` section 1 forbids `net` -> `server` and `.luaurc` has no
 	alias that would spell the require - must name exactly the same phases.
@@ -10,7 +10,7 @@
 
 	WHY THIS IS TEXTUAL, and why that is the right instrument rather than a
 	weaker one: the typecheck gate cannot see the drift. Nothing constructs a
-	`GuardContext`, nothing in `src/net/` requires `PhaseMachine`, nothing in
+	`GuardContext`, nothing in `src/ReplicatedStorage/Net/` requires `PhaseMachine`, nothing in
 	`src/server/` requires `Wrapper`, so no expression exists in which one
 	`Phase` flows into the other, and `luau-lsp` exiting 0 is the absence of a
 	complaint. The story's Contract measured that on 2026-09-21 and RED

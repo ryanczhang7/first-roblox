@@ -47,7 +47,7 @@
 local Contract = require("../helpers/TurnContract")
 local Deep = require("../helpers/Deep")
 local Machines = require("../../src/server/facility/Machines")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 
 type Defects = {
 	everyTrackOneStepLive: boolean?, -- AC-1's named control

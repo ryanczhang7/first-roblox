@@ -47,13 +47,13 @@ local Raise = require("./Contract")
 local Layout = require("../../src/server/facility/Layout")
 local LayoutContract = require("./LayoutContract")
 local Machines = require("../../src/server/facility/Machines")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local PlacementContract = require("./PlacementContract")
 local ProcedureContract = require("./ProcedureContract")
 local Ring = require("../../src/server/seats/Ring")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 local Steps = require("../../src/server/facility/Steps")
-local Tuning = require("../../src/shared/Tuning")
+local Tuning = require("../../src/ReplicatedStorage/Shared/Tuning")
 
 local FacilityContract = {}
 

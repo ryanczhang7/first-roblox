@@ -33,10 +33,10 @@
 
 local Contract = require("./Contract")
 local Deep = require("./Deep")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local Pings = require("../../src/server/channel/Pings")
 local PresetSends = require("../../src/server/channel/PresetSends")
-local Presets = require("../../src/shared/channel/Presets")
+local Presets = require("../../src/ReplicatedStorage/Shared/channel/Presets")
 local Projection = require("../../src/server/seats/Projection")
 local Ring = require("../../src/server/seats/Ring")
 local RoundView = require("../../src/server/round/RoundView")

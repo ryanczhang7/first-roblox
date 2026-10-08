@@ -47,7 +47,7 @@
 ]]
 
 local Deep = require("./Deep")
-local Event = require("../../src/shared/telemetry/Event")
+local Event = require("../../src/ReplicatedStorage/Shared/telemetry/Event")
 local PhaseMachine = require("../../src/server/round/PhaseMachine")
 
 local Real: any = PhaseMachine

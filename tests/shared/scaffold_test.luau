@@ -1,12 +1,12 @@
 --!strict
 --[[
-	Covers src/shared/Scaffold.luau.
+	Covers src/ReplicatedStorage/Shared/Scaffold.luau.
 
 	This suite exists to prove the runner runs and the `unit` gate is real. The
 	module under test has no domain meaning, and neither does this file.
 ]]
 
-local Scaffold = require("../../src/shared/Scaffold")
+local Scaffold = require("../../src/ReplicatedStorage/Shared/Scaffold")
 
 return {
 	["join places the separator between adjacent parts"] = function()

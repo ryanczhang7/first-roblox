@@ -48,13 +48,13 @@
 local Contract = require("./Contract")
 local Deep = require("./Deep")
 local Generator = require("../../src/server/facility/Generator")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local PhaseMachine = require("../../src/server/round/PhaseMachine")
 local Procedure = require("../../src/server/procedure/Procedure")
 local Ring = require("../../src/server/seats/Ring")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 local RoundConfig = require("../../src/server/round/RoundConfig")
-local Tuning = require("../../src/shared/Tuning")
+local Tuning = require("../../src/ReplicatedStorage/Shared/Tuning")
 local Turn = require("./TurnContract")
 
 local RoundViewContract = {}

@@ -1,11 +1,11 @@
 --!strict
 --[[
 	NET-002: phase legality, position 4 of the fixed check order. AC-1 through
-	AC-6 applied to the real `src/net/Wrapper.luau` and `src/net/Remotes.luau`,
+	AC-6 applied to the real `src/ReplicatedStorage/Net/Wrapper.luau` and `src/ReplicatedStorage/Net/Remotes.luau`,
 	driving the real `Schema` - the level at which the contract between the
 	three lives, so the level at which the out-of-phase cases are asserted.
 
-	THE MODULES EXIST ON ARRIVAL, unlike NET-001's RED: `src/net/` was built
+	THE MODULES EXIST ON ARRIVAL, unlike NET-001's RED: `src/ReplicatedStorage/Net/` was built
 	by NET-001 and declares `legalPhases` without reading it. So the tests
 	below LOAD and RUN, and the ones that fail do so on their own assertion -
 	"a valid call while the phase is Lobby -> ACCEPTED (returned nil)" - not
@@ -29,14 +29,23 @@
 
 local Contract = require("../helpers/PhaseContract")
 
-local schemaLoaded, schemaResult = pcall(require, "../../src/net/Schema")
-local remotesLoaded, remotesResult = pcall(require, "../../src/net/Remotes")
-local wrapperLoaded, wrapperResult = pcall(require, "../../src/net/Wrapper")
+local schemaLoaded, schemaResult = pcall(require, "../../src/ReplicatedStorage/Net/Schema")
+local remotesLoaded, remotesResult = pcall(require, "../../src/ReplicatedStorage/Net/Remotes")
+local wrapperLoaded, wrapperResult = pcall(require, "../../src/ReplicatedStorage/Net/Wrapper")
 
 local function net(): Contract.Net
-	assert(schemaLoaded, `src/net/Schema.luau did not load: {tostring(schemaResult)}`)
-	assert(remotesLoaded, `src/net/Remotes.luau did not load: {tostring(remotesResult)}`)
-	assert(wrapperLoaded, `src/net/Wrapper.luau did not load: {tostring(wrapperResult)}`)
+	assert(
+		schemaLoaded,
+		`src/ReplicatedStorage/Net/Schema.luau did not load: {tostring(schemaResult)}`
+	)
+	assert(
+		remotesLoaded,
+		`src/ReplicatedStorage/Net/Remotes.luau did not load: {tostring(remotesResult)}`
+	)
+	assert(
+		wrapperLoaded,
+		`src/ReplicatedStorage/Net/Wrapper.luau did not load: {tostring(wrapperResult)}`
+	)
 	return { Schema = schemaResult, Remotes = remotesResult, Wrapper = wrapperResult }
 end
 

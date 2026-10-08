@@ -2,7 +2,7 @@
 --[[
 	TEL-001 AC-1 through AC-6 written once, as checks over an EVENT module and a
 	SINK module handed in as parameters rather than over
-	`src/shared/telemetry/Event.luau` and `src/shared/telemetry/Sink.luau` by
+	`src/ReplicatedStorage/Shared/telemetry/Event.luau` and `src/ReplicatedStorage/Shared/telemetry/Sink.luau` by
 	name - the same arrangement as `ProjectionContract.luau`, for the same
 	reason.
 
@@ -41,7 +41,7 @@
 	Every message names its criterion, because the controls assert on the text.
 ]]
 
-local Clock = require("../../src/shared/Clock")
+local Clock = require("../../src/ReplicatedStorage/Shared/Clock")
 local Contract = require("./Contract")
 local Deep = require("./Deep")
 

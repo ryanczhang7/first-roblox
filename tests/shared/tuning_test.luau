@@ -1,6 +1,6 @@
 --!strict
 --[[
-	ROUND-002 AC-1, AC-2, AC-3 and AC-5, against `src/shared/Tuning.luau`.
+	ROUND-002 AC-1, AC-2, AC-3 and AC-5, against `src/ReplicatedStorage/Shared/Tuning.luau`.
 
 	AC-1 and AC-2 are SETTLED criteria (`## Oracle partition`): the values are read
 	out of the specification, never re-derived here. They are compared against
@@ -21,10 +21,10 @@
 
 local TuningSpec = require("../helpers/TuningSpec")
 
-local loaded, loadResult = pcall(require, "../../src/shared/Tuning")
+local loaded, loadResult = pcall(require, "../../src/ReplicatedStorage/Shared/Tuning")
 
 local function Tuning(): any
-	assert(loaded, `src/shared/Tuning.luau did not load: {tostring(loadResult)}`)
+	assert(loaded, `src/ReplicatedStorage/Shared/Tuning.luau did not load: {tostring(loadResult)}`)
 	return loadResult
 end
 

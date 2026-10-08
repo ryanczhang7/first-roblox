@@ -48,7 +48,7 @@
 
 local Contract = require("./Contract")
 local Deep = require("./Deep")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 
 local RingContract = {}
 
@@ -759,7 +759,7 @@ end
 	rather than `assert`, for the truncation reason given there.
 ====================================================================== ]]
 
-local Tuning = require("../../src/shared/Tuning")
+local Tuning = require("../../src/ReplicatedStorage/Shared/Tuning")
 
 RingContract.GRACE_SECONDS = Tuning.round.disconnect_grace_seconds
 

@@ -14,7 +14,7 @@
 	set of checks that fire is attributable to that change. `factTable` is the
 	one exception the story names: AC-3's hand-built bad table.
 
-	WHAT THIS IS NOT: `src/shared/channel/Presets.luau`, or a sketch of one.
+	WHAT THIS IS NOT: `src/ReplicatedStorage/Shared/channel/Presets.luau`, or a sketch of one.
 	`build` freezes everything because P-5 demands it of the module, not
 	because the module must be built this way.
 ]]

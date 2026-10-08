@@ -36,7 +36,7 @@
 ]]
 
 local Deep = require("../helpers/Deep")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local PositionsContract = require("../helpers/PositionsContract")
 local PositionsStubs = require("../helpers/PositionsStubs")
 local RoundContract = require("../helpers/SessionRoundContract")

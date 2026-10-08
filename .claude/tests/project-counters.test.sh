@@ -66,11 +66,41 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 #                               from project.conf, unmodified
 #   BASE_TYPECHECK            - the `gate | typecheck` command, unmodified
 #   NARROW_FORMAT/NARROW_LINT - the same two with `src tests lune` -> `src`
-#   NARROW_TYPECHECK          - typecheck with `src` -> `src/shared`
+#   NARROW_TYPECHECK          - typecheck with `src` -> `src/ReplicatedStorage/Shared`
 # Read the number out of each command's own evidence line; do not count files
 # yourself, for the same reason the suite does not.
 #
-# LAST MEASURED: MAP-001 (RED), which adds four test files
+# LAST MEASURED: SLICE-008 (RED), which adds THREE test files
+# (tests/helpers/LayerRequires.luau, tests/shared/layer_requires_test.luau,
+# tests/shared/layer_requires_controls_test.luau) and ONE probe under src,
+# src/client/__probe_cross_layer.luau (AC-3's committed negative control;
+# `__probe_` classifies as test for the lock, but stylua, selene and luau-lsp
+# are handed `src` and count every .luau in it, so it moves the src counts).
+# GREEN adds NO source file: it `git mv`s src/shared to
+# src/ReplicatedStorage/Shared and src/net to src/ReplicatedStorage/Net, which
+# moves nine and six files and creates none. MAP-001's values (206/206/34,
+# narrow 34/34/9) were confirmed on the tree before this story's files were
+# added: `git ls-files --cached --others --exclude-standard` over src tests
+# lune counted 206 .luau, src alone 34, src/shared alone 9. PREDICTED
+# post-GREEN, which is what is pinned below: 206 + 3 tests + 1 probe =
+# 210/210, typecheck 34 + 1 probe = 35, narrow 34 + 1 = 35/35, and
+# NARROW_TYPECHECK stays 9 - the same nine files, now read from
+# src/ReplicatedStorage/Shared (the target this suite hands luau-lsp moved
+# with them; the probe is under src/client). THE BASELINES BELOW ARE SET TO
+# THOSE PREDICTED GREEN VALUES NOW, IN RED, as MAP-001 and the rest did and
+# for the same reason: check-boundaries refuses a .claude/tests/** change from
+# any other phase (TUNE-001 R-1). The suite is red in RED by design - the "no
+# stray .luau files" precondition until the RED commit, and the narrowed
+# typecheck case because src/ReplicatedStorage/Shared does not exist until
+# GREEN's `git mv` (the gate command's `test -d` fails on it). The base and
+# narrow-src counts are NOT red in RED, because every file they count is
+# already on disk: expected under `bash scripts/gates.sh --fast` on RED's tree
+# is 210/210/35 observed for format, lint and typecheck, 35/35 for the narrow
+# src cases, 211/211/36 for the untracked-file cases, and the narrow typecheck
+# (9) failing on the missing directory. GREEN confirms, never edits; a new
+# source file, or a file left behind under src/shared/, is a counter failure
+# GREEN cannot fix.
+# BEFORE THAT: MAP-001 (RED), which adds four test files
 # (tests/helpers/BlockoutContract.luau, tests/helpers/BlockoutStubs.luau,
 # tests/server/blockout_test.luau, tests/server/blockout_controls_test.luau)
 # and whose GREEN adds TWO source files, src/server/facility/Blockout.luau and
@@ -501,18 +531,18 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=206    # stylua  over src tests lune   (206 = 34 src + 172 tests/lune: MAP-001 RED adds 4 test files and GREEN two source files, predicted; SLICE-006 read "observed 200")
-BASE_LINT=206      # selene  over src tests lune
-BASE_TYPECHECK=34  # analyze over src (+ MAP-001's facility/Blockout and facility/BlockoutBuilder, predicted; NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView, predicted)
-NARROW_FORMAT=34   # stylua  over src alone (MAP-001 predicted)
-NARROW_LINT=34     # selene  over src alone (MAP-001 predicted)
-NARROW_TYPECHECK=9 # analyze over src/shared alone (moved by TUNE-001's MechanicsTuning; + CHAN-002's channel/Presets; VIEW-003 adds nothing under src/shared)
+BASE_FORMAT=210    # stylua  over src tests lune   (210 = 35 src + 175 tests/lune: SLICE-008 RED adds 3 test files and 1 probe under src/client, GREEN moves files and adds none, predicted; MAP-001 read "observed 206")
+BASE_LINT=210      # selene  over src tests lune
+BASE_TYPECHECK=35  # analyze over src (+ SLICE-008's src/client/__probe_cross_layer.luau, predicted; + MAP-001's facility/Blockout and facility/BlockoutBuilder; NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView)
+NARROW_FORMAT=35   # stylua  over src alone (SLICE-008 predicted: + the client probe)
+NARROW_LINT=35     # selene  over src alone (SLICE-008 predicted: + the client probe)
+NARROW_TYPECHECK=9 # analyze over src/ReplicatedStorage/Shared alone (the same nine files src/shared held; SLICE-008 moves the directory and adds nothing to it; moved by TUNE-001's MechanicsTuning; + CHAN-002's channel/Presets)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`
 # rather than `source` - rules.md's probe convention - and so every guard that
 # walks the tree skips them.
-UNTRACKED_REL="src/shared/__probe_h006_untracked.luau"
-UNFORMATTED_REL="src/shared/__probe_h006_unformatted.luau"
+UNTRACKED_REL="src/ReplicatedStorage/Shared/__probe_h006_untracked.luau"
+UNFORMATTED_REL="src/ReplicatedStorage/Shared/__probe_h006_unformatted.luau"
 IGNORED_REL="src/build/__probe_h006_ignored.luau"
 UNTRACKED="$REPO_ROOT/$UNTRACKED_REL"
 UNFORMATTED="$REPO_ROOT/$UNFORMATTED_REL"
@@ -769,8 +799,8 @@ assert_narrowed_count "narrowing the lint target to src reports 17, not 92" \
 # ---------------------------------------------------------------------------
 describe "AC-5: the typecheck count moves with the target luau-lsp was handed"
 
-assert_narrowed_count "narrowing the typecheck target to src/shared reports 5, not 9" \
-  "$CMD_TYPECHECK" "$EV_TYPECHECK" 'src' 'src/shared' "$NARROW_TYPECHECK"
+assert_narrowed_count "narrowing the typecheck target to src/ReplicatedStorage/Shared reports 5, not 9" \
+  "$CMD_TYPECHECK" "$EV_TYPECHECK" 'src' 'src/ReplicatedStorage/Shared' "$NARROW_TYPECHECK"
 
 # ---------------------------------------------------------------------------
 # AC-2 / AC-4 - the ROUND-005 symptom as a test rather than an anecdote: a file

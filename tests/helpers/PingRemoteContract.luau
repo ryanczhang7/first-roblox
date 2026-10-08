@@ -2,7 +2,7 @@
 --[[
 	CHAN-005 AC-1 and AC-2, written once as checks over a `Net` bundle -
 	`{ Schema, Remotes, Wrapper }` - and a `Ping` REMOTE DEFINITION handed in
-	as a parameter, rather than over `src/net/GameRemotes.luau` by name. The
+	as a parameter, rather than over `src/ReplicatedStorage/Net/GameRemotes.luau` by name. The
 	same arrangement as `TurnRemoteContract.luau`, for the same reason:
 	`tests/net/ping_remote_test.luau` applies these to the real
 	`GameRemotes.Ping`, and `tests/net/ping_remote_controls_test.luau` applies
@@ -45,7 +45,7 @@
 local Contract = require("./Contract")
 local DeclineContract = require("./DeclineContract")
 local Deep = require("./Deep")
-local MechanicsTuning = require("../../src/shared/MechanicsTuning")
+local MechanicsTuning = require("../../src/ReplicatedStorage/Shared/MechanicsTuning")
 local NetContract = require("./NetContract")
 local RateContract = require("./RateContract")
 local RateLimitSpec = require("./RateLimitSpec")

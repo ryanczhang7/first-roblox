@@ -37,14 +37,14 @@
 	Contract, against the failing tests in `tests/server/ring_test.luau`;
 	nothing here is to be copied.
 
-	NOTHING HERE REQUIRES PRODUCTION CODE - `src/shared/Rng.luau` is ROUND-001's,
+	NOTHING HERE REQUIRES PRODUCTION CODE - `src/ReplicatedStorage/Shared/Rng.luau` is ROUND-001's,
 	merged and frozen, and `Deep` is a test helper - so these controls are
 	EXECUTED in RED, and `tests/server/ring_controls_test.luau` records what
 	each one actually did.
 ]]
 
 local Deep = require("./Deep")
-local Rng = require("../../src/shared/Rng")
+local Rng = require("../../src/ReplicatedStorage/Shared/Rng")
 
 local RingStubs = {}
 
