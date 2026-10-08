@@ -49,10 +49,16 @@ local EXISTING: { string } = {
 	"src/server/seats/Ring.luau",
 	"src/ReplicatedStorage/Shared/Clock.luau",
 }
+-- SLICE-002 (C-8) adds the two transport modules: the only place
+-- `OnServerEvent:Connect` and `.OnClientEvent` may appear, and the guard must
+-- see them in the scanned set to know it is exempting a layer and not
+-- missing one.
 local NET_MODULES: { string } = {
 	"src/ReplicatedStorage/Net/Schema.luau",
 	"src/ReplicatedStorage/Net/Remotes.luau",
 	"src/ReplicatedStorage/Net/Wrapper.luau",
+	"src/ReplicatedStorage/Net/Transport.luau",
+	"src/ReplicatedStorage/Net/ClientTransport.luau",
 }
 
 local function isUnderNet(path: string): boolean
@@ -84,7 +90,7 @@ return {
 		files satisfy it; the floor is there as well so the set cannot be five
 		files and nothing else.
 	]]
-	["AC-7: the scanned set is the real source tree - at least six modules, including three outside src/ReplicatedStorage/Net/ and this story's three inside it"] = function()
+	["AC-7: the scanned set is the real source tree - at least six modules, including three outside src/ReplicatedStorage/Net/ and the net layer's five inside it (SLICE-002 adds Transport and ClientTransport)"] = function()
 		local sources = SourceScan.sourceFiles()
 		assert(#sources >= 6, `the guard scanned {#sources} file(s); a guard over nothing passes`)
 		for _, path in EXISTING do
