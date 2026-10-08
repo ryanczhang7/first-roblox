@@ -5,7 +5,7 @@ slug: every-declared-remote-is-bound-through-t
 epic: EPIC-03
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/SLICE-002-every-declared-remote-is-bound-through-t
 depends_on: [SLICE-001, SLICE-008]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -215,6 +215,7 @@ from an upstream story or spike (as noted above), amend it and re-run
 - PLANNED - `lead-po` - `claude-opus-5-5` (Opus 5.5, from the session's own model
   identification; the /plan-product dispatch reported no override). 2026-09-30.
 - RED - `test-developer` - `claude-fable-5-1` (dispatched with an explicit `model: fable`; the agent reported no override). 2026-10-08.
+- GREEN - `feature-developer` - `claude-opus-5-5` (dispatched with an explicit `model: opus`; the agent reported no override). 2026-10-08.
 
 ## Test plan
 
@@ -534,6 +535,91 @@ and it is worth a line in `## Gate probes`.
          suite fails at import, so no assertion in it has run - the controls
          are claims until GREEN confirms them against the shipped module
        * anything discovered that changes the approach -->
+
+### GREEN notes
+
+**Feature Developer, 2026-10-08, model `claude-opus-5-5` (the model's own
+identification; no override was reported in the dispatch).** No test file was
+touched; no contract block was amended.
+
+Files written - exactly two, as the counters predict:
+
+- `src/ReplicatedStorage/Net/Transport.luau` - `PRIVATE_KINDS`, `PUBLIC_KINDS`,
+  `bind`, the bound `sendTo` / `broadcast`; types `PayloadKind`,
+  `RemoteEventLike`, `Ports`, `Bound`, `Handler`. Each declared remote's handler
+  is handed to `Wrapper.guard` as is (C-1); the connected function calls
+  `ports.idOf` once and returns `guarded(id, payload)` (C-2, C-3); no second
+  identity check. One deviation from the Contract's sketched type, in the type
+  only: `RemoteEventLike.OnServerEvent.Connect`'s callback is typed
+  `(player, payload) -> ...any` rather than `-> ()`, because C-2 requires the
+  connected function to return the guard's result.
+- `src/ReplicatedStorage/Net/ClientTransport.luau` - `init`, `on`, `send`; module
+  state; requires `./Transport` for the kind sets (C-7 permits it).
+
+Before writing either, the failure was observed:
+`lune run build/one_test.luau -- tests/net/transport_test` -> `0 passed, 21 failed`,
+each on `could not resolve child component "Transport"`.
+
+Final runs:
+
+    $ lune run build/one_test.luau -- tests/net/transport_test tests/net/transport_controls_test tests/net/raw_remote_guard_test tests/net/net_requires_test
+    62 passed, 0 failed
+
+    $ bash scripts/gates.sh --fast          # unit is the whole suite
+    1461 passed, 0 failed                   # from .claude/state/gate-logs/unit.log
+    --- gate summary ---
+    PASS         format (1s, observed 217)
+    PASS         lint (0s, observed 217, floor 1)
+    PASS         typecheck (2s, observed 37)
+    PASS         unit (310s, observed 1461, floor 507)
+    UNCONFIGURED coverage
+    PASS         build (0s, observed 138085)
+    FAIL         harness (18s, exit 1) -> .claude/state/gate-logs/harness.log
+
+`harness` is `project-counters: 40 passed, 1 failed`, and the one failure is
+the precondition RED predicted would stay red until the files are committed:
+
+    FAIL the working tree carries no stray .luau files, so the baselines mean what they say
+         actual:   ?? src/ReplicatedStorage/Net/ClientTransport.luau
+                   ?? src/ReplicatedStorage/Net/Transport.luau
+
+Every counter assertion in that suite (`AC-7: the three gates report the
+settled counts`, and the rest) passed, at 217/217/37 as RED predicted. Staging
+the files with `git add` does not clear it (`scripts/stray-luau.sh` reads
+`git status --porcelain`, so `A ` is reported the same as `??`); only a commit
+does. GREEN did not commit; the files are left untracked for the orchestrator.
+
+Per file, from the same unit log: `transport_test` 21 pass / 0 fail,
+`transport_controls_test` 29 pass / 0 fail, `raw_remote_guard_test` 8 / 0,
+`net_requires_test` 4 / 0.
+
+Controls, confirmed against the shipped module:
+
+- `transport_controls_test.luau` passes in full. It holds **29** tests, not the
+  27 the Test plan states: the 27 one-defect controls, plus "the correct
+  transport passes every SLICE-002 check" (baseline) and "every control is a
+  single defect ..." (meta). Each defect still fails exactly the set pinned in
+  the table above. Those controls run against the stub reference transport,
+  not the shipped module. What the shipped module is measured against is
+  `transport_test.luau`, which applies the same 21 checks to the real modules:
+  21/21, matching the baseline's "0 of 21 checks fail".
+- The unit total is 1461, against 1434 + 23 = 1457 in RED's pasted failure.
+  The difference of 4 is the size of `net_requires_test.luau` (4 tests), so
+  the likeliest explanation is that RED's output was captured before that file
+  existed. I did not verify that against RED's tree.
+
+D-1 was not run (owner: GATES). Notes for whoever runs it, about how the real
+module is shaped:
+
+- `sendTo` fires in one line, `kindEvents[kind]:FireClient(player, payload)`,
+  so `s/:FireClient(player, payload)/:FireAllClients(payload)/` is a
+  single-occurrence mutation.
+- The guard call is one line,
+  `local guarded = Wrapper.guard(definition, context, handlers[definition.name])`.
+  Replacing its right-hand side with `handlers[definition.name]` bypasses the
+  guard **and** drops the third argument, so the prediction for that variant
+  is 5 red, not 4. To get the 4-red variant, substitute a closure that passes
+  `{ decline = function() end }`.
 
 ## Regressions
 
