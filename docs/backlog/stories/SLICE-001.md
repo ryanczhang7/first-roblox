@@ -4,8 +4,8 @@ title: A module requires across layers inside a real Rojo-served place
 slug: a-module-requires-across-layers-inside-a
 epic: EPIC-03
 type: spike
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/SLICE-001-a-module-requires-across-layers-inside-a
 depends_on: []      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -291,3 +291,5 @@ rejected alternatives are in `architecture.md` §1.
 
 **Knock-on, recorded for `MAP-001`:** its D-1 snippet cannot run until
 `SLICE-008` merges. `SLICE-008`'s D-1 runs it.
+
+**DONE (2026-10-07).** PR https://github.com/ryanczhang7/first-roblox/pull/66 merged. Docs-only spike; CI timings not load-bearing.
