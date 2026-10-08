@@ -70,7 +70,30 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # Read the number out of each command's own evidence line; do not count files
 # yourself, for the same reason the suite does not.
 #
-# LAST MEASURED: SLICE-002 (RED), which adds FIVE test files
+# LAST MEASURED: THEME-001 (RED), which adds EIGHT test files
+# (tests/helpers/ColourRef.luau, TokenSpec.luau, ThemeContract.luau,
+# ThemeStubs.luau, tests/client/theme_test.luau, theme_controls_test.luau,
+# colour_math_test.luau, client_requires_test.luau - the first files under
+# tests/client/) and no probe under src. GREEN adds THREE source files,
+# src/client/Theme.luau, src/client/models/ScreenScale.luau and
+# src/client/models/ColourMath.luau (story `## Contract`, "Modules"; C-9: no
+# existing file changes). SLICE-002's values (217/217/37, narrow 37/37/9)
+# were confirmed on the tree before this story's files were added: the
+# SLICE-002 DONE merge's gate run observed 217/217/37. MEASURED on the
+# uncommitted RED tree by `git ls-files --cached --others --exclude-standard`
+# over src tests lune: 225 .luau (217 + 8 tests), src still 37, Shared still
+# 9. PREDICTED post-GREEN, which is what is pinned below: 225 + 3 source =
+# 228/228, typecheck 37 + 3 = 40, narrow 37 + 3 = 40/40, NARROW_TYPECHECK
+# unchanged at 9 (the three files are under src/client, not Shared). THE
+# BASELINES BELOW ARE SET TO THOSE PREDICTED GREEN VALUES NOW, IN RED, as
+# SLICE-002 and the rest did and for the same reason: check-boundaries
+# refuses a .claude/tests/** change from any other phase (TUNE-001 R-1).
+# Expected under `gates.sh --fast` on RED's tree: `expected count: 228 /
+# actual count: 225` for format and lint, `229 / 226` for the untracked-file
+# cases, `40 / 37` for typecheck and the narrow src cases, and the "no stray
+# .luau files" precondition red until the RED commit. GREEN confirms, never
+# edits; a fourth source file is a counter failure GREEN cannot fix.
+# BEFORE THAT: SLICE-002 (RED), which adds FIVE test files
 # (tests/helpers/TransportContract.luau, tests/helpers/TransportStubs.luau,
 # tests/net/transport_test.luau, tests/net/transport_controls_test.luau,
 # tests/net/net_requires_test.luau) and no probe under src. GREEN adds TWO
@@ -557,11 +580,11 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=217    # stylua  over src tests lune   (217 = 37 src + 180 tests/lune: SLICE-002 RED adds 5 test files, GREEN adds Net/Transport and Net/ClientTransport, predicted; SLICE-008 read "observed 210")
-BASE_LINT=217      # selene  over src tests lune
-BASE_TYPECHECK=37  # analyze over src (+ SLICE-002's Net/Transport and Net/ClientTransport, predicted; + SLICE-008's src/client/__probe_cross_layer.luau; + MAP-001's facility/Blockout and facility/BlockoutBuilder; NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView)
-NARROW_FORMAT=37   # stylua  over src alone (SLICE-002 predicted: + the two Net modules)
-NARROW_LINT=37     # selene  over src alone (SLICE-002 predicted: + the two Net modules)
+BASE_FORMAT=228    # stylua  over src tests lune   (228 = 40 src + 188 tests/lune: THEME-001 RED adds 8 test files, GREEN adds client/Theme, client/models/ScreenScale and client/models/ColourMath, predicted; SLICE-002 confirmed 217)
+BASE_LINT=228      # selene  over src tests lune
+BASE_TYPECHECK=40  # analyze over src (+ THEME-001's three src/client modules, predicted; + SLICE-002's Net/Transport and Net/ClientTransport; + SLICE-008's src/client/__probe_cross_layer.luau; + MAP-001's facility/Blockout and facility/BlockoutBuilder; NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView)
+NARROW_FORMAT=40   # stylua  over src alone (THEME-001 predicted: + the three client modules)
+NARROW_LINT=40     # selene  over src alone (THEME-001 predicted: + the three client modules)
 NARROW_TYPECHECK=9 # analyze over src/ReplicatedStorage/Shared alone (the same nine files src/shared held; SLICE-008 moves the directory and adds nothing to it; moved by TUNE-001's MechanicsTuning; + CHAN-002's channel/Presets)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`

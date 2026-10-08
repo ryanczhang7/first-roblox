@@ -77,7 +77,7 @@ Each is a Lune test the Feature Developer's first client story can own.
 | PT-A6 | with `reducedMotion = true`, no model returns a scale, position or rotation tween, and every model that pulses returns a static glyph instead |
 | PT-A7 | every floor component's model returns an icon or glyph key for every state it can be in |
 | PT-A8 | a disabled tile/button model reports `selectable = false` |
-| PT-T3 | no system colour token has HSV saturation > 0.15; player hue tokens are used only by trim, markers, stripes, rings and swatches |
+| PT-T3 | no system colour token has chroma `(max − min) / 255` > 0.15 (amended THEME-001: was HSV saturation); player hue tokens are used only by trim, markers, stripes, rings and swatches |
 | PT-T4 | the icon-key sets for tags, class patterns, system glyphs and preset icons are pairwise disjoint |
 | PT-T5 | `#tag alphabet ≥ ceil(actuator_count / players_min)` from `MechanicsTuning` |
 | PT-T6 | detent layout for `dial_settings` = 2..6 (angles `360 / n` from the top, pips = index); 7 or more is rejected |

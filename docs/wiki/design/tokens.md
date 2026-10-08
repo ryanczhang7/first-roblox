@@ -71,7 +71,9 @@ If M4 wants a lighter HUD it changes the scrim and re-runs the contrast tests.
 | `color.world.pattern` | `#C9D0DA` | the key-class pattern on the housing band |
 | `color.world.neutralTrim` | `#5C6470` | trim on a machine that is neither yours nor your partner's |
 
-No system role has a saturation above 0.15 (HSV). That is the checkable form of
+No system role has a chroma above 0.15, chroma being `(max(r, g, b) − min(r, g, b)) / 255`
+(amended THEME-001, 2026-10-08: HSV saturation was the earlier form, and it
+fails the near-black blue-greys above, which carry almost no colour). That is the checkable form of
 the principle in §0 (PT-T3, `accessibility.md`).
 
 ### 1.2 Player palette
