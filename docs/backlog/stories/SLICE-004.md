@@ -5,7 +5,7 @@ slug: four-studio-clients-see-the-phase-the-co
 epic: EPIC-03
 type: feature
 status: in-progress
-phase: RED
+phase: GREEN
 branch: story/SLICE-004-four-studio-clients-see-the-phase-the-co
 depends_on: [SLICE-002, SLICE-003, THEME-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -131,6 +131,8 @@ says.**
   - the countdown is `m:ss`, the `%d:%02d` form;
   - `docs/wiki/design/voice.md` joins the `unit` gate's `covers`, because
     AC-3's test reads it.
+- **P-5. One `Tick` per whole second, not per Heartbeat** (lead-po, 2026-10-08, at GREEN). `Session` was designed for a per-second `Tick` (`Session.luau` lines 112 and 334), and it broadcasts `RoundView` on every `Tick` in a timed phase. The contract's "a `Tick` per `RunService.Heartbeat`" would have sent it about 60 times a second. GREEN surfaced this, and the PO reproduced it from `Session.luau`'s header. The driver feeds a `Tick` on the first Heartbeat after `math.floor(now)` changes. That is runtime cadence, not a game rule. Phase changes may then land up to 1 s late, which is inside D-2.2's 1 s tolerance, and clients count down between payloads.
+- **P-6. The driver's clock starts at 0** (accepted from GREEN). `PhaseMachine.initial` enters the first Lobby at time 0, and `Clock.real()` has no defined epoch, so the driver subtracts its start reading. The seed is `floor(startedAt * 1e6)`.
 
 **Interpreter, exact semantics.**
 - Effect kinds and their single port call:
@@ -255,6 +257,7 @@ from an upstream story or spike (as noted above), amend it and re-run
   identification; the /plan-product dispatch reported no override). 2026-09-30.
 - PLANNED (contract pin) - `lead-po` - `claude-opus-5-5`. 2026-10-08.
 - RED - `test-developer` - `claude-fable-5-1` (Fable 5.1, dispatched with `model: fable` explicitly; self-reported). 2026-10-08.
+- GREEN - `feature-developer` - `claude-opus-5-5` (Opus 5.5, dispatched with `model: opus`; self-reported). 2026-10-08.
 
 ## Test plan
 
@@ -647,6 +650,122 @@ measured 235 s for 1344 tests on CI); this story adds no loop, no seed
 sweep and spawns one `classify.sh --gated` that `GatedFs` already cached for
 `TokenSpec`.
 
+### GREEN confirmation
+
+**Dispatched model.** GREEN ran on `claude-opus-5-5` (Opus 5.5, self-reported);
+no override was reported in the dispatch. 2026-10-08.
+
+**Files written** (six `.luau` under `src`, exactly as the counters predict):
+`src/server/session/Interpreter.luau`, `src/server/RoundService.server.luau`,
+`src/client/Words.luau`, `src/client/models/PhaseClockModel.luau`,
+`src/client/views/PhaseClockView.luau`, `src/client/Main.client.luau`. No test,
+config or manifest touched.
+
+**The suite.** `lune run test`, 2026-10-08, this machine: `1582 passed, 0
+failed` - RED's `1570 passed, 12 failed` with the twelve turned green and no
+other line changed.
+
+**Every control, measured against the SHIPPED modules.** RED measured the
+control tables above against `InterpreterStubs`/`PhaseClockStubs`. Here each
+row's defect was applied to the real module with `bash scripts/mutate.sh`
+(one `sed` expression, restored and verified by `cmp` each time: 30 mutations,
+30 `restored (verified)` lines in `.claude/state/mutations/log`), and the
+controls file's own `CHECKS` list was run over the mutated module by a scratch
+runner under the ignored `build/` (deleted afterwards). The baseline is the
+unmutated module.
+
+| Interpreter control | RED (stub) | GREEN (shipped module, mutated) |
+|---|---|---|
+| baseline | 0 of 6 | `fails [] (0 of 6)` |
+| `sendToBroadcasts` | trace, transport | `[AC-1 trace, AC-1 transport]`; transport says `Transport.broadcast: "SeatView" is not a public payload kind` |
+| `sendToDotCall` | trace, transport | `[AC-1 trace, AC-1 transport]` |
+| `sendsTwice` | trace, transport | `[AC-1 trace, AC-1 transport]` |
+| `dropsEmit` | trace, emit | `[AC-1 trace, AC-1 emit]` |
+| `emitsTheEventNotAList` | trace, emit | `[AC-1 trace, AC-1 emit]` |
+| `emitsAllAtOnce` | trace, emit | `[AC-1 trace, AC-1 emit]` (the batch is flushed after the loop; the AC-2 raise aborts before it, as RED measured) |
+| `emitSharesOneList` | trace, emit | `[AC-1 trace, AC-1 emit]` |
+| `copiesPayload` | trace, transport | `[AC-1 trace, AC-1 transport]` |
+| `prevalidates` | AC-2 unknown, `the trace was []` | `[AC-2 unknown]`, `the trace was [], wanted [broadcast, promptRematch]` |
+| `swallowsUnknown` | both AC-2 | `[AC-2 unknown, AC-2 AssignSeats]` |
+| `raiseOmitsKind` | both AC-2, `does not name the kind "Frobnicate"` | `[AC-2 unknown, AC-2 AssignSeats]`, that message |
+| `continuesAfterRaise` | AC-2 unknown | `[AC-2 unknown]` |
+| `acceptsAssignSeats` | AC-2 AssignSeats | `[AC-2 AssignSeats]` |
+| `reversesOrder` | trace, emit, AC-2 unknown | `[AC-1 trace, AC-1 emit, AC-2 unknown]` |
+| `placeDropsPosition` | trace | `[AC-1 trace]` |
+| `computeTraceDropsRoundId` | trace | `[AC-1 trace]` |
+
+| PhaseClock control | RED (stub) | GREEN (shipped module, mutated) |
+|---|---|---|
+| baseline | 0 of 5 | `fails [] (0 of 5)` |
+| `floorsInsteadOfCeil` | countdown, rows 2, 4, 5, 10 | `[countdown]`, rows 2, 4, 5, 10 (`0:00`, `0:59`, `1:00`, `6:29`) |
+| `roundsInsteadOfCeil` | countdown, row 2 | `[countdown]`, row 2 alone |
+| `noClamp` | countdown, row 8 `-2:40` | `[countdown]`, row 8 `-2:40` |
+| `paddedMinutes` | countdown, 10 rows (all but `10:00`) | `[countdown]`, 10 rows, row 7 absent |
+| `unpaddedSeconds` | countdown, rows with seconds < 10 | `[countdown]`, 10 rows (all but row 10, `6:30`) |
+| `ignoresReceivedAt` | countdown, rows 10, 11 (`4:50`, `5:20`) | `[countdown]`, rows 10, 11 (`4:50`, `5:20`) |
+| `ignoresElapsed` | countdown, rows 8, 10 (`7:00`) | `[countdown]`, rows 8, 10 (`7:00`) |
+| `nilSecondsLeftReadsZero` | nil seconds | `[nil seconds]` (`"0:00", wanted nil`) |
+| `mutatesTheView` | countdown, every row with elapsed > 0 | `[countdown]`, rows 5, 8, 10 - the three with elapsed > 0 |
+| `echoesUnknownPhase` | unknown phase | `[unknown phase]` |
+| `wordDrift` (`Words.luau`) | words, naming the line | `[words]`, `voice.md line 58 says "Post"` |
+| `extraWord` (`Words.luau`, `Intermission`) | words | `[words]` |
+| `missingWord` (`Words.luau`, `Resolution`) | words, phaseKey | `[words, phaseKey]` |
+| `phaseKeyBypassesWords` | [] - not caught, on record | `fails [] (0 of 5)` - the documented blind spot, confirmed on the shipped module |
+
+No divergence: every row measured on the shipped module equals RED's
+measurement on the stub. D-1 proper (the mutation run against
+`interpreter_test.luau` itself) stays with GATES; the `sendToBroadcasts` row
+above is the same mutation through the same check.
+
+**`bash scripts/gates.sh --fast` on the GREEN tree (uncommitted)**, 2026-10-08,
+not recorded (a `--fast` run never is):
+
+    PASS         format (0s, observed 243)
+    PASS         lint (1s, observed 243, floor 1)
+    PASS         typecheck (3s, observed 46)
+    PASS         unit (335s, observed 1582, floor 507)
+    UNCONFIGURED coverage
+    PASS         build (0s, observed 155256)
+    FAIL         harness (18s, exit 1) -> .claude/state/gate-logs/harness.log
+    changes: 6 changed source path(s), all exercised by a required gate
+
+RED's counter predictions hold: 243 for format and lint, 46 for typecheck
+(`analyze over 46 files`, both entry scripts in it - AC-4). `harness` is
+`project-counters: 40 passed, 1 failed`, and the one is the "no stray .luau
+files" precondition listing the six new files as `??` - they are uncommitted
+by instruction; every counter case passes. It clears at the GREEN commit, as
+RED's did at the RED commit.
+
+**What GREEN found that the Contract does not say** (built as noted; for
+review, not resolved here):
+
+- **The driver rebases `Clock.real()` to start at 0.** `PhaseMachine.initial`
+  enters the first Lobby at `phaseEnteredAt = 0` ("`initial` takes no `now`"),
+  while `Clock.real().now()` is `os.clock()`, with no defined epoch. Fed
+  straight in, the first lobby's dwell (`now - 0 >= lobbySeconds`) would
+  already be satisfied whenever the server process is older than
+  `lobbySeconds`, and the round would start the instant the fourth player
+  joined - D-2.2 ("with 4 in, the countdown runs") would fail. The driver
+  reads `Clock.real()` through one subtraction of its start time. It is
+  arithmetic in a logic-free driver; it is runtime alignment, not a game
+  rule, but review should agree.
+- **The seed** is `math.floor(startedAt * 1e6)` from that same real clock
+  (`Rng` floors its seed; whole seconds would give few distinct seeds).
+- **A `Tick` per `Heartbeat` broadcasts `RoundView` at ~60 Hz** in a timed
+  phase: `Session`'s trigger fires on every `Tick` in a timed phase, and its
+  header calls the `Tick` "per-second". `architecture.md`'s table says "at
+  least once a second", so this satisfies it; the bandwidth is a question
+  for whoever owns `Session` or the driver, not a defect here. First built
+  as the Contract pinned it; **superseded by P-5**: the Heartbeat handler now
+  feeds a `Tick` only when `math.floor(clock.now())` differs from the last
+  second it ticked (P-6 accepts the clock offset and seed above).
+- `Transport.Ports.idOf` answers `tostring(UserId)` only for a `Player`
+  parented to `Players`; `playerFor` is `Players:GetPlayerByUserId`. Neither
+  is reachable until `SLICE-007` binds a remote (P-2) except `playerFor`,
+  which `sendTo` uses for seat views.
+- `GuardContext.isSeated` reads `state.round.players`; `telemetry` is left
+  nil. Unused until `SLICE-007` binds a remote.
+
 ## Regressions
 
 <!-- REQUIRED if this story ever returned to RED after GREEN or GATES; omit
@@ -699,3 +818,7 @@ sweep and spawns one `classify.sh --gated` that `GatedFs` already cached for
 
 ## Notes
 
+
+**Freeze, RED -> GREEN** (`bash scripts/frozen.sh verify`, lead-po, 2026-10-08):
+
+    frozen: OK — 11 path(s) unchanged since the snapshot for SLICE-004
