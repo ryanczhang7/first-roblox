@@ -4,8 +4,8 @@ title: Four Studio clients see the phase, the countdown and their own seat card
 slug: four-studio-clients-see-the-phase-the-co
 epic: EPIC-03
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/SLICE-004-four-studio-clients-see-the-phase-the-co
 depends_on: [SLICE-002, SLICE-003, THEME-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -231,6 +231,25 @@ and Studio's local server with 4 clients, then observes:
 
 Paste the Output and one screenshot per client. RED and GREEN cannot run this.
 Owner: REVIEW.
+
+**D-2 result (operator, Studio, 2026-10-09).** The setup was `rojo serve default.project.json`, with the Rojo plugin connected (7.7.0, `localhost:34872`), Test mode **Clients and Servers** and 4 players. The operator ran it, and the lead-po recorded the result.
+
+1. **Lobby holds below 4: NOT EXERCISED.** All four clients joined within the same second, so no client saw fewer than 4 in. The quorum hold itself is ROUND-004's, covered by `unit`. This run shows only that the Lobby label and countdown render: `evidence/SLICE-004/d2-lobby-0-48.png` shows "Lobby 0:48".
+2. **The four countdowns agree to within 1 s: PASS.** One screenshot shows all four clients reading "Lobby 0:01" at the same moment (`evidence/SLICE-004/d2-four-clients-lobby-0-01.webp`). After the round, all four read "Lobby 0:34" together (`evidence/SLICE-004/d2-four-clients-back-in-lobby-0-34.webp`).
+3. **The full phase sequence: PASS.** The operator watched Assignment, then Round counting down from 7:00 and ending at 0:00, then Resolution, Post and Lobby. The operator confirmed "I saw all of it". The return to Lobby is the 0:34 screenshot above.
+4. **No error from the game: PASS.** The client Outputs were empty. Nothing in the server Output was tagged Server or Client. The server Output, verbatim apart from the Studio plugin stack (elided):
+
+       17:51:24.182  DataModel Loading https://assetdelivery.roblox.com/v1/asset/?id=95206881&version=69  -  Studio
+       17:51:27.210  debug.profileEnd() - No active profile annotation. At: Stack Begin
+       Script 'MaterialManager.MaterialManager.Packages._Index.ReactReconciler...' (Studio's built-in MaterialManager plugin; 14 stack lines elided)
+       Stack End  -  Studio
+       17:51:40.882   ▶ [Rojo-Warn] Disconnected from an error: Couldn't connect to the Rojo server.
+       [Rojo-Warn] Make sure the server is running — use 'rojo serve' to run it! (x2)  -  Edit
+       17:56:25.929   ▶ 'Place1' auto-recovery file was created (x2)  -  Studio
+
+   The Rojo warning is from a first attempt, made before `rojo serve` was started. That attempt showed no label, because the scripts were never synced into the place. The run recorded here began after reconnecting.
+
+Cosmetic, for HUD-007: the label partly overlaps the default chat panel when chat is open.
 
 ## Out of scope
 
