@@ -41,6 +41,25 @@ these". Dial control (C-16): "Turn". Seat-change (C-22): "You can turn these too
 "No helper now. You can guess". Lobby (C-26): "Waiting for friends". Outcome
 words: `components.md` C-24.
 
+### 2.1 The phase label (`SLICE-004`, provisional)
+
+`SLICE-004`'s skeleton shows the current phase as a word beside its countdown.
+It implements no component (`components.md`), so until a HUD story replaces it
+the word is the phase's own name, verbatim. This is an operator decision
+(2026-10-08), not a vocabulary choice: rule 2 binds the components, and the HUD
+stories that build them replace this label rather than reuse it.
+
+| Phase (internal) | Player-facing |
+|---|---|
+| `Lobby` | Lobby |
+| `Assignment` | Assignment |
+| `Round` | Round |
+| `Resolution` | Resolution |
+| `Post` | Post |
+
+The countdown beside it reads `m:ss` — minutes unpadded, seconds two digits
+(`7:00`, `0:09`), the same text form as C-19.
+
 ## 3. The trace headline
 
 The one sentence. `Trace.luau` produces it; the words are settled in
