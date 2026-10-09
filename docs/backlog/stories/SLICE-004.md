@@ -68,6 +68,13 @@ operator.
   analysed set. Rojo maps them to a `Script` and a `LocalScript`, as `SLICE-001`
   observed.
 
+## Amendments
+
+Both amendments were made in PLANNED, before the story left it. The contract pin of 2026-10-08 brought the 2026-09-30 criteria up to the tree. They are listed here because `check-boundaries.sh` compares the criteria against `origin/main`.
+
+- **A-1 (AC-1)** changed `PromptRematch` and `ComputeTrace` to `PromptRematch`, `ComputeTrace` and `Placed`, each becoming the port call named in the contract. Since `SLICE-005`, `Session` emits `Placed`. Under AC-2 the real driver would otherwise raise on every round. `SLICE-007` owns the teleport, so the port is a no-op here. Approved by lead-po as PO decision P-1, and reported to the operator before RED (2026-10-08) without objection.
+- **A-2 (AC-3)** changed "returns `mm:ss`" to "returns `m:ss` (minutes unpadded, seconds two digits: `7:00`, `0:09`)". AC-3's `mm:ss` contradicted D-2's `7:00` and C-19's `%d:%02d`. The operator chose `m:ss` when asked on 2026-10-08 (P-4). In the same answer, AC-3's "voice.md's word" was settled as the phase name verbatim (`voice.md` §2.1). That needed no criterion text change.
+
 ## Contract
 
 **Modules.**
