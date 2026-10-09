@@ -4,8 +4,8 @@ title: Four Studio clients see the phase, the countdown and their own seat card
 slug: four-studio-clients-see-the-phase-the-co
 epic: EPIC-03
 type: feature
-status: in-progress
-phase: GREEN
+status: in-review
+phase: REVIEW
 branch: story/SLICE-004-four-studio-clients-see-the-phase-the-co
 depends_on: [SLICE-002, SLICE-003, THEME-001]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -202,6 +202,16 @@ says.**
 **D-1. The interpreter's routing discriminates.** Use `scripts/mutate.sh` to
 swap `sendTo` and `broadcast` in the interpreter. AC-1 **must** then fail. RED
 cannot run this. Owner: GATES.
+
+**D-1 result (GATES, lead-po, 2026-10-08).** Run with `bash scripts/mutate.sh`, which turns the interpreter's `SendTo` into a broadcast. That is the AC-1 control. The prediction was exactly the two AC-1 cases that drive the trace and the real Transport. It held:
+
+    === mutate: src/server/session/Interpreter.luau (1 line(s) changed by s/ports\.transport:sendTo(e\.playerId, e\.payloadKind, e\.payload)/ports.transport:broadcast(e.payloadKind, e.payload)/) ===
+      48 - 			ports.transport:sendTo(e.playerId, e.payloadKind, e.payload)
+      48 + 			ports.transport:broadcast(e.payloadKind, e.payload)
+      FAIL  tests/server/interpreter_test.luau :: AC-1 control: through the real Transport.bind over fake RemoteEvents, a SendTo of SeatView fires FireClient once on the SeatView event to that player's object, a Broadcast of RoundView
+      FAIL  tests/server/interpreter_test.luau :: AC-1: over a mixed list of every effect kind, each makes exactly one port call, in list order, with the effect's own payload, position and event tables
+    1580 passed, 2 failed
+    === mutate: command exited 0; restored (verified byte-for-byte against .../src_server_session_Interpreter.luau.20261009T024341Z.1974315.bak) ===
 
 **D-2. Studio (the operator).** The operator runs `bash scripts/task.sh dev`
 and Studio's local server with 4 clients, then observes:
@@ -789,10 +799,22 @@ review, not resolved here):
 
 ## Gate results
 
-<!-- Written by scripts/gates.sh itself on every full run, stamped with the
-     commit and a hash of the code it ran against. Do not paste or edit it:
-     check-boundaries.sh refuses a PR whose recorded run does not match the
-     code being merged. -->
+<!-- gates.sh: written by bash scripts/gates.sh; do not edit or paste by hand -->
+
+    run:    2026-10-09T03:02:36Z
+    commit: 1de5a9f
+    tree:   8cf35702adb64f07e90e4aa627b9449a35a8e91a
+    result: pass (6 ran, 3 unconfigured, 0 known)
+
+    PASS         format (0s, observed 243)
+    PASS         lint (0s, observed 243, floor 1)
+    PASS         typecheck (2s, observed 46)
+    PASS         unit (303s, observed 1582, floor 507)
+    UNCONFIGURED coverage
+    UNCONFIGURED integration
+    PASS         build (1s, observed 155565)
+    PASS         harness (16s, observed 41)
+    UNCONFIGURED mutation
 
 ## Gate probes
 
@@ -822,3 +844,19 @@ review, not resolved here):
 **Freeze, RED -> GREEN** (`bash scripts/frozen.sh verify`, lead-po, 2026-10-08):
 
     frozen: OK — 11 path(s) unchanged since the snapshot for SLICE-004
+
+**Orchestrator mutation check (GATES, lead-po, 2026-10-08).** The handoff predicted that `floor` in place of `ceil` in `PhaseClockModel` is caught by the countdown assertion alone. Run through `mutate.sh`, it was:
+
+    28 - 	local whole = math.ceil(remaining)
+    28 + 	local whole = math.floor(remaining)
+      FAIL  tests/client/phase_clock_model_test.luau :: AC-3: countdown is %d:%02d of ceil(max(0, secondsLeft - (now - receivedAt))): 420 -> 7:00, 0.2 -> 0:01, ...
+    1581 passed, 1 failed
+    === mutate: command exited 0; restored (verified byte-for-byte ...) ===
+
+That count matches, and so does D-1's (2), so the handoff's control table is now evidence. The unmutated suite is 1582 passed, 0 failed.
+
+**Freeze, GREEN -> GATES** (`bash scripts/frozen.sh verify`, lead-po, 2026-10-08):
+
+    frozen: OK — 11 path(s) unchanged since the snapshot for SLICE-004
+
+**D-2 is pending the operator** (owner REVIEW). It is a Studio run with four clients, and no tool can run it. The story stays in REVIEW until the Output and the screenshots are pasted under D-2.
