@@ -4,8 +4,8 @@ title: Design tokens exist in source and meet the accessibility floor
 slug: design-tokens-exist-in-source-and-meet-t
 epic: EPIC-03
 type: feature
-status: in-review
-phase: REVIEW
+status: done
+phase: DONE
 branch: story/THEME-001-design-tokens-exist-in-source-and-meet-t
 depends_on: [TUNE-001, CHAN-002]      # story ids; phase.sh refuses to start this story until they are DONE
 required_gates: []  # gate ids that are optional for the repo but binding for THIS story
@@ -861,3 +861,5 @@ The claim holds. AC-4, PT-T3 and `tokens.md` §1.1's sentence all name HSV
 saturation, and the near-black blue-greys fail it while carrying almost no
 colour. The PLANNED check missed it. Put to the user before GREEN; see
 `## Amendments`.
+
+**REVIEW → DONE (2026-10-08).** PR https://github.com/ryanczhang7/first-roblox/pull/69 merged as `7df5157`. CI run https://github.com/ryanczhang7/first-roblox/actions/runs/37860293366: `gates` 8m01s against `timeout-minutes: 45`, unit 278s, `1521 passed, 0 failed`, every required gate PASS. `boundaries` passed in 6s. No timing is near a limit.
