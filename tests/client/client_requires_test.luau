@@ -62,6 +62,13 @@ local EXPECTED = {
 	"src/client/Words.luau",
 	"src/client/models/PhaseClockModel.luau",
 	"src/client/views/PhaseClockView.luau",
+	-- HUD-007
+	"src/client/models/LobbyModel.luau",
+	"src/client/models/SeatCardModel.luau",
+	"src/client/models/RelationsModel.luau",
+	"src/client/views/LobbyPanelView.luau",
+	"src/client/views/SeatCardView.luau",
+	"src/client/views/RelationsStripView.luau",
 }
 
 local function startsWith(s: string, prefix: string): boolean
@@ -100,7 +107,7 @@ local function violationsIn(path: string, text: string): { string }
 end
 
 return {
-	["C-8: every module under src/client/ requires only its own layer or @game/ReplicatedStorage/Shared/… (the entry alone may also require Net), and the seven Contract modules of THEME-001 and SLICE-004 are among those scanned"] = function()
+	["C-8: every module under src/client/ requires only its own layer or @game/ReplicatedStorage/Shared/… (the entry alone may also require Net), and the thirteen Contract modules of THEME-001, SLICE-004 and HUD-007 are among those scanned"] = function()
 		-- Modules only: the directory also holds a `.gitkeep`, which the
 		-- classifier returns as source and which has no requires to judge.
 		local files: { string } = {}
