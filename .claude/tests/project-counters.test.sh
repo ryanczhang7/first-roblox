@@ -70,7 +70,34 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # Read the number out of each command's own evidence line; do not count files
 # yourself, for the same reason the suite does not.
 #
-# LAST MEASURED: SLICE-004 (RED), which adds NINE test files
+# LAST MEASURED: HUD-007 (RED), which adds SEVEN test files
+# (tests/helpers/SeatHudContract.luau, SeatHudStubs.luau,
+# tests/client/lobby_model_test.luau, seat_card_model_test.luau,
+# relations_model_test.luau, seat_hud_outputs_test.luau,
+# seat_hud_controls_test.luau), edits two (VoiceSpec.luau,
+# client_requires_test.luau) and adds no probe under src. GREEN adds SIX
+# source files (story `## Contract`, "Exact shapes" and "Views"), all under
+# src/client/: models/LobbyModel.luau, models/SeatCardModel.luau,
+# models/RelationsModel.luau, views/LobbyPanelView.luau,
+# views/SeatCardView.luau and views/RelationsStripView.luau; it EDITS
+# src/client/Words.luau and src/client/Main.client.luau, which adds nothing.
+# SLICE-004's predicted values (243/243/46, narrow 46/46/9) were confirmed
+# by SLICE-004's DONE gate run. MEASURED on the uncommitted RED tree with
+# `bash scripts/gates.sh --fast` (2026-10-09): `stylua over 250 files`,
+# `selene over 250 files`, `analyze over 46 files`; `git ls-files --cached
+# --others --exclude-standard` over src tests lune counts 250 .luau, src
+# alone 46, Shared alone 9. PREDICTED post-GREEN, which is what is pinned
+# below: 250 + 6 source = 256/256, typecheck 46 + 6 = 52, narrow 46 + 6 =
+# 52/52, NARROW_TYPECHECK unchanged at 9 (none of the six is under Shared).
+# THE BASELINES BELOW ARE SET TO THOSE PREDICTED GREEN VALUES NOW, IN RED,
+# as SLICE-004 and the rest did and for the same reason: check-boundaries
+# refuses a .claude/tests/** change from any other phase (TUNE-001 R-1).
+# Expected under `gates.sh --fast` on RED's tree: `expected count: 256 /
+# actual count: 250` for format and lint, `257 / 251` for the untracked-file
+# cases, `52 / 46` for typecheck and the narrow src cases, and the "no stray
+# .luau files" precondition red until the RED commit. GREEN confirms, never
+# edits; a seventh source file is a counter failure GREEN cannot fix.
+# BEFORE THAT: SLICE-004 (RED), which adds NINE test files
 # (tests/helpers/VoiceSpec.luau, InterpreterContract.luau,
 # InterpreterStubs.luau, PhaseClockContract.luau, PhaseClockStubs.luau,
 # tests/server/interpreter_test.luau, interpreter_controls_test.luau,
@@ -608,11 +635,11 @@ CONF="$REPO_ROOT/.claude/harness/project.conf"
 # -> 126/126/24, narrow unchanged at 24/24/8. GREEN edits Procedure.luau only,
 # so these are also the post-GREEN counts. Read from `stylua over 126 files`
 # and `selene over 126 files` on the uncommitted RED tree.
-BASE_FORMAT=243    # stylua  over src tests lune   (243 = 46 src + 197 tests/lune: SLICE-004 RED adds 9 test files, GREEN adds six source files, predicted; THEME-001's 228 confirmed)
-BASE_LINT=243      # selene  over src tests lune
-BASE_TYPECHECK=46  # analyze over src (+ SLICE-004's session/Interpreter, RoundService.server, client/Main.client, client/Words, client/models/PhaseClockModel, client/views/PhaseClockView, predicted; + THEME-001's three src/client modules; + SLICE-002's Net/Transport and Net/ClientTransport; + SLICE-008's src/client/__probe_cross_layer.luau; + MAP-001's facility/Blockout and facility/BlockoutBuilder; NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView)
-NARROW_FORMAT=46   # stylua  over src alone (SLICE-004 predicted: + the six modules above)
-NARROW_LINT=46     # selene  over src alone (SLICE-004 predicted: + the six modules above)
+BASE_FORMAT=256    # stylua  over src tests lune   (256 = 52 src + 204 tests/lune: HUD-007 RED adds 7 test files, GREEN adds six src/client files, predicted; SLICE-004's 243 confirmed)
+BASE_LINT=256      # selene  over src tests lune
+BASE_TYPECHECK=52  # analyze over src (+ HUD-007's client/models/LobbyModel, SeatCardModel, RelationsModel, client/views/LobbyPanelView, SeatCardView, RelationsStripView, predicted; + SLICE-004's session/Interpreter, RoundService.server, client/Main.client, client/Words, client/models/PhaseClockModel, client/views/PhaseClockView; + THEME-001's three src/client modules; + SLICE-002's Net/Transport and Net/ClientTransport; + SLICE-008's src/client/__probe_cross_layer.luau; + MAP-001's facility/Blockout and facility/BlockoutBuilder; NET-001 probe included; + SLICE-003's Session; + VIEW-004's Positions; + CHAN-005's Pings; + CHAN-002's Presets; + CHAN-004's PresetSends; + VIEW-003's round/RoundView)
+NARROW_FORMAT=52   # stylua  over src alone (HUD-007 predicted: + the six src/client modules above)
+NARROW_LINT=52     # selene  over src alone (HUD-007 predicted: + the six src/client modules above)
 NARROW_TYPECHECK=9 # analyze over src/ReplicatedStorage/Shared alone (the same nine files src/shared held; SLICE-008 moves the directory and adds nothing to it; moved by TUNE-001's MechanicsTuning; + CHAN-002's channel/Presets)
 
 # Scratch files. Named `__probe_*` so paths.conf classifies them as `test`

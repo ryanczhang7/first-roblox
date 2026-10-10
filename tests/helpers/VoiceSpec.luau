@@ -65,6 +65,48 @@ function VoiceSpec.parsePhaseTable(text: string, section: string?): { PhaseRow }
 	return rows
 end
 
+--[[
+	HUD-007: the OPTIONAL WORDS paragraph under §2's table, read off disk.
+
+	    Seat card (C-05): "Your helper", "You", "You help", "Yours to turn", "You can see
+	    these". Dial control (C-16): "Turn". ... Lobby (C-26): "Waiting for friends".
+
+	`parseQuotedWords(text, label)` finds the first occurrence of `label`
+	(`Seat card (C-05):`, `Lobby (C-26):`) and returns every double-quoted
+	string after it, in order, up to the first `.` that is outside quotes -
+	the sentence's full stop. The paragraph is wrapped, so a quoted string
+	may straddle a line break; a newline inside quotes reads as one space.
+	A label the file does not contain yields zero words, which the caller
+	reports as vacuity rather than as an empty table that matches anything.
+]]
+function VoiceSpec.parseQuotedWords(text: string, label: string): { string }
+	local words: { string } = {}
+	local start = string.find(text, label, 1, true)
+	if start == nil then
+		return words
+	end
+	local i = start + #label
+	local n = #text
+	while i <= n do
+		local c = string.sub(text, i, i)
+		if c == "." then
+			break
+		elseif c == '"' then
+			local close = string.find(text, '"', i + 1, true)
+			if close == nil then
+				break
+			end
+			local word = string.sub(text, i + 1, close - 1)
+			word = string.gsub(word, "%s*\r?\n%s*", " ")
+			table.insert(words, word)
+			i = close + 1
+		else
+			i += 1
+		end
+	end
+	return words
+end
+
 -- Every way the rows fail to be a usable table, accumulated: none at all, a
 -- phase named twice, or an empty player-facing cell.
 function VoiceSpec.vacuity(rows: { PhaseRow }): { string }

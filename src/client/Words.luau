@@ -8,6 +8,11 @@
 	`tests/client/phase_clock_model_test.luau` reads §2.1 off disk and compares
 	it with this table row for row, in both directions, so a word changed here
 	alone fails. Change the document first, through the Lead Designer.
+
+	HUD-007 adds `seat` (C-05, the seat card) and `lobby` (C-26, the lobby
+	panel): §2's optional words, verbatim. They are read by the VIEWS only;
+	no model returns a word. `tests/client/seat_hud_outputs_test.luau` reads
+	§2 off disk and compares both tables with it, keys and order included.
 ]]
 
 local phase: { [string]: string } = table.freeze({
@@ -18,6 +23,22 @@ local phase: { [string]: string } = table.freeze({
 	Post = "Post",
 })
 
+-- voice.md §2, "Seat card (C-05):", in the document's order.
+local seat = table.freeze({
+	helper = "Your helper",
+	you = "You",
+	partner = "You help",
+	yours = "Yours to turn",
+	theirs = "You can see these",
+})
+
+-- voice.md §2, "Lobby (C-26):".
+local lobby = table.freeze({
+	alone = "Waiting for friends",
+})
+
 return table.freeze({
 	phase = phase,
+	seat = seat,
+	lobby = lobby,
 })
